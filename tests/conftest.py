@@ -9,7 +9,7 @@ from hapticore.core.messaging import make_ipc_address
 
 @pytest.fixture
 def ipc_address() -> str:
-    """Generate a unique IPC address safe on all platforms."""
+    """Generate a unique IPC address suitable for Unix-like platforms (macOS/Linux)."""
     return make_ipc_address("test")
 
 

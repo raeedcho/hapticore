@@ -49,6 +49,7 @@ def _subscriber_process(
     address: str,
     result_queue: multiprocessing.Queue,  # type: ignore[type-arg]
     ready_event: multiprocessing.Event,  # type: ignore[type-arg]
+    pub_ready: multiprocessing.Event,  # type: ignore[type-arg]
     duration_s: float = 3.0,
 ) -> None:
     """Subscribe and count received messages, measuring latency."""
@@ -56,6 +57,10 @@ def _subscriber_process(
     sub = bus.create_subscriber(topics=[TOPIC_STATE])
 
     ready_event.set()
+
+    # Wait for publisher to be ready before starting the receive window.
+    # On macOS with spawn, publisher startup can take 2-3 seconds.
+    pub_ready.wait(timeout=15)
 
     count = 0
     latencies: list[float] = []
@@ -90,10 +95,10 @@ class TestPubSubIntegration:
 
         # Start subscribers first, then publisher
         sub1 = multiprocessing.Process(
-            target=_subscriber_process, args=(address, q1, sub1_ready)
+            target=_subscriber_process, args=(address, q1, sub1_ready, pub_ready)
         )
         sub2 = multiprocessing.Process(
-            target=_subscriber_process, args=(address, q2, sub2_ready)
+            target=_subscriber_process, args=(address, q2, sub2_ready, pub_ready)
         )
         pub = multiprocessing.Process(
             target=_publisher_process, args=(address, num_messages, pub_ready)
@@ -158,10 +163,10 @@ class TestPubSubIntegration:
         q2: multiprocessing.Queue[dict[str, object]] = multiprocessing.Queue()
 
         sub1 = multiprocessing.Process(
-            target=_subscriber_process, args=(address, q1, sub1_ready, 5.0)
+            target=_subscriber_process, args=(address, q1, sub1_ready, pub_ready, 5.0)
         )
         sub2 = multiprocessing.Process(
-            target=_subscriber_process, args=(address, q2, sub2_ready, 5.0)
+            target=_subscriber_process, args=(address, q2, sub2_ready, pub_ready, 5.0)
         )
         pub = multiprocessing.Process(
             target=_publisher_process, args=(address, num_messages, pub_ready)

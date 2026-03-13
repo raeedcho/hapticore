@@ -6,9 +6,9 @@ CommandClient/CommandServer (DEALER-ROUTER) for request-reply commands.
 
 from __future__ import annotations
 
-import uuid
 import os
 import re
+import uuid
 from collections.abc import Callable
 from typing import Any, Self
 
@@ -29,20 +29,26 @@ def _sanitize_ipc_label(label: str) -> str:
       nested paths (e.g. "foo/bar" -> "bar").
     - Restrict to a safe character set [A-Za-z0-9_.-], replacing any other
       characters with "_".
+    - Truncate to 20 characters so the full IPC path stays well under the
+      macOS sockaddr_un.sun_path limit of 103 characters.
     - Fall back to "hc" if the result would be empty or a reserved name.
     """
     base = os.path.basename(label)
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", base)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", base)[:20]
     if safe in {"", ".", ".."}:
         return "hc"
     return safe
 
 
 def make_ipc_address(label: str = "hc") -> str:
-    """Generate a short, unique IPC address safe on macOS (103-char limit).
+    """Generate a short, unique IPC address safe on macOS/Linux (103-char limit).
 
-    Always roots in /tmp to avoid macOS $TMPDIR length explosion.
-    The 8-char hex ID provides ~4 billion unique values to avoid collisions
+    Always roots in /tmp to avoid macOS $TMPDIR length explosion. ``label`` is
+    sanitised (path separators stripped, non-alphanumeric chars replaced) and
+    truncated to 20 characters, so the final path is always well within the
+    macOS ``sockaddr_un.sun_path`` limit of 103 bytes.
+
+    The 8-char hex suffix provides ~4 billion unique values to avoid collisions
     across parallel test runs.
     """
     safe_label = _sanitize_ipc_label(label)

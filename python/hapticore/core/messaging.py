@@ -154,11 +154,23 @@ class CommandServer:
 
         frames: list[bytes] = self._socket.recv_multipart()
         # ROUTER frames: [client_identity, empty_delimiter, payload]
+        if len(frames) != 3:
+            # Malformed message; ignore and report no command processed.
+            return False
+
         client_identity = frames[0]
         _delimiter = frames[1]
         payload = frames[2]
 
         unpacked = msgpack.unpackb(payload, raw=False)
+        if not isinstance(unpacked, dict):
+            # Expect a mapping of command fields; ignore malformed payloads.
+            return False
+
+        # Messages serialized via core.messages.serialize() include a
+        # "__msg_type__" field that Command.__init__ does not accept.
+        unpacked.pop("__msg_type__", None)
+
         cmd = Command(**unpacked)
 
         if cmd.method in self._handlers:

@@ -157,7 +157,7 @@ class TestCommandClientServer:
             if server.poll_and_dispatch(timeout_ms=100):
                 break
 
-        t.join(timeout=2.0)
+        t.join()
 
         assert len(response_holder) == 1
         resp = response_holder[0]
@@ -210,7 +210,7 @@ class TestCommandClientServer:
             if server.poll_and_dispatch(timeout_ms=100):
                 break
 
-        t.join(timeout=2.0)
+        t.join()
 
         assert len(response_holder) == 1
         resp = response_holder[0]

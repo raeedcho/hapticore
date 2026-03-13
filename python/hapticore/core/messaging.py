@@ -28,8 +28,17 @@ class EventPublisher:
         self._socket.bind(address)
 
     def publish(self, topic: bytes, message: bytes) -> None:
-        """Send a multipart message: [topic, payload]."""
-        self._socket.send_multipart([topic, message], zmq.NOBLOCK)
+        """Send a multipart message: [topic, payload].
+
+        Uses non-blocking send; if the socket's high-water mark is reached,
+        the message is dropped rather than raising zmq.Again.
+        """
+        try:
+            self._socket.send_multipart([topic, message], zmq.NOBLOCK)
+        except zmq.Again:
+            # Drop message when PUB socket cannot accept more data (HWM reached).
+            # This preserves non-blocking behavior and prevents publisher crashes.
+            return
 
     def close(self) -> None:
         """Close the socket."""

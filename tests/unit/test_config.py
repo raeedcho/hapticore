@@ -15,7 +15,6 @@ from hapticore.core.config import (
     load_config,
 )
 
-
 CONFIGS_DIR = Path(__file__).resolve().parents[2] / "configs"
 
 

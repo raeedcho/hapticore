@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import time
-import uuid
+from pathlib import Path
 
 import pytest
 
@@ -78,9 +78,9 @@ def _subscriber_process(
 class TestPubSubIntegration:
     """Integration tests for multi-process PUB-SUB messaging."""
 
-    def test_multiprocess_pubsub(self) -> None:
+    def test_multiprocess_pubsub(self, tmp_path: Path) -> None:
         """Test that multiple subscriber processes receive published messages."""
-        address = f"ipc:///tmp/hapticore_integ_{uuid.uuid4().hex[:8]}"
+        address = f"ipc://{tmp_path}/hapticore_integ"
         num_messages = 500  # Reduced from 1000 for CI reliability
 
         pub_ready = multiprocessing.Event()
@@ -133,9 +133,9 @@ class TestPubSubIntegration:
             assert median_lat < 0.01, f"Median latency {median_lat*1000:.2f}ms exceeds 10ms"
 
     @pytest.mark.slow
-    def test_multiprocess_pubsub_strict(self) -> None:
+    def test_multiprocess_pubsub_strict(self, tmp_path: Path) -> None:
         """Full spec compliance: 1000 msgs, <1ms latency, <1% loss."""
-        address = f"ipc:///tmp/hapticore_integ_strict_{uuid.uuid4().hex[:8]}"
+        address = f"ipc://{tmp_path}/hapticore_integ_strict"
         num_messages = 1000
 
         pub_ready = multiprocessing.Event()

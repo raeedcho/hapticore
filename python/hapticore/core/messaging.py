@@ -145,7 +145,9 @@ class CommandServer:
 
         frames: list[bytes] = self._socket.recv_multipart()
         # ROUTER frames: [client_identity, empty_delimiter, payload]
-        client_identity, _delimiter, payload = frames[0], frames[1], frames[2]
+        client_identity = frames[0]
+        _delimiter = frames[1]
+        payload = frames[2]
 
         unpacked = msgpack.unpackb(payload, raw=False)
         cmd = Command(**unpacked)
@@ -227,7 +229,8 @@ class CommandClient:
 
         frames: list[bytes] = self._socket.recv_multipart()
         # DEALER receives: [empty_delimiter, payload]
-        _delimiter, payload = frames[0], frames[1]
+        _delimiter = frames[0]
+        payload = frames[1]
         unpacked = msgpack.unpackb(payload, raw=False)
         unpacked.pop("__msg_type__", None)
         return CommandResponse(**unpacked)

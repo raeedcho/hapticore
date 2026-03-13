@@ -238,9 +238,9 @@ class TestSerialization:
             active_field="spring",
             field_state={"stiffness": 100.0, "damping": 5.0},
         )
-        n = 10_000
+        num_iterations = 10_000
         start = time.perf_counter()
-        for _ in range(n):
+        for _ in range(num_iterations):
             deserialize(serialize(msg), HapticState)
-        elapsed = (time.perf_counter() - start) / n
+        elapsed = (time.perf_counter() - start) / num_iterations
         assert elapsed < 50e-6, f"Round-trip {elapsed * 1e6:.1f} µs exceeds 50 µs"

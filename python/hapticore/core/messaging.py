@@ -6,6 +6,7 @@ CommandClient/CommandServer (DEALER-ROUTER) for request-reply commands.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from typing import Any, Self
 
@@ -17,6 +18,17 @@ from hapticore.core.messages import (
     CommandResponse,
     serialize,
 )
+
+
+def make_ipc_address(label: str = "hc") -> str:
+    """Generate a short, unique IPC address safe on macOS (103-char limit).
+
+    Always roots in /tmp to avoid macOS $TMPDIR length explosion.
+    The 8-char hex ID provides ~4 billion unique values to avoid collisions
+    across parallel test runs.
+    """
+    short_id = uuid.uuid4().hex[:8]
+    return f"ipc:///tmp/{label}-{short_id}"
 
 
 class EventPublisher:

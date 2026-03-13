@@ -38,3 +38,34 @@ jobs:
 
       - name: Run integration tests
         run: pytest tests/integration/ -v
+
+  test-macos:
+    name: Test (macOS, Python 3.12)
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Lint with ruff
+        run: ruff check python/
+
+      - name: Type check with mypy
+        run: mypy python/hapticore/core/ --strict
+
+      - name: Run unit tests
+        run: pytest tests/unit/ -v
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -v --timeout=120

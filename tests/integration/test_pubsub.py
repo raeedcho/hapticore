@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import multiprocessing
 import time
-from pathlib import Path
 
 import pytest
 
@@ -14,7 +13,7 @@ from hapticore.core.messages import (
     deserialize,
     serialize,
 )
-from hapticore.core.messaging import EventBus
+from hapticore.core.messaging import EventBus, make_ipc_address
 
 
 def _publisher_process(address: str, num_messages: int, ready_event: multiprocessing.Event) -> None:  # type: ignore[type-arg]
@@ -78,9 +77,9 @@ def _subscriber_process(
 class TestPubSubIntegration:
     """Integration tests for multi-process PUB-SUB messaging."""
 
-    def test_multiprocess_pubsub(self, tmp_path: Path) -> None:
+    def test_multiprocess_pubsub(self) -> None:
         """Test that multiple subscriber processes receive published messages."""
-        address = f"ipc://{tmp_path}/hapticore_integ"
+        address = make_ipc_address("integ")
         num_messages = 500  # Reduced from 1000 for CI reliability
 
         pub_ready = multiprocessing.Event()
@@ -147,9 +146,9 @@ class TestPubSubIntegration:
                     proc.join(timeout=5)
 
     @pytest.mark.slow
-    def test_multiprocess_pubsub_strict(self, tmp_path: Path) -> None:
+    def test_multiprocess_pubsub_strict(self) -> None:
         """Full spec compliance: 1000 msgs, <1ms latency, <1% loss."""
-        address = f"ipc://{tmp_path}/hapticore_integ_strict"
+        address = make_ipc_address("integ-s")
         num_messages = 1000
 
         pub_ready = multiprocessing.Event()

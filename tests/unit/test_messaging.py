@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-import uuid
 
 import pytest
 
@@ -18,11 +17,12 @@ from hapticore.core.messaging import (
     CommandClient,
     CommandServer,
     EventBus,
+    make_ipc_address,
 )
 
 
 def _unique_ipc() -> str:
-    return f"ipc:///tmp/hapticore_test_{uuid.uuid4().hex[:8]}"
+    return make_ipc_address("test")
 
 
 class TestEventPubSub:

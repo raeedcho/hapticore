@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-
-@pytest.fixture
-def ipc_address(tmp_path: Path) -> str:
-    """Generate a unique IPC address inside the pytest temp directory."""
-    return f"ipc://{tmp_path}/hapticore_test"
+from hapticore.core.messaging import make_ipc_address
 
 
 @pytest.fixture
-def event_address(tmp_path: Path) -> str:
+def ipc_address() -> str:
+    """Generate a unique IPC address safe on all platforms."""
+    return make_ipc_address("test")
+
+
+@pytest.fixture
+def event_address() -> str:
     """Generate a unique IPC address for event pub-sub tests."""
-    return f"ipc://{tmp_path}/hapticore_event"
+    return make_ipc_address("evt")
 
 
 @pytest.fixture
-def command_address(tmp_path: Path) -> str:
+def command_address() -> str:
     """Generate a unique IPC address for command tests."""
-    return f"ipc://{tmp_path}/hapticore_cmd"
+    return make_ipc_address("cmd")

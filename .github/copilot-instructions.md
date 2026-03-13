@@ -78,6 +78,8 @@ ctest                            # run C++ tests
 - Do not put raw numpy arrays into msgpack. Convert to lists first, or use msgpack's `default`/`object_hook` with a registered ext type for ndarray.
 - ZeroMQ PUB-SUB has a slow-joiner problem: the subscriber may miss early messages. Always handle this gracefully (e.g., wait for first state message before starting a trial).
 - Pydantic v2 uses `model_dump()` not `.dict()`, and `model_validate()` not `.parse_obj()`.
+- Do not use `tempfile.gettempdir()` or pytest `tmp_path` for ZeroMQ IPC socket paths. macOS limits socket paths to 103 characters, and those directories are too long. Use `make_ipc_address()` from `core/messaging.py`, which roots paths in `/tmp` with short names.
+- On macOS, multiprocessing uses spawn (not fork), so child processes take 1–3s to start on CI. Never set time-based deadlines before all processes have signaled readiness.
 
 ## When working on tasks (python/hapticore/tasks/)
 

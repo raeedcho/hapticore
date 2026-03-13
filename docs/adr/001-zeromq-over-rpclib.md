@@ -25,3 +25,4 @@ ZeroMQ provides ~20–50 µs latency on ipc:// transport (well within the 1 ms b
 - No automatic type-safe function binding (unlike rpclib). Commands are dispatched by string method names, requiring a thin dispatcher on the server side.
 - ZeroMQ PUB-SUB has a slow-joiner problem: subscribers may miss early messages after connecting. Must handle gracefully.
 - libzmq core library has been dormant since May 2024, but pyzmq vendors it in wheels and is actively maintained. Monitor for successor activity.
+- macOS limits Unix domain socket paths to 103 characters (`sun_path` is 104 bytes in XNU). IPC socket paths must be rooted in `/tmp` with short names — never use `tempfile.gettempdir()` or pytest's `tmp_path` as a base directory on macOS. Use `hapticore.core.messaging.make_ipc_address()` to generate safe paths.

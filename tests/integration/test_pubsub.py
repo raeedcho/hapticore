@@ -111,26 +111,40 @@ class TestPubSubIntegration:
         pub.start()
         pub_ready.wait(timeout=5)
 
-        pub.join(timeout=10)
-        sub1.join(timeout=10)
-        sub2.join(timeout=10)
+        try:
+            pub.join(timeout=10)
+            sub1.join(timeout=10)
+            sub2.join(timeout=10)
 
-        r1 = q1.get(timeout=5)
-        r2 = q2.get(timeout=5)
+            assert not pub.is_alive(), "Publisher process did not exit within timeout"
+            assert not sub1.is_alive(), "Subscriber 1 process did not exit within timeout"
+            assert not sub2.is_alive(), "Subscriber 2 process did not exit within timeout"
 
-        # Both subscribers should receive most messages
-        # Allow for slow-joiner: may miss first few messages
-        min_expected = num_messages * 0.90  # At least 90%
-        assert r1["count"] >= min_expected, f"Sub1 got {r1['count']}, expected >= {min_expected}"
-        assert r2["count"] >= min_expected, f"Sub2 got {r2['count']}, expected >= {min_expected}"
+            assert pub.exitcode == 0, f"Publisher process exited with code {pub.exitcode}"
+            assert sub1.exitcode == 0, f"Subscriber 1 process exited with code {sub1.exitcode}"
+            assert sub2.exitcode == 0, f"Subscriber 2 process exited with code {sub2.exitcode}"
 
-        # Latency check: median should be < 1 ms (relaxed for CI)
-        latencies1 = r1["latencies"]
-        if latencies1:
-            sorted_lat = sorted(latencies1)  # type: ignore[arg-type]
-            median_lat = sorted_lat[len(sorted_lat) // 2]
-            # Relaxed to 10ms for CI environments
-            assert median_lat < 0.01, f"Median latency {median_lat*1000:.2f}ms exceeds 10ms"
+            r1 = q1.get(timeout=5)
+            r2 = q2.get(timeout=5)
+
+            # Both subscribers should receive most messages
+            # Allow for slow-joiner: may miss first few messages
+            min_expected = num_messages * 0.90  # At least 90%
+            assert r1["count"] >= min_expected, f"Sub1 got {r1['count']}, expected >= {min_expected}"
+            assert r2["count"] >= min_expected, f"Sub2 got {r2['count']}, expected >= {min_expected}"
+
+            # Latency check: median should be < 1 ms (relaxed for CI)
+            latencies1 = r1["latencies"]
+            if latencies1:
+                sorted_lat = sorted(latencies1)  # type: ignore[arg-type]
+                median_lat = sorted_lat[len(sorted_lat) // 2]
+                # Relaxed to 10ms for CI environments
+                assert median_lat < 0.01, f"Median latency {median_lat*1000:.2f}ms exceeds 10ms"
+        finally:
+            for proc in (pub, sub1, sub2):
+                if proc.is_alive():
+                    proc.terminate()
+                    proc.join(timeout=5)
 
     @pytest.mark.slow
     def test_multiprocess_pubsub_strict(self, tmp_path: Path) -> None:

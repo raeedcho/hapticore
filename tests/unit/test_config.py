@@ -32,9 +32,7 @@ class TestLoadConfig:
         config = load_config(CONFIGS_DIR / "example_config.yaml")
         dumped = config.model_dump()
         restored = ExperimentConfig.model_validate(dumped)
-        assert restored.experiment_name == config.experiment_name
-        assert restored.subject.subject_id == config.subject.subject_id
-        assert restored.haptic.force_limit_n == config.haptic.force_limit_n
+        assert restored == config
 
 
 class TestRequiredFields:

@@ -55,4 +55,5 @@ testpaths = ["tests"]
 markers = [
     "hardware: tests that require physical hardware",
     "benchmark: benchmark tests",
+    "slow: performance tests with strict thresholds (run on lab machine)",
 ]

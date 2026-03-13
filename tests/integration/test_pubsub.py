@@ -6,6 +6,8 @@ import multiprocessing
 import time
 import uuid
 
+import pytest
+
 from hapticore.core.messages import (
     TOPIC_STATE,
     HapticState,
@@ -129,3 +131,57 @@ class TestPubSubIntegration:
             median_lat = sorted_lat[len(sorted_lat) // 2]
             # Relaxed to 10ms for CI environments
             assert median_lat < 0.01, f"Median latency {median_lat*1000:.2f}ms exceeds 10ms"
+
+    @pytest.mark.slow
+    def test_multiprocess_pubsub_strict(self) -> None:
+        """Full spec compliance: 1000 msgs, <1ms latency, <1% loss."""
+        address = f"ipc:///tmp/hapticore_integ_strict_{uuid.uuid4().hex[:8]}"
+        num_messages = 1000
+
+        pub_ready = multiprocessing.Event()
+        sub1_ready = multiprocessing.Event()
+        sub2_ready = multiprocessing.Event()
+        q1: multiprocessing.Queue[dict[str, object]] = multiprocessing.Queue()
+        q2: multiprocessing.Queue[dict[str, object]] = multiprocessing.Queue()
+
+        sub1 = multiprocessing.Process(
+            target=_subscriber_process, args=(address, q1, sub1_ready, 5.0)
+        )
+        sub2 = multiprocessing.Process(
+            target=_subscriber_process, args=(address, q2, sub2_ready, 5.0)
+        )
+        pub = multiprocessing.Process(
+            target=_publisher_process, args=(address, num_messages, pub_ready)
+        )
+
+        sub1.start()
+        sub2.start()
+
+        sub1_ready.wait(timeout=5)
+        sub2_ready.wait(timeout=5)
+        time.sleep(0.1)
+
+        pub.start()
+        pub_ready.wait(timeout=5)
+
+        pub.join(timeout=15)
+        sub1.join(timeout=15)
+        sub2.join(timeout=15)
+
+        r1 = q1.get(timeout=5)
+        r2 = q2.get(timeout=5)
+
+        # Strict: allow at most 1% loss (first 1-5 messages from slow-joiner)
+        min_expected = num_messages * 0.99
+        assert r1["count"] >= min_expected, f"Sub1 got {r1['count']}, expected >= {min_expected}"
+        assert r2["count"] >= min_expected, f"Sub2 got {r2['count']}, expected >= {min_expected}"
+
+        # Strict latency: median < 1 ms
+        for label, result in [("Sub1", r1), ("Sub2", r2)]:
+            latencies = result["latencies"]
+            if latencies:
+                sorted_lat = sorted(latencies)  # type: ignore[arg-type]
+                median_lat = sorted_lat[len(sorted_lat) // 2]
+                assert median_lat < 0.001, (
+                    f"{label} median latency {median_lat * 1000:.2f}ms exceeds 1ms"
+                )

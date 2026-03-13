@@ -84,15 +84,18 @@ class TestHapticState:
         msg = HapticState(
             timestamp=1.0,
             sequence=0,
-            position=np.array([0.1, 0.2, 0.3]).tolist(),
-            velocity=np.array([0.0, 0.0, 0.0]).tolist(),
-            force=np.array([1.0, 2.0, 3.0]).tolist(),
+            position=np.array([0.1, 0.2, 0.3]),  # type: ignore[arg-type]
+            velocity=np.array([0.0, 0.0, 0.0]),  # type: ignore[arg-type]
+            force=np.array([1.0, 2.0, 3.0]),  # type: ignore[arg-type]
             active_field="null",
             field_state={},
         )
         data = serialize(msg)
+        assert isinstance(data, bytes)
         restored = deserialize(data, HapticState)
         assert restored.position == [pytest.approx(0.1), pytest.approx(0.2), pytest.approx(0.3)]
+        assert restored.velocity == [0.0, 0.0, 0.0]
+        assert restored.force == [pytest.approx(1.0), pytest.approx(2.0), pytest.approx(3.0)]
 
     def test_numpy_in_field_state(self) -> None:
         """Numpy arrays in field_state dict should be handled by msgpack default."""
@@ -221,3 +224,23 @@ class TestSerialization:
             return deserialize(data, HapticState)  # type: ignore[return-value]
 
         benchmark(round_trip)  # type: ignore[operator]
+
+    def test_round_trip_under_50us(self) -> None:
+        """Assert round-trip stays under 50 µs."""
+        import time
+
+        msg = HapticState(
+            timestamp=1234.5678,
+            sequence=42,
+            position=[0.01, 0.02, 0.03],
+            velocity=[0.1, 0.2, 0.3],
+            force=[1.0, 2.0, 3.0],
+            active_field="spring",
+            field_state={"stiffness": 100.0, "damping": 5.0},
+        )
+        n = 10_000
+        start = time.perf_counter()
+        for _ in range(n):
+            deserialize(serialize(msg), HapticState)
+        elapsed = (time.perf_counter() - start) / n
+        assert elapsed < 50e-6, f"Round-trip {elapsed * 1e6:.1f} µs exceeds 50 µs"

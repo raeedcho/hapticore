@@ -6,9 +6,8 @@ CommandClient/CommandServer (DEALER-ROUTER) for request-reply commands.
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Self
 
 import msgpack
 import zmq
@@ -35,6 +34,12 @@ class EventPublisher:
     def close(self) -> None:
         """Close the socket."""
         self._socket.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
 
 
 class EventSubscriber:
@@ -67,6 +72,12 @@ class EventSubscriber:
         self._poller.unregister(self._socket)
         self._socket.close()
 
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
 
 class EventBus:
     """Publish-subscribe event distribution.
@@ -76,9 +87,13 @@ class EventBus:
     Uses ipc:// transport by default for lowest latency on same machine.
     """
 
-    def __init__(self, address: str = "ipc:///tmp/hapticore_events") -> None:
+    def __init__(
+        self,
+        address: str = "ipc:///tmp/hapticore_events",
+        context: zmq.Context[Any] | None = None,
+    ) -> None:
         self._address = address
-        self._context: zmq.Context[Any] = zmq.Context.instance()
+        self._context: zmq.Context[Any] = context or zmq.Context.instance()
 
     @property
     def address(self) -> str:
@@ -100,8 +115,12 @@ class CommandServer:
     Uses ROUTER socket so multiple clients can connect.
     """
 
-    def __init__(self, address: str = "ipc:///tmp/hapticore_commands") -> None:
-        self._context: zmq.Context[Any] = zmq.Context.instance()
+    def __init__(
+        self,
+        address: str = "ipc:///tmp/hapticore_commands",
+        context: zmq.Context[Any] | None = None,
+    ) -> None:
+        self._context: zmq.Context[Any] = context or zmq.Context.instance()
         self._socket: zmq.Socket[Any] = self._context.socket(zmq.ROUTER)
         self._socket.setsockopt(zmq.LINGER, 0)
         self._socket.bind(address)
@@ -126,8 +145,7 @@ class CommandServer:
 
         frames: list[bytes] = self._socket.recv_multipart()
         # ROUTER frames: [client_identity, empty_delimiter, payload]
-        client_identity = frames[0]
-        payload = frames[-1]
+        client_identity, _delimiter, payload = frames[0], frames[1], frames[2]
 
         unpacked = msgpack.unpackb(payload, raw=False)
         cmd = Command(**unpacked)
@@ -164,6 +182,12 @@ class CommandServer:
         self._poller.unregister(self._socket)
         self._socket.close()
 
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
 
 class CommandClient:
     """Sends commands and receives responses.
@@ -171,32 +195,23 @@ class CommandClient:
     Uses DEALER socket for async-compatible request-reply.
     """
 
-    def __init__(self, address: str = "ipc:///tmp/hapticore_commands") -> None:
-        self._context: zmq.Context[Any] = zmq.Context.instance()
+    def __init__(
+        self,
+        address: str = "ipc:///tmp/hapticore_commands",
+        context: zmq.Context[Any] | None = None,
+    ) -> None:
+        self._context: zmq.Context[Any] = context or zmq.Context.instance()
         self._socket: zmq.Socket[Any] = self._context.socket(zmq.DEALER)
         self._socket.setsockopt(zmq.LINGER, 0)
         self._socket.connect(address)
         self._poller = zmq.Poller()
         self._poller.register(self._socket, zmq.POLLIN)
 
-    def send_command(
-        self, command: Command | None = None, *, timeout_ms: int = 1000,
-        method: str = "", params: dict[str, Any] | None = None,
-    ) -> CommandResponse:
+    def send_command(self, command: Command, *, timeout_ms: int = 1000) -> CommandResponse:
         """Send a command and wait for response with timeout.
-
-        Can either pass a pre-built Command object, or provide method and params
-        to have a Command created automatically.
 
         Raises TimeoutError if no response within timeout.
         """
-        if command is None:
-            command = Command(
-                command_id=uuid.uuid4().hex[:12],
-                method=method,
-                params=params or {},
-            )
-
         cmd_data = msgpack.packb(
             {"command_id": command.command_id, "method": command.method, "params": command.params},
             use_bin_type=True,
@@ -212,7 +227,7 @@ class CommandClient:
 
         frames: list[bytes] = self._socket.recv_multipart()
         # DEALER receives: [empty_delimiter, payload]
-        payload = frames[-1]
+        _delimiter, payload = frames[0], frames[1]
         unpacked = msgpack.unpackb(payload, raw=False)
         unpacked.pop("__msg_type__", None)
         return CommandResponse(**unpacked)
@@ -221,3 +236,9 @@ class CommandClient:
         """Close the socket."""
         self._poller.unregister(self._socket)
         self._socket.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()

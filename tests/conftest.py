@@ -2,28 +2,24 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
 @pytest.fixture
-def ipc_address(tmp_path: object) -> str:
-    """Generate a unique IPC address for test isolation."""
-    import uuid
-
-    return f"ipc:///tmp/hapticore_test_{uuid.uuid4().hex[:8]}"
+def ipc_address(tmp_path: Path) -> str:
+    """Generate a unique IPC address inside the pytest temp directory."""
+    return f"ipc://{tmp_path}/hapticore_test"
 
 
 @pytest.fixture
-def event_address(tmp_path: object) -> str:
+def event_address(tmp_path: Path) -> str:
     """Generate a unique IPC address for event pub-sub tests."""
-    import uuid
-
-    return f"ipc:///tmp/hapticore_event_{uuid.uuid4().hex[:8]}"
+    return f"ipc://{tmp_path}/hapticore_event"
 
 
 @pytest.fixture
-def command_address(tmp_path: object) -> str:
+def command_address(tmp_path: Path) -> str:
     """Generate a unique IPC address for command tests."""
-    import uuid
-
-    return f"ipc:///tmp/hapticore_cmd_{uuid.uuid4().hex[:8]}"
+    return f"ipc://{tmp_path}/hapticore_cmd"

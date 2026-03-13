@@ -7,6 +7,8 @@ CommandClient/CommandServer (DEALER-ROUTER) for request-reply commands.
 from __future__ import annotations
 
 import uuid
+import os
+import re
 from collections.abc import Callable
 from typing import Any, Self
 
@@ -20,6 +22,22 @@ from hapticore.core.messages import (
 )
 
 
+def _sanitize_ipc_label(label: str) -> str:
+    """Sanitize the label used in IPC filesystem paths.
+
+    - Strip any directory components so callers cannot escape /tmp or create
+      nested paths (e.g. "foo/bar" -> "bar").
+    - Restrict to a safe character set [A-Za-z0-9_.-], replacing any other
+      characters with "_".
+    - Fall back to "hc" if the result would be empty or a reserved name.
+    """
+    base = os.path.basename(label)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", base)
+    if safe in {"", ".", ".."}:
+        return "hc"
+    return safe
+
+
 def make_ipc_address(label: str = "hc") -> str:
     """Generate a short, unique IPC address safe on macOS (103-char limit).
 
@@ -27,8 +45,9 @@ def make_ipc_address(label: str = "hc") -> str:
     The 8-char hex ID provides ~4 billion unique values to avoid collisions
     across parallel test runs.
     """
+    safe_label = _sanitize_ipc_label(label)
     short_id = uuid.uuid4().hex[:8]
-    return f"ipc:///tmp/{label}-{short_id}"
+    return f"ipc:///tmp/{safe_label}-{short_id}"
 
 
 class EventPublisher:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import sys
 import time
 
 import pytest
@@ -16,7 +17,12 @@ from hapticore.core.messages import (
 from hapticore.core.messaging import EventBus, make_ipc_address
 
 
-def _publisher_process(address: str, num_messages: int, ready_event: multiprocessing.Event) -> None:  # type: ignore[type-arg]
+def _publisher_process(
+    address: str,
+    num_messages: int,
+    ready_event: multiprocessing.Event,  # type: ignore[type-arg]
+    done_event: multiprocessing.Event,  # type: ignore[type-arg]
+) -> None:
     """Publish num_messages at approximately 1 kHz."""
     bus = EventBus(address)
     pub = bus.create_publisher()
@@ -38,9 +44,13 @@ def _publisher_process(address: str, num_messages: int, ready_event: multiproces
             field_state={},
         )
         pub.publish(TOPIC_STATE, serialize(msg))
-        time.sleep(0.001)  # ~1 kHz
+        time.sleep(0.001)  # best-effort ~1 kHz
 
-    # Send a few extra to flush
+    # Let in-flight messages drain before signalling completion.
+    # 0.2s covers the ZMQ send buffer at any expected send rate.
+    time.sleep(0.2)
+    done_event.set()
+    # Allow subscribers to observe done_event before the socket closes.
     time.sleep(0.1)
     pub.close()
 
@@ -50,7 +60,8 @@ def _subscriber_process(
     result_queue: multiprocessing.Queue,  # type: ignore[type-arg]
     ready_event: multiprocessing.Event,  # type: ignore[type-arg]
     pub_ready: multiprocessing.Event,  # type: ignore[type-arg]
-    duration_s: float = 3.0,
+    done_event: multiprocessing.Event,  # type: ignore[type-arg]
+    max_wait_s: float = 60.0,
 ) -> None:
     """Subscribe and count received messages, measuring latency."""
     bus = EventBus(address)
@@ -58,13 +69,18 @@ def _subscriber_process(
 
     ready_event.set()
 
-    # Wait for publisher to be ready before starting the receive window.
+    # Wait for publisher to be ready before receiving.
     # On macOS with spawn, publisher startup can take 2-3 seconds.
-    pub_ready.wait(timeout=15)
+    if not pub_ready.wait(timeout=15):
+        # Publisher did not signal in time; report empty result for diagnostics.
+        print("WARNING: pub_ready timed out — publisher may have crashed", file=sys.stderr)
+        sub.close()
+        result_queue.put({"count": 0, "latencies": []})
+        return
 
     count = 0
     latencies: list[float] = []
-    deadline = time.monotonic() + duration_s
+    deadline = time.monotonic() + max_wait_s  # safety valve only
 
     while time.monotonic() < deadline:
         result = sub.recv(timeout_ms=100)
@@ -74,6 +90,12 @@ def _subscriber_process(
             latency = time.monotonic() - msg.timestamp
             latencies.append(latency)
             count += 1
+        elif done_event.is_set():
+            # Publisher signalled done and recv() returned None (no buffered
+            # messages remain); exit cleanly. The 0.2s drain sleep in the
+            # publisher ensures the ZMQ send buffer is flushed before
+            # done_event is set, so this is safe to treat as end-of-stream.
+            break
 
     sub.close()
     result_queue.put({"count": count, "latencies": latencies})
@@ -88,6 +110,7 @@ class TestPubSubIntegration:
         num_messages = 500  # Reduced from 1000 for CI reliability
 
         pub_ready = multiprocessing.Event()
+        pub_done = multiprocessing.Event()
         sub1_ready = multiprocessing.Event()
         sub2_ready = multiprocessing.Event()
         q1: multiprocessing.Queue[dict[str, object]] = multiprocessing.Queue()
@@ -95,28 +118,28 @@ class TestPubSubIntegration:
 
         # Start subscribers first, then publisher
         sub1 = multiprocessing.Process(
-            target=_subscriber_process, args=(address, q1, sub1_ready, pub_ready)
+            target=_subscriber_process, args=(address, q1, sub1_ready, pub_ready, pub_done)
         )
         sub2 = multiprocessing.Process(
-            target=_subscriber_process, args=(address, q2, sub2_ready, pub_ready)
+            target=_subscriber_process, args=(address, q2, sub2_ready, pub_ready, pub_done)
         )
         pub = multiprocessing.Process(
-            target=_publisher_process, args=(address, num_messages, pub_ready)
+            target=_publisher_process, args=(address, num_messages, pub_ready, pub_done)
         )
 
         sub1.start()
         sub2.start()
 
         # Wait for subscribers to be ready
-        sub1_ready.wait(timeout=5)
-        sub2_ready.wait(timeout=5)
+        sub1_ready.wait(timeout=10)
+        sub2_ready.wait(timeout=10)
         time.sleep(0.1)
 
         pub.start()
-        pub_ready.wait(timeout=5)
+        pub_ready.wait(timeout=10)
 
         try:
-            pub.join(timeout=10)
+            pub.join(timeout=30)  # generous for slow CI
             sub1.join(timeout=10)
             sub2.join(timeout=10)
 
@@ -133,7 +156,7 @@ class TestPubSubIntegration:
 
             # Both subscribers should receive most messages
             # Allow for slow-joiner: may miss first few messages
-            min_expected = num_messages * 0.90  # At least 90%
+            min_expected = num_messages * 0.95  # At least 95%
             assert r1["count"] >= min_expected, f"Sub1 got {r1['count']}, expected >= {min_expected}"
             assert r2["count"] >= min_expected, f"Sub2 got {r2['count']}, expected >= {min_expected}"
 
@@ -157,32 +180,33 @@ class TestPubSubIntegration:
         num_messages = 1000
 
         pub_ready = multiprocessing.Event()
+        pub_done = multiprocessing.Event()
         sub1_ready = multiprocessing.Event()
         sub2_ready = multiprocessing.Event()
         q1: multiprocessing.Queue[dict[str, object]] = multiprocessing.Queue()
         q2: multiprocessing.Queue[dict[str, object]] = multiprocessing.Queue()
 
         sub1 = multiprocessing.Process(
-            target=_subscriber_process, args=(address, q1, sub1_ready, pub_ready, 5.0)
+            target=_subscriber_process, args=(address, q1, sub1_ready, pub_ready, pub_done)
         )
         sub2 = multiprocessing.Process(
-            target=_subscriber_process, args=(address, q2, sub2_ready, pub_ready, 5.0)
+            target=_subscriber_process, args=(address, q2, sub2_ready, pub_ready, pub_done)
         )
         pub = multiprocessing.Process(
-            target=_publisher_process, args=(address, num_messages, pub_ready)
+            target=_publisher_process, args=(address, num_messages, pub_ready, pub_done)
         )
 
         sub1.start()
         sub2.start()
 
-        sub1_ready.wait(timeout=5)
-        sub2_ready.wait(timeout=5)
+        sub1_ready.wait(timeout=10)
+        sub2_ready.wait(timeout=10)
         time.sleep(0.1)
 
         pub.start()
-        pub_ready.wait(timeout=5)
+        pub_ready.wait(timeout=10)
 
-        pub.join(timeout=15)
+        pub.join(timeout=60)  # generous for slow CI
         sub1.join(timeout=15)
         sub2.join(timeout=15)
 

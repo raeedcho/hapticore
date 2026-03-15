@@ -49,11 +49,15 @@ TEST(TripleBufferTest, MultiThreadMonotonicity) {
 
     // Reader thread reads and checks monotonicity
     int last_seen = 0;
-    while (!done.load(std::memory_order_acquire) || buf.swap_read_buffer()) {
+    for (;;) {
         if (buf.swap_read_buffer()) {
             int val = buf.read_buffer();
-            EXPECT_GE(val, last_seen) << "Non-monotonic read: got " << val << " after " << last_seen;
+            EXPECT_GE(val, last_seen)
+                << "Non-monotonic read: got " << val << " after " << last_seen;
             last_seen = val;
+        } else if (done.load(std::memory_order_acquire)) {
+            // Writer finished and no more new data
+            break;
         }
     }
     EXPECT_GT(last_seen, 0) << "Reader should have seen at least one value";

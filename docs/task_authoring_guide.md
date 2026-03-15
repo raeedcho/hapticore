@@ -4,7 +4,7 @@ This guide explains how to create a new behavioral task in Hapticore. A "task" d
 
 ## What you need to create
 
-A new task requires two things: a **task module** (Python file) and an **experiment config** (YAML file). Optionally, you may also define a **stimulus config** (YAML) and add a new **force field** (C++, only for novel haptic interactions).
+A new task requires two things: a **task module** (Python file) and an **experiment config** (YAML file). Optionally, you may also define a **stimulus config** (YAML) and add a new **force field** (C++, only for novel haptic interactions not covered by existing fields).
 
 ## Quick start: copy the template
 
@@ -181,20 +181,17 @@ task:
 
 The `TrialManager` automatically shuffles conditions within each block, presents them sequentially, and exposes `self.current_condition` to the task at each trial start.
 
-## Step 4: Adding custom haptic interactions
+## Step 4: Choosing the right haptic interaction
 
-For simple tasks, the built-in force fields (spring-damper, constant, null, workspace limits) are sufficient. For complex dynamics like the cup-and-ball task, you need a new C++ `ForceField` subclass.
+Hapticore provides two approaches to haptic feedback, depending on the complexity of the virtual environment.
 
-### Example: CartPendulumField for the cup-and-ball task
+### Approach A: Analytical force fields (simple tasks)
 
-1. Create `cpp/haptic_server/include/fields/cart_pendulum_field.h` and the corresponding `.cpp` file.
-2. Inherit from `ForceField` and implement `compute(pos, vel, dt)`.
-3. The field receives its parameters (pendulum_length, ball_mass, cup_mass, damping) via the command interface when Python calls `set_force_field` with `type: "cart_pendulum"`.
-4. The field maintains internal state (ball angle φ, angular velocity φ̇) and integrates the ODE at the haptic rate (4 kHz) using RK4.
-5. It returns the total force felt by the subject: cup inertia resistance + ball reaction force + workspace boundary forces.
-6. It exposes the ball state (φ, φ̇) in the published `field_state` dict so the display process can render the ball.
+For tasks where forces can be expressed as mathematical functions of position and velocity — springs, dampers, constant forces, viscous curls, or ODE-based dynamics like the cup-and-ball — use the built-in force field types directly. No C++ modification needed.
 
-From Python, the task sets this up with a single command:
+Built-in field types: `null`, `spring_damper`, `constant`, `workspace_limit`, `cart_pendulum`, `composite`.
+
+Example — cup-and-ball task:
 
 ```python
 self.haptic.send_command(Command(
@@ -210,7 +207,109 @@ self.haptic.send_command(Command(
 ))
 ```
 
-You do not need to compute forces in Python. The C++ server handles the physics at 4 kHz.
+To add a *new* analytical force field (e.g., a velocity-dependent curl field), create a C++ `ForceField` subclass in `cpp/haptic_server/include/fields/`, implement `compute(pos, vel, dt)`, and register the type name in the command dispatcher. See `CartPendulumField` as a reference.
+
+### Approach B: Physics world (tasks with collisions and rigid bodies)
+
+For tasks involving collisions, multiple interacting objects, or joints — Tetris-like block placement, air hockey, or pivoted rod navigation — use the `PhysicsField`, which wraps a Box2D 2D physics engine running inside the haptic thread at 4 kHz.
+
+You describe the physics world declaratively from Python: define bodies (with shapes, masses, and types), joints between bodies, and static obstacles. The monkey controls a *kinematic body* — Box2D moves all other bodies according to physics and returns the reaction forces the monkey feels through the robot.
+
+Example — air hockey task:
+
+```python
+self.haptic.send_command(Command(
+    command_id=self.new_command_id(),
+    method="set_force_field",
+    params={
+        "type": "physics_world",
+        "gravity": [0.0, 0.0],           # top-down, no gravity
+        "bodies": [
+            {
+                "id": "striker",
+                "type": "kinematic",       # controlled by the robot
+                "shape": {"type": "circle", "radius": 0.02},
+            },
+            {
+                "id": "puck",
+                "type": "dynamic",
+                "shape": {"type": "circle", "radius": 0.015},
+                "position": [0.0, 0.05],
+                "mass": 0.1,
+                "restitution": 0.9,        # elastic bouncing
+                "friction": 0.1,
+                "linear_damping": 0.3,     # simulates table friction
+            },
+            {
+                "id": "wall_top",
+                "type": "static",
+                "shape": {"type": "box", "width": 0.3, "height": 0.005},
+                "position": [0.0, 0.12],
+            },
+            # ... more walls, goal gaps, etc.
+        ],
+        "hand_body": "striker",
+    }
+))
+```
+
+Example — pivoted rod with barriers:
+
+```python
+self.haptic.send_command(Command(
+    command_id=self.new_command_id(),
+    method="set_force_field",
+    params={
+        "type": "physics_world",
+        "gravity": [0.0, -9.81],
+        "bodies": [
+            {
+                "id": "rod",
+                "type": "dynamic",
+                "shape": {"type": "box", "width": 0.2, "height": 0.01},
+                "joint": {"type": "revolute", "anchor": "hand", "offset": [0.0, 0.0]},
+                "mass": 0.3,
+            },
+            {
+                "id": "barrier_left",
+                "type": "static",
+                "shape": {"type": "box", "width": 0.01, "height": 0.1},
+                "position": [-0.08, 0.0],
+            },
+            {
+                "id": "barrier_right",
+                "type": "static",
+                "shape": {"type": "box", "width": 0.01, "height": 0.1},
+                "position": [0.08, 0.0],
+            },
+        ],
+        "hand_body": "rod",
+    }
+))
+```
+
+#### How the display renders physics worlds
+
+The display process does not need to know about Box2D. The `HapticState.field_state` dict published by the haptic server includes the positions and angles of all dynamic bodies:
+
+```python
+# In check_triggers or display update:
+bodies = haptic_state.field_state.get("bodies", {})
+# bodies = {"puck": {"position": [0.03, 0.07], "angle": 0.0},
+#            "striker": {"position": [0.01, -0.02], "angle": 0.0}}
+```
+
+The display process uses these positions to render shapes at the correct locations. The mapping between body IDs and visual representations is defined in the task's display logic.
+
+#### When to use Approach A vs. B
+
+Use **analytical fields** when forces depend smoothly on position/velocity and there are no rigid contacts between objects. These are simpler to tune and debug.
+
+Use **PhysicsField** when the task involves:
+- Object-object or object-wall collisions (anything that should feel like rigid contact)
+- Multiple bodies interacting through physics (puck and striker, blocks stacking)
+- Joints and constraints (pivots, sliders, ropes)
+- Any scenario where you want the monkey to feel the reaction forces from a simulated physical environment
 
 ## Step 5: Test without hardware
 
@@ -271,4 +370,6 @@ This uses the `transitions` library's `GraphMachine` to produce an SVG showing a
 | `python/hapticore/tasks/my_task.py` | Yes | Task class with STATES, TRANSITIONS, callbacks |
 | `configs/my_experiment.yaml` | Yes | Experiment config with task params and conditions |
 | `tests/unit/test_my_task.py` | Recommended | Automated state-machine tests with mocks |
-| `cpp/.../my_custom_field.h/.cpp` | Only if new haptics | Custom ForceField subclass for novel dynamics |
+| `cpp/.../my_custom_field.h/.cpp` | Only for novel analytical force computations | Custom ForceField subclass |
+
+Most tasks — including those with collisions and rigid body dynamics — do not require any C++ changes. The `PhysicsField` handles collision detection, contact forces, and joint dynamics via Box2D, configured entirely from Python.

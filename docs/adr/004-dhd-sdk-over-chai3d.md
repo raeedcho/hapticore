@@ -18,6 +18,7 @@ The predecessor djoshea/haptic-control system used CHAI3D because it also render
 
 ## Consequences
 
-- Custom collision detection must be implemented if any task requires it (e.g., haptic walls, surfaces). For simple planar boundaries, the WorkspaceLimitField handles this analytically. Complex 3D geometry would require re-introducing a collision library.
+- For tasks requiring collision detection and rigid body dynamics (Tetris-like block placement, air hockey, pivoted rod navigation), we use Box2D v3.0 as a lightweight 2D physics engine inside the haptic thread rather than CHAI3D's 3D collision pipeline. See ADR-007 for the rationale behind this choice. Box2D is a much smaller, more focused dependency than CHAI3D.
+- If a future task requires full 3D mesh collision (not anticipated given the effectively planar delta.3 workspace), a dedicated collision library like FCL could be added alongside Box2D without reintroducing CHAI3D.
 - The C++ codebase is much smaller and builds faster without CHAI3D.
 - Developers familiar with CHAI3D's API will need to learn the DHD SDK directly, though it is simpler.

@@ -6,7 +6,7 @@ Hapticore is a multi-process experimental control system for primate neurophysio
 
 ## Architecture (three tiers — read `docs/architecture.md` for full detail)
 
-- **Tier 1 (C++, hard real-time):** Haptic server runs at 4 kHz using Force Dimension DHD SDK. Evaluates parameterized force fields, publishes state via ZeroMQ PUB, accepts commands via ZeroMQ ROUTER. Python never sends raw forces — it sets field parameters.
+- **Tier 1 (C++, hard real-time):** Haptic server runs at 4 kHz using Force Dimension DHD SDK. Evaluates parameterized force fields, publishes state via ZeroMQ PUB, accepts commands via ZeroMQ ROUTER. Python never sends raw forces — it sets field parameters. Box2D v3.0 provides 2D collision detection and rigid-body dynamics for tasks with physical interactions.
 - **Tier 2 (Python, soft real-time):** Task controller uses `transitions` state machine library. PsychoPy renders visual stimuli in a separate process. Each hardware interface runs in its own process. ZeroMQ PUB-SUB distributes events between all processes, with msgpack serialization.
 - **Tier 3 (Python, recording/analysis):** Wrappers around SpikeGLX Python SDK, Ripple xipppy, and LSL/pylsl. Teensy generates hardware sync pulses and event codes.
 
@@ -16,6 +16,7 @@ Hapticore is a multi-process experimental control system for primate neurophysio
 - C++17 for the haptic server. CMake 3.16+ build system with CPM.cmake for dependencies.
 - ZeroMQ (`pyzmq` in Python, `cppzmq` in C++) for all inter-process communication.
 - msgpack (`msgpack-python`, `msgpack-cxx`) for serialization — not JSON, not protobuf.
+- Box2D v3.0 (C library, via CPM.cmake) for 2D physics/collision in the haptic server.
 - Pydantic v2 for configuration validation. Configs loaded from YAML files.
 - `transitions` library for behavioral state machines.
 - PsychoPy for visual stimulus rendering (always in its own process, OpenGL in main thread).
@@ -49,6 +50,7 @@ hapticore/
 - Pydantic models use `Field()` with constraints (gt, lt, ge, le) for all numeric parameters. Invalid configs must fail at load time, not during an experiment.
 - Tasks declare their state machine as class-level `STATES` and `TRANSITIONS` lists in `transitions` library format.
 - Force fields are parameterized C++ classes. Python sets parameters via commands; C++ evaluates forces at 4 kHz. Never compute forces in Python.
+- For tasks with collisions or rigid body dynamics, use the `PhysicsField` (Box2D wrapper) configured declaratively from Python. Do not write custom collision code per task. See `docs/task_authoring_guide.md` § "Approach B: Physics world".
 
 ## Build and test commands
 
@@ -78,8 +80,7 @@ ctest                            # run C++ tests
 - Do not put raw numpy arrays into msgpack. Convert to lists first, or use msgpack's `default`/`object_hook` with a registered ext type for ndarray.
 - ZeroMQ PUB-SUB has a slow-joiner problem: the subscriber may miss early messages. Always handle this gracefully (e.g., wait for first state message before starting a trial).
 - Pydantic v2 uses `model_dump()` not `.dict()`, and `model_validate()` not `.parse_obj()`.
-- Do not use `tempfile.gettempdir()` or pytest `tmp_path` for ZeroMQ IPC socket paths. macOS limits socket paths to 103 characters, and those directories are too long. Use `make_ipc_address()` from `core/messaging.py`, which roots paths in `/tmp` with short names.
-- On macOS, multiprocessing uses spawn (not fork), so child processes take 1–3s to start on CI. Never set time-based deadlines before all processes have signaled readiness.
+- Do not write per-task collision detection code in C++. Use the `PhysicsField` with Box2D, configured from Python. Only write a new C++ ForceField subclass if you need a fundamentally new analytical force computation.
 
 ## When working on tasks (python/hapticore/tasks/)
 
@@ -87,7 +88,7 @@ Read `docs/task_authoring_guide.md` first. Every task subclasses `BaseTask`, dec
 
 ## When working on the C++ haptic server (cpp/haptic_server/)
 
-Read `docs/architecture.md` § "Tier 1: C++ haptic server" for the threading model. The haptic thread must never block on I/O. Use a triple buffer for lock-free state sharing between the haptic thread and publisher thread. Force fields inherit from `ForceField` base class and implement `compute(pos, vel, dt) -> force_vector`. The server links against the Force Dimension SDK (pointed to by `FD_SDK_DIR` env var).
+Read `docs/architecture.md` § "Tier 1: C++ haptic server" for the threading model. The haptic thread must never block on I/O. Use a triple buffer for lock-free state sharing between the haptic thread and publisher thread. Force fields inherit from `ForceField` base class and implement `compute(pos, vel, dt) -> force_vector`. The `PhysicsField` wraps Box2D and handles collision-based tasks. The server links against the Force Dimension SDK (pointed to by `FD_SDK_DIR` env var) and Box2D (pulled via CPM.cmake).
 
 ## When working on configuration (python/hapticore/core/config.py)
 

@@ -10,8 +10,9 @@ Hapticore is a three-tier system for primate neurophysiology experiments involvi
 │  C++ Haptic Server (4 kHz)         Teensy Sync (µs-precise)  │
 │  - Force Dimension DHD SDK         - TTL event codes          │
 │  - Parameterized force fields      - 1 Hz sync square wave    │
-│  - ZMQ PUB: state at 200 Hz       - Serial from Python       │
-│  - ZMQ ROUTER: commands            - To Ripple + SpikeGLX     │
+│  - Box2D physics for collisions    - Serial from Python       │
+│  - ZMQ PUB: state at 200 Hz       - To Ripple + SpikeGLX     │
+│  - ZMQ ROUTER: commands                                       │
 │                                                               │
 │  Ripple Code-on-the-Box (optional)                            │
 │  - Closed-loop stim on NIP RT Linux                           │
@@ -61,17 +62,20 @@ The haptic server is a standalone C++ executable with three threads.
 - `ConstantField`: F = constant vector
 - `WorkspaceLimitField`: spring forces at boundaries
 - `CartPendulumField`: RK4 integration of cup-and-ball dynamics, returns reaction force
+- `PhysicsField`: wraps a Box2D world for rigid-body dynamics and collision (see ADR-007). Supports polygons, circles, revolute/prismatic joints, and static obstacles. Used for tasks involving collisions (e.g., Tetris-like block placement, air hockey) and underactuated dynamics (e.g., pivoted rod navigation). The monkey controls a kinematic body; Box2D computes reaction forces from contacts and constraints.
 - `CompositeField`: sum of multiple fields
 
 **Safety**: force clamping every tick, communication timeout (revert to NullField + damping if no heartbeat in 500 ms), maximum stiffness enforcement.
 
-**Key design principle**: Python never sends raw force values. Python sends *field parameters* (spring constant, target position, pendulum length). The C++ thread evaluates forces at 4 kHz using these parameters. This decouples the 4 kHz control rate from the ~100 Hz Python rate.
+**Key design principle**: Python never sends raw force values. Python sends *field parameters* (spring constant, target position, pendulum length, or a full physics world specification). The C++ thread evaluates forces at 4 kHz using these parameters. This decouples the 4 kHz control rate from the ~100 Hz Python rate. See ADR-002 for rationale.
+
+**Dependencies**: Force Dimension DHD SDK, Box2D v3.0 (via CPM.cmake), cppzmq, msgpack-cxx, pthreads/rt.
 
 ## Tier 2: Python task control
 
 ### Inter-process communication
 
-All processes communicate via ZeroMQ with msgpack serialization.
+All processes communicate via ZeroMQ with msgpack serialization. See ADR-001 for rationale.
 
 - **Event distribution** (PUB-SUB): One-to-many broadcast. The TaskController publishes state transitions and trial events. Multiple subscribers (DisplayProcess, SyncProcess, RecordingProcesses) each receive a copy. Topic-filtered multipart messages: `[topic_bytes, msgpack_payload]`.
 - **Command/response** (DEALER-ROUTER): Point-to-point. TaskController sends commands to the haptic server (set force field, move to position). Asynchronous—DEALER doesn't block waiting for reply.
@@ -84,6 +88,8 @@ The `TaskController` process is the experiment orchestrator. It creates a `trans
 ### Display process
 
 PsychoPy runs in a dedicated process. OpenGL calls must happen in the main thread. The frame loop: drain ZMQ subscriber queue (non-blocking) → update stimulus positions → draw → `win.flip()`. Stimulus onset timestamps captured via `win.callOnFlip()`.
+
+For tasks using PhysicsField (Tetris, air hockey, rod navigation), the display process reads the full set of body positions and angles from the `field_state` dict in the published `HapticState`. It renders all bodies without knowing anything about the physics — just positions and shapes.
 
 ### BaseTask structure
 
@@ -131,6 +137,8 @@ Defined as Python dataclasses in `hapticore/core/messages.py`:
 | `TrialEvent` | `b"trial"` | task controller → subscribers | on event |
 | `Command` | (DEALER-ROUTER) | task controller → haptic server | on demand |
 | `CommandResponse` | (DEALER-ROUTER) | haptic server → task controller | on demand |
+
+The `field_state` dict within `HapticState` carries force-field-specific state. For `PhysicsField`, this includes positions and angles of all dynamic bodies — enough for the display process to render the full scene.
 
 ## Configuration
 

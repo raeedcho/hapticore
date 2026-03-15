@@ -35,20 +35,26 @@ CPMAddPackage(
 option(MOCK_HARDWARE "Use mock DHD instead of real Force Dimension SDK" ON)
 
 # ---------- Static library (all sources except main.cpp) ----------
-# No library sources yet — use INTERFACE so dependents can inherit include paths
-# and linked libraries. Will become a STATIC library once sources are added.
-add_library(haptic_server_lib INTERFACE)
+set(LIB_SOURCES "")
 
-target_include_directories(haptic_server_lib INTERFACE
+if(MOCK_HARDWARE)
+  list(APPEND LIB_SOURCES src/dhd_mock.cpp)
+else()
+  list(APPEND LIB_SOURCES src/dhd_real.cpp)
+endif()
+
+add_library(haptic_server_lib STATIC ${LIB_SOURCES})
+
+target_include_directories(haptic_server_lib PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(haptic_server_lib INTERFACE
+target_link_libraries(haptic_server_lib PUBLIC
   msgpack-cxx
 )
 
 if(MOCK_HARDWARE)
-  target_compile_definitions(haptic_server_lib INTERFACE HAPTIC_MOCK_HARDWARE)
+  target_compile_definitions(haptic_server_lib PUBLIC HAPTIC_MOCK_HARDWARE)
 else()
   # Locate Force Dimension SDK via FD_SDK_DIR environment variable
   if(NOT DEFINED ENV{FD_SDK_DIR})
@@ -58,15 +64,15 @@ else()
     )
   endif()
   set(FD_SDK_DIR $ENV{FD_SDK_DIR})
-  target_include_directories(haptic_server_lib INTERFACE ${FD_SDK_DIR}/include)
-  target_link_directories(haptic_server_lib INTERFACE ${FD_SDK_DIR}/lib)
-  target_link_libraries(haptic_server_lib INTERFACE dhd drd)
+  target_include_directories(haptic_server_lib PUBLIC ${FD_SDK_DIR}/include)
+  target_link_directories(haptic_server_lib PUBLIC ${FD_SDK_DIR}/lib)
+  target_link_libraries(haptic_server_lib PUBLIC dhd drd)
 endif()
 
 # Platform libraries
-target_link_libraries(haptic_server_lib INTERFACE pthread)
+target_link_libraries(haptic_server_lib PUBLIC pthread)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  target_link_libraries(haptic_server_lib INTERFACE rt)
+  target_link_libraries(haptic_server_lib PUBLIC rt)
 endif()
 
 # ---------- Main executable ----------

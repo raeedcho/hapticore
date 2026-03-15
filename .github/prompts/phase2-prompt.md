@@ -327,16 +327,53 @@ struct HapticStateData {
     Vec3 velocity;
     Vec3 force;
     std::string active_field;
-    msgpack::sbuffer field_state_buf;  // pre-packed field state
+    msgpack::sbuffer field_state_buf;  // pre-packed field state (see below)
 
     // Pack the full state message into the provided buffer
     void pack(msgpack::sbuffer& buf) const;
 };
 ```
 
-**`HapticStateData::pack()`** must produce a msgpack **map** with string keys matching the Python `HapticState` dataclass fields exactly: `"timestamp"`, `"sequence"`, `"position"`, `"velocity"`, `"force"`, `"active_field"`, `"field_state"`. Use `msgpack::packer::pack_map(7)` then pack each key-value pair. The `field_state` value is the raw bytes from `field_state_buf` (pack as msgpack ext or just inline the already-packed sub-map using `pack_bin_body` — actually, the cleanest approach is to `pack_map` manually and inline the pre-packed bytes via `packer.pack_bin_body()`... wait, that would wrap it in a bin type. Instead, use `sbuffer::write()` to copy the raw msgpack bytes directly into the outer buffer after the `"field_state"` key. Or, simpler: just pack each field state key-value pair individually within the outer map by having `ForceField::pack_state()` write directly into the outer packer).
+**The field_state serialization problem and solution:**
 
-Recommended approach: change the API so `HapticStateData::pack()` receives the current `ForceField` and calls `field->pack_state(packer)` inline, rather than pre-serializing into an intermediate buffer.
+The publisher thread (Step 8) needs to serialize `HapticStateData` into a ZeroMQ message. But the publisher thread does not — and must not — have access to the `ForceField` object, because the `ForceField` is owned by the haptic thread and may be mutated on every tick. So we cannot pass the `ForceField` into `pack()` at publish time.
+
+Instead, the **haptic thread pre-packs the field state at write time**. In the haptic loop (Step 10), immediately after calling `field->compute()`, the haptic thread calls `field->pack_state()` into the `field_state_buf` member of the `HapticStateData` that it is writing to the triple buffer. This captures the field's internal state (e.g., pendulum angle) at the exact moment the force was computed. The publisher thread later reads this pre-packed buffer without touching the `ForceField`.
+
+**`HapticStateData::pack()`** then produces a msgpack map with 7 keys matching the Python `HapticState` dataclass exactly: `"timestamp"`, `"sequence"`, `"position"`, `"velocity"`, `"force"`, `"active_field"`, `"field_state"`. For the first 6 fields, use the normal `packer.pack(value)` calls. For `field_state`, pack the key string normally, then copy the pre-packed bytes directly into the output buffer:
+
+```cpp
+void HapticStateData::pack(msgpack::sbuffer& buf) const {
+    msgpack::packer<msgpack::sbuffer> pk(buf);
+    pk.pack_map(7);
+    pk.pack("timestamp");    pk.pack(timestamp);
+    pk.pack("sequence");     pk.pack(sequence);
+    pk.pack("position");     pk.pack(position);
+    pk.pack("velocity");     pk.pack(velocity);
+    pk.pack("force");        pk.pack(force);
+    pk.pack("active_field"); pk.pack(active_field);
+    pk.pack("field_state");
+    // field_state_buf already contains a valid msgpack value (a map),
+    // so writing the raw bytes directly produces a correct key-value pair.
+    buf.write(field_state_buf.data(), field_state_buf.size());
+}
+```
+
+This works because msgpack is self-describing — the pre-packed bytes from `ForceField::pack_state()` are already a complete msgpack map value, and appending them after the key produces valid msgpack without any double-wrapping.
+
+In the haptic thread (Step 10), the write sequence is:
+```cpp
+auto& state = state_buffer_.write_buffer();
+state.timestamp = now;
+state.sequence = sequence_++;
+state.position = pos;
+state.velocity = vel;
+state.force = clamped_force;
+state.active_field = field->name();
+state.field_state_buf.clear();
+field->pack_state(msgpack::packer<msgpack::sbuffer>(state.field_state_buf));
+state_buffer_.publish();
+```
 
 ```cpp
 // command_data.hpp
@@ -485,7 +522,7 @@ private:
 5. `force = field->compute(pos, vel, dt)`
 6. `force = clamp_force(force)` — per-axis clamp AND magnitude clamp to `force_limit_n_`
 7. `dhd_->set_force(force)`
-8. Populate `HapticStateData` in `state_buffer_.write_buffer()` and call `state_buffer_.publish()`
+8. Populate `HapticStateData` in `state_buffer_.write_buffer()`: set the scalar fields, then pre-pack the field state into `field_state_buf` as described in Step 7 (call `field->pack_state()` into the buffer). Call `state_buffer_.publish()`.
 9. Increment `sequence_`
 10. `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_wakeup)` — advance by 250,000 ns
 

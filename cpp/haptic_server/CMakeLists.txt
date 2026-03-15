@@ -35,7 +35,15 @@ CPMAddPackage(
 option(MOCK_HARDWARE "Use mock DHD instead of real Force Dimension SDK" ON)
 
 # ---------- Static library (all sources except main.cpp) ----------
-set(LIB_SOURCES "")
+set(LIB_SOURCES
+  src/force_fields/null_field.cpp
+  src/force_fields/constant_field.cpp
+  src/force_fields/spring_damper_field.cpp
+  src/force_fields/workspace_limit_field.cpp
+  src/force_fields/cart_pendulum_field.cpp
+  src/force_fields/composite_field.cpp
+  src/force_fields/field_factory.cpp
+)
 
 if(MOCK_HARDWARE)
   list(APPEND LIB_SOURCES src/dhd_mock.cpp)

@@ -20,14 +20,14 @@ Hapticore is a multi-process experimental control system for primate neurophysio
 - Pydantic v2 for configuration validation. Configs loaded from YAML files.
 - `transitions` library for behavioral state machines.
 - PsychoPy for visual stimulus rendering (always in its own process, OpenGL in main thread).
-- `pytest` for testing. Hardware tests marked with `@pytest.mark.hardware`.
+- `pytest` for testing Python. Google Test for testing C++. Hardware tests marked with `@pytest.mark.hardware`.
 
 ## Project structure
 
 ```
 hapticore/
 ├── python/hapticore/
-│   ├── core/           # messaging (EventBus, CommandClient/Server), config (Pydantic models), interfaces (Protocol ABCs)
+│   ├── core/           # messaging (EventBus, CommandClient/Server), config (Pydantic models), interfaces (Protocol ABCs), messages (dataclass schemas + msgpack serialization)
 │   ├── tasks/          # behavioral task implementations (subclass BaseTask)
 │   ├── hardware/       # real hardware interface implementations + mock implementations
 │   ├── display/        # PsychoPy display process
@@ -35,22 +35,26 @@ hapticore/
 │   ├── sync/           # Teensy serial interface
 │   └── cli/            # command-line entry points
 ├── cpp/haptic_server/  # C++ haptic server (CMake project)
+│   ├── src/            # source files (main, threads, force fields, DHD interface)
+│   ├── tests/          # Google Test unit and integration tests
+│   └── CMakeLists.txt
 ├── firmware/teensy_sync/  # Arduino/Teensy firmware
 ├── configs/            # YAML experiment configuration templates
-├── tests/              # unit/, integration/, hardware/ subdirectories
-├── docs/               # architecture.md, task_authoring_guide.md, ADRs in docs/adr/
+├── tests/              # Python tests: unit/, integration/, hardware/ subdirectories
+├── docs/               # architecture.md, task_authoring_guide.md, haptic_server_protocol.md, ADRs in docs/adr/
 └── pyproject.toml
 ```
 
 ## Key conventions
 
 - Every hardware interaction goes through a Protocol (ABC) interface defined in `core/interfaces.py`. Real implementations and mock implementations both satisfy the same Protocol. This is how we test without hardware.
-- Message topics are string prefixes on ZeroMQ multipart messages: `b"state"`, `b"event"`, `b"display"`, `b"command"`.
-- All timestamps use `time.monotonic()` within a session. Cross-system sync uses hardware TTL pulses, not software timestamps.
+- Message topics are byte-string prefixes on ZeroMQ multipart messages: `b"state"`, `b"event"`, `b"display"`, `b"trial"`.
+- All Python timestamps use `time.monotonic()` within a session. C++ uses `clock_gettime(CLOCK_MONOTONIC)`. Cross-system sync uses hardware TTL pulses, not software timestamps.
 - Pydantic models use `Field()` with constraints (gt, lt, ge, le) for all numeric parameters. Invalid configs must fail at load time, not during an experiment.
 - Tasks declare their state machine as class-level `STATES` and `TRANSITIONS` lists in `transitions` library format.
 - Force fields are parameterized C++ classes. Python sets parameters via commands; C++ evaluates forces at 4 kHz. Never compute forces in Python.
 - For tasks with collisions or rigid body dynamics, use the `PhysicsField` (Box2D wrapper) configured declaratively from Python. Do not write custom collision code per task. See `docs/task_authoring_guide.md` § "Approach B: Physics world".
+- The interface contract between C++ and Python is defined in `docs/haptic_server_protocol.md`. Both sides must conform to this spec.
 
 ## Build and test commands
 
@@ -64,14 +68,16 @@ ruff check python/               # lint
 mypy python/hapticore/core/      # type check core module (strict mode)
 
 # C++ haptic server
-cd cpp/haptic_server && mkdir -p build && cd build
-cmake .. -DMOCK_HARDWARE=ON      # use mock DHD for testing without robot
-cmake --build . --parallel
-ctest                            # run C++ tests
+cmake -S cpp/haptic_server -B build -DMOCK_HARDWARE=ON   # configure with mock DHD
+cmake --build build --parallel                            # build
+cd build && ctest --output-on-failure                     # run C++ tests
+# Or use the convenience script:
+./cpp/haptic_server/build.sh
 ```
 
 ## Common pitfalls an agent should avoid
 
+### Python pitfalls
 - Do not import PsychoPy in any process except the display process. PsychoPy creates an OpenGL context on import and must own the main thread.
 - Do not use `time.sleep()` for timing in the task controller. Use `time.monotonic()` polling or the TimerManager.
 - Do not use `json` for message serialization — use `msgpack`. JSON is too slow for 1 kHz messaging.
@@ -82,14 +88,39 @@ ctest                            # run C++ tests
 - Pydantic v2 uses `model_dump()` not `.dict()`, and `model_validate()` not `.parse_obj()`.
 - Do not write per-task collision detection code in C++. Use the `PhysicsField` with Box2D, configured from Python. Only write a new C++ ForceField subclass if you need a fundamentally new analytical force computation.
 
+### C++ pitfalls
+- Do NOT allocate heap memory in the haptic thread loop. Pre-allocate all buffers at startup. `new`, `malloc`, `std::vector::push_back`, `std::string` construction — none of these belong in the 4 kHz loop.
+- Do NOT use `std::mutex` or any blocking synchronization in the haptic thread. Use the lock-free triple buffer for state sharing and `std::atomic` for field pointer swaps.
+- Do NOT use `std::cout` or `printf` in the haptic loop. Logging I/O causes unpredictable latency. Log to a ring buffer and flush from a non-RT thread.
+- Use `MSGPACK_DEFINE_MAP` (named keys), not `MSGPACK_DEFINE_ARRAY` (positional). Python deserializes as a dict and constructs dataclasses by keyword. Positional encoding breaks if either side adds a field.
+- Compile with `-Wall -Wextra -Wpedantic -Werror` in debug builds. Fix all warnings.
+- Keep `ForceField::compute()` under 50 µs. Profile with a simple `clock_gettime` diff if in doubt. The full tick budget is 250 µs and includes DHD USB round-trip.
+- The Force Dimension SDK is proprietary and not in version control. It is located via the `FD_SDK_DIR` environment variable. When `MOCK_HARDWARE=ON`, the mock DHD replaces all SDK calls.
+- Spring stiffness above 3000 N/m causes instability at 4 kHz. Reject such values in `update_params()`.
+
 ## When working on tasks (python/hapticore/tasks/)
 
 Read `docs/task_authoring_guide.md` first. Every task subclasses `BaseTask`, declares PARAMS, STATES, TRANSITIONS, and implements `on_enter_<state>` / `on_exit_<state>` callbacks. The `transitions` library wires these automatically. See `tasks/template_task.py` for the pattern.
 
 ## When working on the C++ haptic server (cpp/haptic_server/)
 
-Read `docs/architecture.md` § "Tier 1: C++ haptic server" for the threading model. The haptic thread must never block on I/O. Use a triple buffer for lock-free state sharing between the haptic thread and publisher thread. Force fields inherit from `ForceField` base class and implement `compute(pos, vel, dt) -> force_vector`. The `PhysicsField` wraps Box2D and handles collision-based tasks. The server links against the Force Dimension SDK (pointed to by `FD_SDK_DIR` env var) and Box2D (pulled via CPM.cmake).
+Read `docs/architecture.md` § "Tier 1: C++ haptic server" and `docs/haptic_server_protocol.md` before writing code. The protocol doc defines every published state field, every command, and every parameter schema. Both the C++ server and the Python mock must implement it faithfully.
+
+The haptic thread must never block on I/O. Use a triple buffer for lock-free state sharing between the haptic thread and publisher thread. Force fields inherit from `ForceField` base class and implement `compute(pos, vel, dt) -> force_vector`. The `PhysicsField` wraps Box2D and handles collision-based tasks. The server links against the Force Dimension SDK (pointed to by `FD_SDK_DIR` env var) and Box2D (pulled via CPM.cmake).
+
+The server has three threads: haptic (SCHED_FIFO priority 80, 4 kHz), publisher (normal priority, configurable rate), and command (normal priority, polls ROUTER socket). See `docs/architecture.md` for the threading diagram.
 
 ## When working on configuration (python/hapticore/core/config.py)
 
 All config models use Pydantic v2 BaseModel. The top-level `ExperimentConfig` composes SubjectConfig, HapticConfig, DisplayConfig, RecordingConfig, TaskConfig, SyncConfig, and ZMQConfig. Load from YAML with `yaml.safe_load()` then validate with `ExperimentConfig.model_validate()`.
+
+## ADRs (architecture decision records)
+
+Before proposing alternatives to a settled decision, check `docs/adr/` for context:
+- `001`: ZeroMQ + msgpack over rpclib/gRPC/raw UDP
+- `002`: Parameterized force fields (Python sends params, C++ evaluates at 4 kHz)
+- `003`: Python over MonkeyLogic
+- `004`: DHD SDK directly, not CHAI3D
+- `005`: No Bonsai
+- `006`: Monorepo
+- `007`: Box2D for 2D physics

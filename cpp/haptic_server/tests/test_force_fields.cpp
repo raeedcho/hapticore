@@ -1,3 +1,7 @@
+#include <functional>
+#include <vector>
+#include <set>
+#include <string>
 #include <gtest/gtest.h>
 #include <cmath>
 #include <msgpack.hpp>

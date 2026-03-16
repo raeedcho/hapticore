@@ -8,4 +8,4 @@ PRESET="${1:-dev-mock}"
   cmake --preset "$PRESET"
   cmake --build --preset "$PRESET" --parallel "$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 )
-echo "Build complete. Run tests: cd $SCRIPT_DIR && ctest --preset $PRESET"
+echo "Build complete. To run tests, run ctest from the build directory for preset '$PRESET' (see CMakePresets.json)."

@@ -37,7 +37,7 @@ TEST(DhdMockTest, RecordsAppliedForces) {
     EXPECT_DOUBLE_EQ(mock.applied_forces()[1][1], 5.0);
 }
 
-TEST(DhdMockTest, ClearForceLog) {
+TEST(DhdMockTest, ClearsForceLog) {
     DhdMock mock;
     ASSERT_TRUE(mock.open());
 

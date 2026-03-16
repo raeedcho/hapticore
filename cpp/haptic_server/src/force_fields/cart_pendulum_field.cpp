@@ -1,34 +1,6 @@
 #include "cart_pendulum_field.hpp"
+#include "msgpack_helpers.hpp"
 #include <cmath>
-
-namespace {
-
-bool try_get_double(const msgpack::object& obj, double& out) {
-    switch (obj.type) {
-        case msgpack::type::FLOAT64:
-            out = obj.via.f64;
-            return true;
-        case msgpack::type::FLOAT32:
-            out = obj.via.f64;
-            return true;
-        case msgpack::type::POSITIVE_INTEGER:
-            out = static_cast<double>(obj.via.u64);
-            return true;
-        case msgpack::type::NEGATIVE_INTEGER:
-            out = static_cast<double>(obj.via.i64);
-            return true;
-        default:
-            return false;
-    }
-}
-
-bool try_get_bool(const msgpack::object& obj, bool& out) {
-    if (obj.type != msgpack::type::BOOLEAN) return false;
-    out = obj.via.boolean;
-    return true;
-}
-
-} // namespace
 
 CartPendulumField::State CartPendulumField::derivatives(const State& s, double x_accel) const {
     // φ̈ = (-g·sin(φ) - ẍ·cos(φ) - b·φ̇) / L
@@ -111,25 +83,25 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
         std::string key_str(key.via.str.ptr, key.via.str.size);
 
         if (key_str == "ball_mass") {
-            if (!try_get_double(val, new_ball_mass)) return false;
+            if (!haptic::try_get_double(val, new_ball_mass)) return false;
             has_any = true;
         } else if (key_str == "cup_mass") {
-            if (!try_get_double(val, new_cup_mass)) return false;
+            if (!haptic::try_get_double(val, new_cup_mass)) return false;
             has_any = true;
         } else if (key_str == "pendulum_length") {
-            if (!try_get_double(val, new_length)) return false;
+            if (!haptic::try_get_double(val, new_length)) return false;
             has_any = true;
         } else if (key_str == "gravity") {
-            if (!try_get_double(val, new_gravity)) return false;
+            if (!haptic::try_get_double(val, new_gravity)) return false;
             has_any = true;
         } else if (key_str == "angular_damping") {
-            if (!try_get_double(val, new_damping)) return false;
+            if (!haptic::try_get_double(val, new_damping)) return false;
             has_any = true;
         } else if (key_str == "spill_threshold") {
-            if (!try_get_double(val, new_threshold)) return false;
+            if (!haptic::try_get_double(val, new_threshold)) return false;
             has_any = true;
         } else if (key_str == "cup_inertia_enabled") {
-            if (!try_get_bool(val, new_inertia)) return false;
+            if (!haptic::try_get_bool(val, new_inertia)) return false;
             has_any = true;
         }
     }

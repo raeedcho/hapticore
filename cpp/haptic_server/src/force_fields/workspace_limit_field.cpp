@@ -1,30 +1,12 @@
 #include "workspace_limit_field.hpp"
+#include "msgpack_helpers.hpp"
 
 namespace {
 
-bool try_get_double(const msgpack::object& obj, double& out) {
-    switch (obj.type) {
-        case msgpack::type::FLOAT64:
-            out = obj.via.f64;
-            return true;
-        case msgpack::type::FLOAT32:
-            out = obj.via.f64;
-            return true;
-        case msgpack::type::POSITIVE_INTEGER:
-            out = static_cast<double>(obj.via.u64);
-            return true;
-        case msgpack::type::NEGATIVE_INTEGER:
-            out = static_cast<double>(obj.via.i64);
-            return true;
-        default:
-            return false;
-    }
-}
-
 bool try_get_bounds_axis(const msgpack::object& obj, double& min_val, double& max_val) {
     if (obj.type != msgpack::type::ARRAY || obj.via.array.size != 2) return false;
-    if (!try_get_double(obj.via.array.ptr[0], min_val)) return false;
-    if (!try_get_double(obj.via.array.ptr[1], max_val)) return false;
+    if (!haptic::try_get_double(obj.via.array.ptr[0], min_val)) return false;
+    if (!haptic::try_get_double(obj.via.array.ptr[1], max_val)) return false;
     return min_val <= max_val;
 }
 
@@ -86,10 +68,10 @@ bool WorkspaceLimitField::update_params(const msgpack::object& params) {
             }
             has_any = true;
         } else if (key_str == "stiffness") {
-            if (!try_get_double(val, new_stiffness)) return false;
+            if (!haptic::try_get_double(val, new_stiffness)) return false;
             has_any = true;
         } else if (key_str == "damping") {
-            if (!try_get_double(val, new_damping)) return false;
+            if (!haptic::try_get_double(val, new_damping)) return false;
             has_any = true;
         }
     }

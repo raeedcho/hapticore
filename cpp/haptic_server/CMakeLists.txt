@@ -8,9 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ---------- Compiler warnings ----------
 add_compile_options(-Wall -Wextra -Wpedantic)
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  add_compile_options(-Werror)
-endif()
+add_compile_options($<$<CONFIG:Debug>:-Werror>)
 
 # ---------- CPM dependency manager ----------
 include(cmake/CPM.cmake)
@@ -25,7 +23,7 @@ CPMAddPackage(
 CPMAddPackage(
   NAME msgpack-cxx
   GITHUB_REPOSITORY msgpack/msgpack-c
-  GIT_TAG cpp-6.1.1
+  GIT_TAG cpp-7.0.0
   OPTIONS "MSGPACK_USE_BOOST OFF"
           "MSGPACK_BUILD_TESTS OFF"
           "MSGPACK_BUILD_EXAMPLES OFF"
@@ -78,7 +76,8 @@ else()
 endif()
 
 # Platform libraries
-target_link_libraries(haptic_server_lib PUBLIC pthread)
+find_package(Threads REQUIRED)
+target_link_libraries(haptic_server_lib PUBLIC Threads::Threads)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   target_link_libraries(haptic_server_lib PUBLIC rt)
 endif()

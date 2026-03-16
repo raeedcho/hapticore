@@ -1,0 +1,93 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_STANDARD": "17"
+      }
+    },
+    {
+      "name": "dev-mock",
+      "displayName": "Development (Mock Hardware)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MOCK_HARDWARE": "ON"
+      }
+    },
+    {
+      "name": "dev-real",
+      "displayName": "Development (Real Hardware)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MOCK_HARDWARE": "OFF"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (Real Hardware)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOCK_HARDWARE": "OFF"
+      }
+    },
+    {
+      "name": "ci",
+      "displayName": "CI (Mock Hardware)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOCK_HARDWARE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev-mock",
+      "configurePreset": "dev-mock"
+    },
+    {
+      "name": "dev-real",
+      "configurePreset": "dev-real"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev-mock",
+      "configurePreset": "dev-mock",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

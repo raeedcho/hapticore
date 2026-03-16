@@ -11,3 +11,5 @@ build/
 .pytest_cache/
 .ruff_cache/
 *.ipc
+CMakeUserPresets.json
+compile_commands.json

@@ -69,3 +69,35 @@ jobs:
 
       - name: Run integration tests
         run: pytest tests/integration/ -v --timeout=120
+
+  test-cpp:
+    name: C++ haptic_server tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y ninja-build
+          else
+            brew install ninja
+          fi
+
+      - name: Configure
+        run: cmake --preset ci
+        working-directory: cpp/haptic_server
+
+      - name: Build
+        run: cmake --build --preset ci
+        working-directory: cpp/haptic_server
+
+      - name: Test
+        run: ctest --preset ci
+        working-directory: cpp/haptic_server

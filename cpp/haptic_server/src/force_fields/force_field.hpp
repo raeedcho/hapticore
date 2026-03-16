@@ -1,9 +1,7 @@
 #pragma once
-#include <array>
 #include <string>
 #include <msgpack.hpp>
-
-using Vec3 = std::array<double, 3>;
+#include "types.hpp"
 
 class ForceField {
 public:

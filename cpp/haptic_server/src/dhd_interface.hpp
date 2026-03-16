@@ -1,9 +1,7 @@
 #pragma once
-#include <array>
 #include <memory>
 #include <string>
-
-using Vec3 = std::array<double, 3>;
+#include "types.hpp"
 
 class DhdInterface {
 public:

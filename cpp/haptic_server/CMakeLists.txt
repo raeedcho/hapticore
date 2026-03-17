@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(haptic_server LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -29,6 +29,13 @@ CPMAddPackage(
           "MSGPACK_BUILD_EXAMPLES OFF"
 )
 
+CPMAddPackage(
+  NAME cppzmq
+  VERSION 4.10.0
+  GITHUB_REPOSITORY zeromq/cppzmq
+  OPTIONS "CPPZMQ_BUILD_TESTS OFF"
+)
+
 # ---------- Hardware mock option ----------
 option(MOCK_HARDWARE "Use mock DHD instead of real Force Dimension SDK" ON)
 
@@ -41,6 +48,9 @@ set(LIB_SOURCES
   src/force_fields/cart_pendulum_field.cpp
   src/force_fields/composite_field.cpp
   src/force_fields/field_factory.cpp
+  src/publisher_thread.cpp
+  src/command_thread.cpp
+  src/haptic_thread.cpp
 )
 
 if(MOCK_HARDWARE)
@@ -57,6 +67,7 @@ target_include_directories(haptic_server_lib PUBLIC
 
 target_link_libraries(haptic_server_lib PUBLIC
   msgpack-cxx
+  cppzmq
 )
 
 if(MOCK_HARDWARE)

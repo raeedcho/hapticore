@@ -3,19 +3,18 @@
 #include <chrono>
 #include <thread>
 
-#include <zmq.hpp>
-
 PublisherThread::PublisherThread(TripleBuffer<HapticStateData>& state_buffer,
                                  const std::string& pub_address,
-                                 double publish_rate_hz)
+                                 double publish_rate_hz,
+                                 zmq::context_t& ctx)
     : state_buffer_(state_buffer)
     , pub_address_(pub_address)
     , publish_rate_hz_(publish_rate_hz)
+    , ctx_(ctx)
 {}
 
 void PublisherThread::run(std::stop_token stop) {
-    zmq::context_t ctx(1);
-    zmq::socket_t pub(ctx, zmq::socket_type::pub);
+    zmq::socket_t pub(ctx_, zmq::socket_type::pub);
     pub.set(zmq::sockopt::linger, 0);
     pub.bind(pub_address_);
 
@@ -40,5 +39,4 @@ void PublisherThread::run(std::stop_token stop) {
     }
 
     pub.close();
-    ctx.close();
 }

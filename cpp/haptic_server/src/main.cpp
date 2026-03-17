@@ -6,6 +6,8 @@
 #include <string>
 #include <thread>
 
+#include <zmq.hpp>
+
 #include "command_data.hpp"
 #include "command_thread.hpp"
 #include "dhd_interface.hpp"
@@ -145,6 +147,9 @@ int main(int argc, char* argv[]) {
             return resp;
 
         } else if (cmd.method == "set_params") {
+            // To avoid a data race with the haptic thread's compute(),
+            // we reconstruct the field with the current type and new params,
+            // then atomically swap it in.
             auto current_field = haptic.get_field();
             if (!current_field) {
                 resp.success = false;
@@ -152,12 +157,20 @@ int main(int argc, char* argv[]) {
                 return resp;
             }
 
-            if (!current_field->update_params(cmd.params.get())) {
+            auto new_field = create_field(current_field->name());
+            if (!new_field) {
+                resp.success = false;
+                resp.error = "set_params: failed to reconstruct field";
+                return resp;
+            }
+
+            if (!new_field->update_params(cmd.params.get())) {
                 resp.success = false;
                 resp.error = "set_params: invalid params";
                 return resp;
             }
 
+            haptic.set_field(std::shared_ptr<ForceField>(std::move(new_field)));
             resp.success = true;
             return resp;
 
@@ -184,18 +197,18 @@ int main(int argc, char* argv[]) {
         }
     };
 
-    // 6. Create publisher and command threads
-    PublisherThread publisher(state_buffer, pub_address, pub_rate);
-    CommandThread commander(cmd_address, command_handler);
+    // 6. Create shared ZMQ context
+    zmq::context_t zmq_ctx(1);
 
-    // 7. Install signal handlers
+    // 7. Create publisher and command threads
+    PublisherThread publisher(state_buffer, pub_address, pub_rate, zmq_ctx);
+    CommandThread commander(cmd_address, command_handler, zmq_ctx);
+
+    // 8. Install signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    // 8. Launch threads
-    std::stop_source stop_source;
-    auto stop_token = stop_source.get_token();
-
+    // 9. Launch threads
     std::jthread haptic_thread([&haptic](std::stop_token st) {
         haptic.run(st);
     });
@@ -215,14 +228,14 @@ int main(int argc, char* argv[]) {
               << "  Force limit: " << force_limit << " N\n"
               << "Press Ctrl+C to stop.\n";
 
-    // 9. Wait for shutdown signal
+    // 10. Wait for shutdown signal
     while (!g_shutdown_requested.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     std::cout << "\nShutting down...\n";
 
-    // 10. Request all threads to stop
+    // 11. Request all threads to stop
     haptic_thread.request_stop();
     pub_thread.request_stop();
     cmd_thread.request_stop();

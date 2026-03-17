@@ -5,8 +5,6 @@
 
 #include <msgpack.hpp>
 
-#include "msgpack_helpers.hpp"
-
 /// Deserialized command from a DEALER client.
 struct CommandData {
     std::string command_id;

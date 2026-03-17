@@ -25,13 +25,13 @@ public:
 
     /// Swap to the latest published slot. Returns true if new data was available.
     bool swap_read_buffer() {
+        uint8_t current = shared_.load(std::memory_order_acquire);
+        if ((current & 1) == 0) return false;
+
         uint8_t new_val = static_cast<uint8_t>((read_idx_ << 1) | 0);
         uint8_t old_val = shared_.exchange(new_val, std::memory_order_acq_rel);
-        if (old_val & 1) {
-            read_idx_ = (old_val >> 1) & 0x3;
-            return true;
-        }
-        return false;
+        read_idx_ = (old_val >> 1) & 0x3;
+        return true;
     }
 
     /// Return a const reference to the current read slot.

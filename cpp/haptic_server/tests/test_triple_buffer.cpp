@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include "triple_buffer.hpp"
-#include <thread>
 #include <atomic>
+#include <array>
+#include <cstdint>
+#include <thread>
 
 TEST(TripleBufferTest, SingleThreadWriteReadBasic) {
     TripleBuffer<int> buf;
@@ -79,5 +81,54 @@ TEST(TripleBufferTest, MultiThreadMonotonicity) {
     }
     EXPECT_GT(last_seen, 0) << "Reader should have seen at least one value";
 
+    writer.join();
+}
+
+TEST(TripleBufferTest, MultiThreadStructNoTornReads) {
+    struct Snapshot {
+        uint64_t seq{0};
+        uint64_t inv_seq{~uint64_t{0}};
+        std::array<uint64_t, 8> payload{};
+        uint64_t checksum{0};
+    };
+
+    auto compute_checksum = [](const Snapshot& s) {
+        uint64_t sum = s.seq ^ s.inv_seq;
+        for (uint64_t v : s.payload) sum ^= v;
+        return sum;
+    };
+
+    TripleBuffer<Snapshot> buf;
+    constexpr uint64_t NUM_WRITES = 200000;
+    std::atomic<bool> done{false};
+
+    std::thread writer([&]() {
+        for (uint64_t i = 1; i <= NUM_WRITES; ++i) {
+            Snapshot& s = buf.write_buffer();
+            s.seq = i;
+            s.inv_seq = ~i;
+            for (size_t j = 0; j < s.payload.size(); ++j) {
+                s.payload[j] = (i * 1315423911ULL) ^ static_cast<uint64_t>(j);
+            }
+            s.checksum = compute_checksum(s);
+            buf.publish();
+        }
+        done.store(true, std::memory_order_release);
+    });
+
+    uint64_t last_seen = 0;
+    for (;;) {
+        if (buf.swap_read_buffer()) {
+            const Snapshot& s = buf.read_buffer();
+            EXPECT_EQ(s.inv_seq, ~s.seq);
+            EXPECT_EQ(s.checksum, compute_checksum(s));
+            EXPECT_GE(s.seq, last_seen);
+            last_seen = s.seq;
+        } else if (done.load(std::memory_order_acquire)) {
+            break;
+        }
+    }
+
+    EXPECT_GT(last_seen, 0);
     writer.join();
 }

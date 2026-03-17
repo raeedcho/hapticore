@@ -142,13 +142,6 @@ int main(int argc, char* argv[]) {
 
             haptic.set_field(std::shared_ptr<ForceField>(std::move(new_field)));
             resp.success = true;
-            // Build result map using msgpack objects owned by the response sbuffer
-            // We pack and re-unpack to get stable msgpack::object references
-            // For simplicity, we leave result empty and build it inline in pack()
-            // Actually, we need to provide result as map<string, object>
-            // Let's keep it simple - result will be empty for now, 
-            // we'll add a custom pack for set_force_field result
-            resp.success = true;
             return resp;
 
         } else if (cmd.method == "set_params") {

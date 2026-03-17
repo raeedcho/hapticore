@@ -158,7 +158,7 @@ TEST_F(PublisherThreadTest, PublishRate) {
         auto r = sub.recv(topic, zmq::recv_flags::none);
         if (!r.has_value()) break;
         auto r2 = sub.recv(data, zmq::recv_flags::none);
-        (void)r2;
+        ASSERT_TRUE(r2.has_value());
         ++count;
     }
     auto end = std::chrono::steady_clock::now();
@@ -366,7 +366,7 @@ TEST_F(CommandThreadTest, GarbageDoesNotCrash) {
     res = dealer.recv(re, zmq::recv_flags::none);
     ASSERT_TRUE(res.has_value());
     auto res2 = dealer.recv(rp, zmq::recv_flags::none);
-    (void)res2;
+    ASSERT_TRUE(res2.has_value());
 
     auto oh = msgpack::unpack(static_cast<const char*>(rp.data()), rp.size());
     auto map = oh.get().via.map;

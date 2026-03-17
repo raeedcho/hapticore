@@ -149,7 +149,10 @@ int main(int argc, char* argv[]) {
         } else if (cmd.method == "set_params") {
             // To avoid a data race with the haptic thread's compute(),
             // we reconstruct the field with the current type and new params,
-            // then atomically swap it in.
+            // then atomically swap it in. Note: this discards any accumulated
+            // internal state (e.g., CartPendulumField's pendulum angle). For
+            // fields with internal dynamics, use set_force_field to fully
+            // specify the field, or call reset() on the new field as needed.
             auto current_field = haptic.get_field();
             if (!current_field) {
                 resp.success = false;

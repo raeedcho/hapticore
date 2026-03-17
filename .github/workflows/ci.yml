@@ -84,11 +84,11 @@ jobs:
 
       - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libzmq3-dev
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja
+        run: brew install ninja zeromq
 
       - name: Configure
         run: cmake --preset ci
@@ -101,3 +101,65 @@ jobs:
       - name: Test
         run: ctest --preset ci
         working-directory: cpp/haptic_server
+
+      - name: Smoke test
+        run: ./build/ci/haptic_server --help
+        working-directory: cpp/haptic_server
+
+  test-cpp-tsan:
+    name: C++ ThreadSanitizer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install libzmq
+        run: sudo apt-get install -y libzmq3-dev
+
+      - name: Configure
+        run: cmake --preset tsan
+        working-directory: cpp/haptic_server
+
+      - name: Build
+        run: cmake --build --preset tsan
+        working-directory: cpp/haptic_server
+
+      - name: Test
+        run: ctest --preset tsan
+        working-directory: cpp/haptic_server
+
+  test-cross-language:
+    name: Cross-language serialization
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libzmq3-dev
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install Python package
+        run: python -m pip install -e ".[dev]"
+
+      - name: Build C++ (mock)
+        run: |
+          cmake --preset ci
+          cmake --build --preset ci
+        working-directory: cpp/haptic_server
+
+      - name: Run cross-language test
+        run: pytest tests/integration/test_cross_language.py -v

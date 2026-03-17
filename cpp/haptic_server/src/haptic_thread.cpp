@@ -25,6 +25,18 @@ HapticThread::HapticThread(std::unique_ptr<DhdInterface> dhd,
 {
     // Start with NullField
     active_field_.store(std::make_shared<NullField>());
+
+    // Pre-construct safety fallback field for heartbeat timeout.
+    // Damping-only (stiffness=0, damping=10) — no heap allocation in the hot path.
+    auto safe = std::make_shared<SpringDamperField>();
+    msgpack::sbuffer sbuf;
+    msgpack::packer<msgpack::sbuffer> pk(sbuf);
+    pk.pack_map(2);
+    pk.pack("stiffness"); pk.pack(0.0);
+    pk.pack("damping");   pk.pack(10.0);
+    auto oh = msgpack::unpack(sbuf.data(), sbuf.size());
+    safe->update_params(oh.get());
+    safety_field_ = std::move(safe);
 }
 
 void HapticThread::run(std::stop_token stop) {
@@ -68,19 +80,9 @@ void HapticThread::run(std::stop_token stop) {
                 std::cerr << "Warning: heartbeat timeout — reverting to NullField\n";
                 heartbeat_warned = true;
             }
-            // Swap to NullField with light damping
-            auto safe_field = std::make_shared<SpringDamperField>();
-            // SpringDamperField defaults to stiffness=100, damping=5.
-            // For safety fallback: stiffness=0, damping=10
-            msgpack::sbuffer sbuf;
-            msgpack::packer<msgpack::sbuffer> pk(sbuf);
-            pk.pack_map(2);
-            pk.pack("stiffness"); pk.pack(0.0);
-            pk.pack("damping");   pk.pack(10.0);
-            auto oh = msgpack::unpack(sbuf.data(), sbuf.size());
-            safe_field->update_params(oh.get());
-            active_field_.store(safe_field);
-            field = safe_field;
+            // Swap to pre-constructed safety field (no heap allocation)
+            active_field_.store(safety_field_);
+            field = safety_field_;
         } else if (last_hb > 0.0) {
             heartbeat_warned = false;
         }
@@ -132,6 +134,9 @@ void HapticThread::run(std::stop_token stop) {
         }
 #endif
     }
+
+    // Close the device on shutdown
+    dhd_->close();
 }
 
 void HapticThread::set_field(std::shared_ptr<ForceField> field) {

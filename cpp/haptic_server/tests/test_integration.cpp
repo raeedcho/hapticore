@@ -46,7 +46,8 @@ TEST_F(PublisherThreadTest, PublishesStateMessages) {
     state_buffer.publish();
 
     // Start publisher
-    PublisherThread publisher(state_buffer, addr, 200.0);
+    zmq::context_t pub_ctx(1);
+    PublisherThread publisher(state_buffer, addr, 200.0, pub_ctx);
     std::jthread pub_thread([&publisher](std::stop_token st) {
         publisher.run(st);
     });
@@ -123,7 +124,8 @@ TEST_F(PublisherThreadTest, PublishRate) {
     pk.pack_map(0);
     state_buffer.publish();
 
-    PublisherThread publisher(state_buffer, addr, 200.0);
+    zmq::context_t pub_ctx2(1);
+    PublisherThread publisher(state_buffer, addr, 200.0, pub_ctx2);
     std::jthread pub_thread([&publisher](std::stop_token st) {
         publisher.run(st);
     });
@@ -164,10 +166,10 @@ TEST_F(PublisherThreadTest, PublishRate) {
     auto end = std::chrono::steady_clock::now();
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
-    // At 200 Hz, 20 messages should take ~100 ms. Allow ±50% tolerance.
+    // At 200 Hz, 20 messages should take ~100 ms. Allow generous CI tolerance.
     EXPECT_GE(count, 20);
-    EXPECT_GT(elapsed_ms, 50);   // At least 50 ms
-    EXPECT_LT(elapsed_ms, 300);  // No more than 300 ms (generous tolerance for CI)
+    EXPECT_GT(elapsed_ms, 60);   // At least 60 ms
+    EXPECT_LT(elapsed_ms, 200);  // No more than 200 ms
 
     writer.request_stop();
     pub_thread.request_stop();
@@ -195,7 +197,8 @@ TEST_F(CommandThreadTest, EchoHandler) {
         return resp;
     };
 
-    CommandThread commander(addr, echo_handler);
+    zmq::context_t cmd_ctx(1);
+    CommandThread commander(addr, echo_handler, cmd_ctx);
     std::jthread cmd_thread([&commander](std::stop_token st) {
         commander.run(st);
     });
@@ -264,7 +267,8 @@ TEST_F(CommandThreadTest, UnknownMethodReturnsError) {
         return resp;
     };
 
-    CommandThread commander(addr, handler);
+    zmq::context_t cmd_ctx2(1);
+    CommandThread commander(addr, handler, cmd_ctx2);
     std::jthread cmd_thread([&commander](std::stop_token st) {
         commander.run(st);
     });
@@ -324,7 +328,8 @@ TEST_F(CommandThreadTest, GarbageDoesNotCrash) {
         return resp;
     };
 
-    CommandThread commander(addr, handler);
+    zmq::context_t cmd_ctx3(1);
+    CommandThread commander(addr, handler, cmd_ctx3);
     std::jthread cmd_thread([&commander](std::stop_token st) {
         commander.run(st);
     });
@@ -436,8 +441,8 @@ TEST(HapticThreadTest, ForceClamping) {
     auto* mock_ptr = mock.get();
     mock_ptr->open();
 
-    // Large offset to generate force > 20 N
-    // With stiffness=1000, offset=0.1m -> force=100N (way above 20N limit)
+    // With stiffness=1000 N/m and offset=0.1m, spring force = 100N,
+    // which is well above the 20N force_limit. Verify clamping works.
     mock_ptr->set_mock_position({0.1, 0.0, 0.0});
     mock_ptr->set_mock_velocity({0.0, 0.0, 0.0});
 

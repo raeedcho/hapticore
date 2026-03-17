@@ -3,17 +3,16 @@
 #include <iostream>
 #include <vector>
 
-#include <zmq.hpp>
-
 CommandThread::CommandThread(const std::string& router_address,
-                             Handler handler)
+                             Handler handler,
+                             zmq::context_t& ctx)
     : router_address_(router_address)
     , handler_(std::move(handler))
+    , ctx_(ctx)
 {}
 
 void CommandThread::run(std::stop_token stop) {
-    zmq::context_t ctx(1);
-    zmq::socket_t router(ctx, zmq::socket_type::router);
+    zmq::socket_t router(ctx_, zmq::socket_type::router);
     router.set(zmq::sockopt::linger, 0);
     router.bind(router_address_);
 
@@ -71,5 +70,4 @@ void CommandThread::run(std::stop_token stop) {
     }
 
     router.close();
-    ctx.close();
 }

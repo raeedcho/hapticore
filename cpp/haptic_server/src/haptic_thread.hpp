@@ -28,6 +28,9 @@ public:
     void update_heartbeat();
     bool heartbeat_expired() const;
 
+    // Access the underlying DHD interface (for shutdown)
+    DhdInterface* dhd() const { return dhd_.get(); }
+
 private:
     std::unique_ptr<DhdInterface> dhd_;
     TripleBuffer<HapticStateData>& state_buffer_;
@@ -38,6 +41,9 @@ private:
     std::atomic<std::shared_ptr<ForceField>> active_field_;
     std::atomic<double> last_heartbeat_time_{0.0};
     static constexpr double HEARTBEAT_TIMEOUT_S = 0.5;
+
+    // Pre-constructed safety field for heartbeat timeout (no heap allocs in hot path)
+    std::shared_ptr<ForceField> safety_field_;
 
     Vec3 clamp_force(const Vec3& force) const;
     static double get_monotonic_time();

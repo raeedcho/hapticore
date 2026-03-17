@@ -21,3 +21,7 @@ if(MOCK_HARDWARE)
     target_link_libraries(test_integration PRIVATE haptic_server_lib GTest::gtest_main)
     gtest_discover_tests(test_integration)
 endif()
+
+# Helper binary for cross-language serialization tests
+add_executable(write_test_state write_test_state.cpp)
+target_link_libraries(write_test_state PRIVATE haptic_server_lib)

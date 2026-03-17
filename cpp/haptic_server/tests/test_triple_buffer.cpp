@@ -33,6 +33,23 @@ TEST(TripleBufferTest, NoNewDataReturnsFalse) {
     EXPECT_FALSE(buf.swap_read_buffer());
 }
 
+TEST(TripleBufferTest, NoNewDataSwapDoesNotReturnReadSlotToWriter) {
+    TripleBuffer<int> buf;
+
+    buf.write_buffer() = 1;
+    buf.publish();
+    ASSERT_TRUE(buf.swap_read_buffer());
+
+    const int* read_slot_before = &buf.read_buffer();
+    EXPECT_FALSE(buf.swap_read_buffer());
+
+    buf.write_buffer() = 2;
+    buf.publish();
+    int* write_slot_after_publish = &buf.write_buffer();
+
+    EXPECT_NE(write_slot_after_publish, read_slot_before);
+}
+
 TEST(TripleBufferTest, MultiThreadMonotonicity) {
     TripleBuffer<int> buf;
     constexpr int NUM_WRITES = 100000;

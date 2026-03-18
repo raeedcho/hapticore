@@ -159,7 +159,9 @@ TEST_F(PublisherThreadTest, PublishRate) {
         }
     });
 
+#ifdef __linux__
     auto start = std::chrono::steady_clock::now();
+#endif
     int count = 0;
     while (count < 20) {
         zmq::message_t topic, data;
@@ -169,8 +171,10 @@ TEST_F(PublisherThreadTest, PublishRate) {
         ASSERT_TRUE(r2.has_value());
         ++count;
     }
+#ifdef __linux__
     auto end = std::chrono::steady_clock::now();
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+#endif
 
     // At 200 Hz, 20 messages should take ~100 ms.
     // On macOS CI (virtualized Apple Silicon), sleep granularity is so poor

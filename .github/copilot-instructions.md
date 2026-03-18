@@ -93,7 +93,7 @@ cd build && ctest --output-on-failure                     # run C++ tests
 - Do NOT use `std::mutex` or any blocking synchronization in the haptic thread. Use the lock-free triple buffer for state sharing and `std::atomic` for field pointer swaps.
 - Do NOT use `std::cout` or `printf` in the haptic loop. Logging I/O causes unpredictable latency. Log to a ring buffer and flush from a non-RT thread.
 - Use `MSGPACK_DEFINE_MAP` (named keys), not `MSGPACK_DEFINE_ARRAY` (positional). Python deserializes as a dict and constructs dataclasses by keyword. Positional encoding breaks if either side adds a field.
-- Compile with `-Wall -Wextra -Wpedantic -Werror` in debug builds. Fix all warnings.
+- Compile with `-Wall -Wextra -Wpedantic -Werror` in all builds. Fix all warnings. Make sure to build in both a Linux and macOS environment to catch platform-specific warnings.
 - Keep `ForceField::compute()` under 50 µs. Profile with a simple `clock_gettime` diff if in doubt. The full tick budget is 250 µs and includes DHD USB round-trip.
 - The Force Dimension SDK is proprietary and not in version control. It is located via the `FD_SDK_DIR` environment variable. When `MOCK_HARDWARE=ON`, the mock DHD replaces all SDK calls.
 - Spring stiffness above 3000 N/m causes instability at 4 kHz. Reject such values in `update_params()`.

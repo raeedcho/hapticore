@@ -17,11 +17,13 @@
 HapticThread::HapticThread(std::unique_ptr<DhdInterface> dhd,
                            TripleBuffer<HapticStateData>& state_buffer,
                            double force_limit_n,
-                           int cpu_core)
+                           [[maybe_unused]] int cpu_core)
     : dhd_(std::move(dhd))
     , state_buffer_(state_buffer)
     , force_limit_n_(force_limit_n)
+#ifdef __linux__
     , cpu_core_(cpu_core)
+#endif
 {
     // Start with NullField
     active_field_ = std::make_shared<NullField>();

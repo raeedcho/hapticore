@@ -38,8 +38,11 @@ private:
     std::unique_ptr<DhdInterface> dhd_;
     TripleBuffer<HapticStateData>& state_buffer_;
     double force_limit_n_;
-    int cpu_core_;
     uint64_t sequence_ = 0;
+
+#ifdef __linux__
+    int cpu_core_;
+#endif
 
     // Mutex-protected shared_ptr for cross-thread field swap.
     // Uncontended lock/unlock is ~25ns, well within the 250µs tick budget.

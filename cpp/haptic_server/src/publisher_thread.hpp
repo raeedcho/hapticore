@@ -1,7 +1,7 @@
 #pragma once
 
+#include <atomic>
 #include <string>
-#include <stop_token>
 
 #include <zmq.hpp>
 
@@ -15,7 +15,7 @@ public:
                     double publish_rate_hz,
                     zmq::context_t& ctx);
 
-    void run(std::stop_token stop);
+    void run(std::atomic<bool>& stop_requested);
 
 private:
     TripleBuffer<HapticStateData>& state_buffer_;

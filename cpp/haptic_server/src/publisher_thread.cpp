@@ -13,7 +13,7 @@ PublisherThread::PublisherThread(TripleBuffer<HapticStateData>& state_buffer,
     , ctx_(ctx)
 {}
 
-void PublisherThread::run(std::stop_token stop) {
+void PublisherThread::run(std::atomic<bool>& stop_requested) {
     zmq::socket_t pub(ctx_, zmq::socket_type::pub);
     pub.set(zmq::sockopt::linger, 0);
     pub.bind(pub_address_);
@@ -21,7 +21,7 @@ void PublisherThread::run(std::stop_token stop) {
     auto interval = std::chrono::microseconds(
         static_cast<long long>(1'000'000.0 / publish_rate_hz_));
 
-    while (!stop.stop_requested()) {
+    while (!stop_requested.load(std::memory_order_relaxed)) {
         if (state_buffer_.swap_read_buffer()) {
             const auto& state = state_buffer_.read_buffer();
             msgpack::sbuffer buf;

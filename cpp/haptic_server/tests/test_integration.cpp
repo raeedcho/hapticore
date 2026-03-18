@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -48,8 +49,9 @@ TEST_F(PublisherThreadTest, PublishesStateMessages) {
     // Start publisher
     zmq::context_t pub_ctx(1);
     PublisherThread publisher(state_buffer, addr, 200.0, pub_ctx);
-    std::jthread pub_thread([&publisher](std::stop_token st) {
-        publisher.run(st);
+    std::atomic<bool> pub_stop{false};
+    std::thread pub_thread([&publisher, &pub_stop]() {
+        publisher.run(pub_stop);
     });
 
     // Connect subscriber
@@ -107,7 +109,8 @@ TEST_F(PublisherThreadTest, PublishesStateMessages) {
     EXPECT_TRUE(found_sequence);
     EXPECT_TRUE(found_active_field);
 
-    pub_thread.request_stop();
+    pub_stop.store(true);
+    pub_thread.join();
     sub.close();
     ctx.close();
 }
@@ -126,8 +129,9 @@ TEST_F(PublisherThreadTest, PublishRate) {
 
     zmq::context_t pub_ctx2(1);
     PublisherThread publisher(state_buffer, addr, 200.0, pub_ctx2);
-    std::jthread pub_thread([&publisher](std::stop_token st) {
-        publisher.run(st);
+    std::atomic<bool> pub_stop{false};
+    std::thread pub_thread([&publisher, &pub_stop]() {
+        publisher.run(pub_stop);
     });
 
     zmq::context_t ctx(1);
@@ -139,9 +143,10 @@ TEST_F(PublisherThreadTest, PublishRate) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Continuously publish fresh data
-    std::jthread writer([&state_buffer](std::stop_token st) {
+    std::atomic<bool> writer_stop{false};
+    std::thread writer([&state_buffer, &writer_stop]() {
         uint64_t seq = 0;
-        while (!st.stop_requested()) {
+        while (!writer_stop.load(std::memory_order_relaxed)) {
             auto& s = state_buffer.write_buffer();
             s.sequence = seq++;
             s.active_field = "null";
@@ -171,8 +176,10 @@ TEST_F(PublisherThreadTest, PublishRate) {
     EXPECT_GT(elapsed_ms, 60);   // At least 60 ms
     EXPECT_LT(elapsed_ms, 200);  // No more than 200 ms
 
-    writer.request_stop();
-    pub_thread.request_stop();
+    writer_stop.store(true);
+    writer.join();
+    pub_stop.store(true);
+    pub_thread.join();
     sub.close();
     ctx.close();
 }
@@ -199,8 +206,9 @@ TEST_F(CommandThreadTest, EchoHandler) {
 
     zmq::context_t cmd_ctx(1);
     CommandThread commander(addr, echo_handler, cmd_ctx);
-    std::jthread cmd_thread([&commander](std::stop_token st) {
-        commander.run(st);
+    std::atomic<bool> cmd_stop{false};
+    std::thread cmd_thread([&commander, &cmd_stop]() {
+        commander.run(cmd_stop);
     });
 
     // Connect DEALER
@@ -251,7 +259,8 @@ TEST_F(CommandThreadTest, EchoHandler) {
     EXPECT_TRUE(found_id);
     EXPECT_TRUE(found_success);
 
-    cmd_thread.request_stop();
+    cmd_stop.store(true);
+    cmd_thread.join();
     dealer.close();
     ctx.close();
 }
@@ -269,8 +278,9 @@ TEST_F(CommandThreadTest, UnknownMethodReturnsError) {
 
     zmq::context_t cmd_ctx2(1);
     CommandThread commander(addr, handler, cmd_ctx2);
-    std::jthread cmd_thread([&commander](std::stop_token st) {
-        commander.run(st);
+    std::atomic<bool> cmd_stop{false};
+    std::thread cmd_thread([&commander, &cmd_stop]() {
+        commander.run(cmd_stop);
     });
 
     zmq::context_t ctx(1);
@@ -313,7 +323,8 @@ TEST_F(CommandThreadTest, UnknownMethodReturnsError) {
         }
     }
 
-    cmd_thread.request_stop();
+    cmd_stop.store(true);
+    cmd_thread.join();
     dealer.close();
     ctx.close();
 }
@@ -330,8 +341,9 @@ TEST_F(CommandThreadTest, GarbageDoesNotCrash) {
 
     zmq::context_t cmd_ctx3(1);
     CommandThread commander(addr, handler, cmd_ctx3);
-    std::jthread cmd_thread([&commander](std::stop_token st) {
-        commander.run(st);
+    std::atomic<bool> cmd_stop{false};
+    std::thread cmd_thread([&commander, &cmd_stop]() {
+        commander.run(cmd_stop);
     });
 
     zmq::context_t ctx(1);
@@ -383,7 +395,8 @@ TEST_F(CommandThreadTest, GarbageDoesNotCrash) {
         }
     }
 
-    cmd_thread.request_stop();
+    cmd_stop.store(true);
+    cmd_thread.join();
     dealer.close();
     ctx.close();
 }
@@ -417,12 +430,13 @@ TEST(HapticThreadTest, SpringDamperForceDirection) {
     haptic.update_heartbeat();
 
     // Run for a short time
-    std::jthread haptic_thread([&haptic](std::stop_token st) {
-        haptic.run(st);
+    std::atomic<bool> haptic_stop{false};
+    std::thread haptic_thread([&haptic, &haptic_stop]() {
+        haptic.run(haptic_stop);
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    haptic_thread.request_stop();
+    haptic_stop.store(true);
     haptic_thread.join();
 
     // Check applied forces direction: spring at center (0,0,0), position at (0.05,0,0)
@@ -462,12 +476,13 @@ TEST(HapticThreadTest, ForceClamping) {
 
     haptic.update_heartbeat();
 
-    std::jthread haptic_thread([&haptic](std::stop_token st) {
-        haptic.run(st);
+    std::atomic<bool> haptic_stop{false};
+    std::thread haptic_thread([&haptic, &haptic_stop]() {
+        haptic.run(haptic_stop);
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    haptic_thread.request_stop();
+    haptic_stop.store(true);
     haptic_thread.join();
 
     auto& forces = mock_ptr->applied_forces();
@@ -499,14 +514,15 @@ TEST(HapticThreadTest, HeartbeatTimeout) {
     // last_heartbeat_time_ starts at 0.0)
     haptic.update_heartbeat();
 
-    std::jthread haptic_thread([&haptic](std::stop_token st) {
-        haptic.run(st);
+    std::atomic<bool> haptic_stop{false};
+    std::thread haptic_thread([&haptic, &haptic_stop]() {
+        haptic.run(haptic_stop);
     });
 
     // Wait for heartbeat to expire (500ms + margin)
     std::this_thread::sleep_for(std::chrono::milliseconds(700));
 
-    haptic_thread.request_stop();
+    haptic_stop.store(true);
     haptic_thread.join();
 
     // After timeout, forces should approach zero (NullField with damping only,
@@ -536,12 +552,13 @@ TEST(HapticThreadTest, SequenceMonotonicallyIncreasing) {
 
     haptic.update_heartbeat();
 
-    std::jthread haptic_thread([&haptic](std::stop_token st) {
-        haptic.run(st);
+    std::atomic<bool> haptic_stop{false};
+    std::thread haptic_thread([&haptic, &haptic_stop]() {
+        haptic.run(haptic_stop);
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    haptic_thread.request_stop();
+    haptic_stop.store(true);
     haptic_thread.join();
 
     // Read from triple buffer — should have the latest sequence

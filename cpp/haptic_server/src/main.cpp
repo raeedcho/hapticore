@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -36,6 +37,14 @@ void print_usage() {
               << "  --help                Print this help\n";
 }
 
+/// Helper to pack a result map with a single string value: {"key": "value"}
+void pack_active_field_result(msgpack::sbuffer& buf, const std::string& field_name) {
+    msgpack::packer<msgpack::sbuffer> pk(buf);
+    pk.pack_map(1);
+    pk.pack("active_field");
+    pk.pack(field_name);
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -57,11 +66,38 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--cmd-address" && i + 1 < argc) {
             cmd_address = argv[++i];
         } else if (arg == "--pub-rate" && i + 1 < argc) {
-            pub_rate = std::stod(argv[++i]);
+            try {
+                pub_rate = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "Error: --pub-rate requires a numeric value\n";
+                return EXIT_FAILURE;
+            }
+            if (pub_rate <= 0.0) {
+                std::cerr << "Error: --pub-rate must be positive\n";
+                return EXIT_FAILURE;
+            }
         } else if (arg == "--force-limit" && i + 1 < argc) {
-            force_limit = std::stod(argv[++i]);
+            try {
+                force_limit = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "Error: --force-limit requires a numeric value\n";
+                return EXIT_FAILURE;
+            }
+            if (force_limit <= 0.0) {
+                std::cerr << "Error: --force-limit must be positive\n";
+                return EXIT_FAILURE;
+            }
         } else if (arg == "--cpu-core" && i + 1 < argc) {
-            cpu_core = std::stoi(argv[++i]);
+            try {
+                cpu_core = std::stoi(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "Error: --cpu-core requires an integer value\n";
+                return EXIT_FAILURE;
+            }
+            if (cpu_core < 0) {
+                std::cerr << "Error: --cpu-core must be non-negative\n";
+                return EXIT_FAILURE;
+            }
         } else {
             std::cerr << "Unknown option: " << arg << "\n";
             print_usage();
@@ -144,6 +180,7 @@ int main(int argc, char* argv[]) {
 
             haptic.set_field(std::shared_ptr<ForceField>(std::move(new_field)));
             resp.success = true;
+            pack_active_field_result(resp.result_buf, field_type);
             return resp;
 
         } else if (cmd.method == "set_params") {
@@ -160,7 +197,8 @@ int main(int argc, char* argv[]) {
                 return resp;
             }
 
-            auto new_field = create_field(current_field->name());
+            std::string field_name = current_field->name();
+            auto new_field = create_field(field_name);
             if (!new_field) {
                 resp.success = false;
                 resp.error = "set_params: failed to reconstruct field";
@@ -175,22 +213,39 @@ int main(int argc, char* argv[]) {
 
             haptic.set_field(std::shared_ptr<ForceField>(std::move(new_field)));
             resp.success = true;
+            pack_active_field_result(resp.result_buf, field_name);
             return resp;
 
         } else if (cmd.method == "get_state") {
+            // Return a snapshot of the current HapticState
+            auto state = haptic.get_latest_state();
+            state.pack(resp.result_buf);
             resp.success = true;
-            // State is available via the publisher; this is a sync snapshot
             return resp;
 
         } else if (cmd.method == "heartbeat") {
             haptic.update_heartbeat();
             resp.success = true;
+            // Per protocol: {"timeout_ms": 500}
+            {
+                msgpack::packer<msgpack::sbuffer> pk(resp.result_buf);
+                pk.pack_map(1);
+                pk.pack("timeout_ms");
+                pk.pack(500);
+            }
             return resp;
 
         } else if (cmd.method == "stop") {
             haptic.set_field(std::make_shared<NullField>());
             g_shutdown_requested.store(true);
             resp.success = true;
+            // Per protocol: {"shutting_down": true}
+            {
+                msgpack::packer<msgpack::sbuffer> pk(resp.result_buf);
+                pk.pack_map(1);
+                pk.pack("shutting_down");
+                pk.pack(true);
+            }
             return resp;
 
         } else {
@@ -211,17 +266,20 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    // 9. Launch threads
-    std::jthread haptic_thread([&haptic](std::stop_token st) {
-        haptic.run(st);
+    // 9. Shared stop flag for all threads
+    std::atomic<bool> stop_flag{false};
+
+    // 10. Launch threads
+    std::thread haptic_thread([&haptic, &stop_flag]() {
+        haptic.run(stop_flag);
     });
 
-    std::jthread pub_thread([&publisher](std::stop_token st) {
-        publisher.run(st);
+    std::thread pub_thread([&publisher, &stop_flag]() {
+        publisher.run(stop_flag);
     });
 
-    std::jthread cmd_thread([&commander](std::stop_token st) {
-        commander.run(st);
+    std::thread cmd_thread([&commander, &stop_flag]() {
+        commander.run(stop_flag);
     });
 
     std::cout << "Haptic server running.\n"
@@ -231,19 +289,19 @@ int main(int argc, char* argv[]) {
               << "  Force limit: " << force_limit << " N\n"
               << "Press Ctrl+C to stop.\n";
 
-    // 10. Wait for shutdown signal
+    // 11. Wait for shutdown signal
     while (!g_shutdown_requested.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     std::cout << "\nShutting down...\n";
 
-    // 11. Request all threads to stop
-    haptic_thread.request_stop();
-    pub_thread.request_stop();
-    cmd_thread.request_stop();
+    // 12. Signal all threads to stop and join
+    stop_flag.store(true);
 
-    // jthread destructors will join automatically
+    haptic_thread.join();
+    pub_thread.join();
+    cmd_thread.join();
 
     std::cout << "Haptic server stopped.\n";
     return EXIT_SUCCESS;

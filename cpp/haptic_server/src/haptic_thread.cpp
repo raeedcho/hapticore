@@ -24,7 +24,7 @@ HapticThread::HapticThread(std::unique_ptr<DhdInterface> dhd,
     , cpu_core_(cpu_core)
 {
     // Start with NullField
-    active_field_.store(std::make_shared<NullField>());
+    active_field_ = std::make_shared<NullField>();
 
     // Pre-construct safety fallback field for heartbeat timeout.
     // Damping-only (stiffness=0, damping=10) — no heap allocation in the hot path.
@@ -39,7 +39,7 @@ HapticThread::HapticThread(std::unique_ptr<DhdInterface> dhd,
     safety_field_ = std::move(safe);
 }
 
-void HapticThread::run(std::stop_token stop) {
+void HapticThread::run(std::atomic<bool>& stop_requested) {
 #ifdef __linux__
     mlockall(MCL_CURRENT | MCL_FUTURE);
     struct sched_param param{};
@@ -59,9 +59,7 @@ void HapticThread::run(std::stop_token stop) {
     struct timespec next_wakeup{};
     clock_gettime(CLOCK_MONOTONIC, &next_wakeup);
 
-    bool heartbeat_warned = false;
-
-    while (!stop.stop_requested()) {
+    while (!stop_requested.load(std::memory_order_relaxed)) {
         // 1. Get current time
         double now = get_monotonic_time();
 
@@ -70,21 +68,27 @@ void HapticThread::run(std::stop_token stop) {
         dhd_->get_position(pos);
         dhd_->get_linear_velocity(vel);
 
-        // 3. Load current field
-        auto field = active_field_.load();
+        // 3. Load current field (mutex-protected, ~25ns uncontended)
+        std::shared_ptr<ForceField> field;
+        {
+            std::lock_guard<std::mutex> lock(field_mtx_);
+            field = active_field_;
+        }
 
-        // 4. Check heartbeat
+        // 4. Check heartbeat — only swap to safety field once on transition
         double last_hb = last_heartbeat_time_.load(std::memory_order_acquire);
         if (last_hb > 0.0 && (now - last_hb) > HEARTBEAT_TIMEOUT_S) {
-            if (!heartbeat_warned) {
-                std::cerr << "Warning: heartbeat timeout — reverting to NullField\n";
-                heartbeat_warned = true;
+            if (!in_safety_mode_) {
+                // Transition to safety field (swap once, not every tick)
+                {
+                    std::lock_guard<std::mutex> lock(field_mtx_);
+                    active_field_ = safety_field_;
+                }
+                in_safety_mode_ = true;
             }
-            // Swap to pre-constructed safety field (no heap allocation)
-            active_field_.store(safety_field_);
             field = safety_field_;
         } else if (last_hb > 0.0) {
-            heartbeat_warned = false;
+            in_safety_mode_ = false;
         }
 
         // 5. Compute force
@@ -107,12 +111,32 @@ void HapticThread::run(std::stop_token stop) {
         state.field_state_buf.clear();
         msgpack::packer<msgpack::sbuffer> field_pk(state.field_state_buf);
         field->pack_state(field_pk);
+
+        // 9. Update state snapshot for get_state command (before publish,
+        //    while we still own the write buffer exclusively)
+        {
+            std::lock_guard<std::mutex> lock(state_mtx_);
+            last_state_.timestamp = now;
+            last_state_.sequence = sequence_;
+            last_state_.position = pos;
+            last_state_.velocity = vel;
+            last_state_.force = force;
+            last_state_.active_field = field->name();
+            last_state_.field_state_buf.clear();
+            if (state.field_state_buf.size() > 0) {
+                last_state_.field_state_buf.write(
+                    state.field_state_buf.data(),
+                    state.field_state_buf.size());
+            }
+        }
+
+        // 10. Publish to triple buffer (transfers write buffer to shared)
         state_buffer_.publish();
 
-        // 9. Increment sequence
+        // 11. Increment sequence
         ++sequence_;
 
-        // 10. Sleep until next tick
+        // 12. Sleep until next tick
         next_wakeup.tv_nsec += TICK_NS;
         if (next_wakeup.tv_nsec >= 1'000'000'000L) {
             next_wakeup.tv_sec += 1;
@@ -140,11 +164,13 @@ void HapticThread::run(std::stop_token stop) {
 }
 
 void HapticThread::set_field(std::shared_ptr<ForceField> field) {
-    active_field_.store(std::move(field));
+    std::lock_guard<std::mutex> lock(field_mtx_);
+    active_field_ = std::move(field);
 }
 
 std::shared_ptr<ForceField> HapticThread::get_field() const {
-    return active_field_.load();
+    std::lock_guard<std::mutex> lock(field_mtx_);
+    return active_field_;
 }
 
 void HapticThread::update_heartbeat() {
@@ -155,6 +181,23 @@ bool HapticThread::heartbeat_expired() const {
     double last_hb = last_heartbeat_time_.load(std::memory_order_acquire);
     if (last_hb <= 0.0) return false;
     return (get_monotonic_time() - last_hb) > HEARTBEAT_TIMEOUT_S;
+}
+
+HapticStateData HapticThread::get_latest_state() const {
+    std::lock_guard<std::mutex> lock(state_mtx_);
+    HapticStateData copy;
+    copy.timestamp = last_state_.timestamp;
+    copy.sequence = last_state_.sequence;
+    copy.position = last_state_.position;
+    copy.velocity = last_state_.velocity;
+    copy.force = last_state_.force;
+    copy.active_field = last_state_.active_field;
+    if (last_state_.field_state_buf.size() > 0) {
+        copy.field_state_buf.write(
+            last_state_.field_state_buf.data(),
+            last_state_.field_state_buf.size());
+    }
+    return copy;
 }
 
 Vec3 HapticThread::clamp_force(const Vec3& f) const {

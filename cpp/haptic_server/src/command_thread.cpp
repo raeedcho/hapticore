@@ -11,7 +11,7 @@ CommandThread::CommandThread(const std::string& router_address,
     , ctx_(ctx)
 {}
 
-void CommandThread::run(std::stop_token stop) {
+void CommandThread::run(std::atomic<bool>& stop_requested) {
     zmq::socket_t router(ctx_, zmq::socket_type::router);
     router.set(zmq::sockopt::linger, 0);
     router.bind(router_address_);
@@ -20,7 +20,7 @@ void CommandThread::run(std::stop_token stop) {
         {static_cast<void*>(router), 0, ZMQ_POLLIN, 0}
     };
 
-    while (!stop.stop_requested()) {
+    while (!stop_requested.load(std::memory_order_relaxed)) {
         zmq::poll(items, 1, std::chrono::milliseconds(100));
 
         if (!(items[0].revents & ZMQ_POLLIN)) continue;
@@ -35,9 +35,10 @@ void CommandThread::run(std::stop_token stop) {
             frames.push_back(std::move(frame));
         } while (router.get(zmq::sockopt::rcvmore));
 
-        if (frames.size() < 3) {
-            std::cerr << "Warning: malformed message (expected >= 3 frames, got "
-                      << frames.size() << ")\n";
+        // Require exactly 3 frames: [identity, empty_delimiter, payload]
+        if (frames.size() != 3 || frames[1].size() != 0) {
+            std::cerr << "Warning: malformed message (expected 3 frames with empty delimiter, got "
+                      << frames.size() << " frames)\n";
             continue;
         }
 

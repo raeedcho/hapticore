@@ -173,11 +173,15 @@ TEST_F(PublisherThreadTest, PublishRate) {
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
     // At 200 Hz, 20 messages should take ~100 ms.
-    // macOS CI runners lack RT scheduling and typically take 400-600ms.
-    // Use 800ms as a generous but not excessive upper bound.
+    // On macOS CI (virtualized Apple Silicon), sleep granularity is so poor
+    // that wall-clock timing is meaningless — guard timing assertions to Linux.
     EXPECT_GE(count, 20);
+#ifdef __linux__
+    // Only assert timing on Linux — macOS CI runners have unreliable sleep
+    // granularity due to virtualization (see copilot-instructions.md).
     EXPECT_GT(elapsed_ms, 60);   // At least 60 ms
-    EXPECT_LT(elapsed_ms, 800);  // Generous CI tolerance (macOS can be 4-6x slower)
+    EXPECT_LT(elapsed_ms, 200);  // No more than 200 ms at 200 Hz
+#endif
 
     writer_stop.store(true);
     writer.join();

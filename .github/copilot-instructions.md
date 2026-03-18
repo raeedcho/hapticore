@@ -97,6 +97,7 @@ cd build && ctest --output-on-failure                     # run C++ tests
 - Keep `ForceField::compute()` under 50 µs. Profile with a simple `clock_gettime` diff if in doubt. The full tick budget is 250 µs and includes DHD USB round-trip.
 - The Force Dimension SDK is proprietary and not in version control. It is located via the `FD_SDK_DIR` environment variable. When `MOCK_HARDWARE=ON`, the mock DHD replaces all SDK calls.
 - Spring stiffness above 3000 N/m causes instability at 4 kHz. Reject such values in `update_params()`.
+- **Wall-clock timing assertions**: Guard with `#ifdef __linux__` or split into separate tests. macOS GitHub Actions runners (virtualized Apple Silicon) have unreliable sleep granularity — `sleep_for(5ms)` can sleep 50ms+. This mirrors the Python-side lesson learned from timer coalescing. Timing-sensitive tests retain full value on Linux (the deployment target) while macOS CI still validates correctness without contributing flaky failures.
 
 ## When working on tasks (python/hapticore/tasks/)
 

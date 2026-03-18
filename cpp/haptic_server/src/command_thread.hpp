@@ -1,8 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <string>
-#include <stop_token>
 
 #include <zmq.hpp>
 
@@ -16,7 +16,7 @@ public:
                   Handler handler,
                   zmq::context_t& ctx);
 
-    void run(std::stop_token stop);
+    void run(std::atomic<bool>& stop_requested);
 
 private:
     std::string router_address_;

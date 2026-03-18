@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <string>
 
 #include <msgpack.hpp>
@@ -77,7 +76,7 @@ struct CommandData {
 struct CommandResponseData {
     std::string command_id;
     bool success = false;
-    std::map<std::string, msgpack::object> result;
+    msgpack::sbuffer result_buf;  // pre-packed result map (avoids dangling msgpack::object refs)
     std::string error;
 
     /// Pack the response into the provided buffer.
@@ -88,7 +87,13 @@ struct CommandResponseData {
         pk.pack_map(4);
         pk.pack("command_id"); pk.pack(command_id);
         pk.pack("success");    pk.pack(success);
-        pk.pack("result");     pk.pack(result);
+        pk.pack("result");
+        if (result_buf.size() > 0) {
+            // Write pre-packed result bytes directly
+            buf.write(result_buf.data(), result_buf.size());
+        } else {
+            pk.pack_map(0);
+        }
         pk.pack("error");
         if (error.empty()) {
             pk.pack_nil();

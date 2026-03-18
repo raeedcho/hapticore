@@ -61,7 +61,8 @@ TEST_F(PublisherThreadTest, PublishesStateMessages) {
     sub.set(zmq::sockopt::rcvtimeo, 2000);  // 2 second timeout
     sub.connect(addr);
 
-    // Wait for slow joiner (200ms for CI tolerance, especially macOS)
+    // Wait for ZMQ slow-joiner (200ms is empirically sufficient for macOS CI;
+    // the subsequent re-publish ensures the subscriber gets fresh data)
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     // Re-publish to ensure subscriber gets it
@@ -172,11 +173,11 @@ TEST_F(PublisherThreadTest, PublishRate) {
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
     // At 200 Hz, 20 messages should take ~100 ms.
-    // macOS CI runners lack RT scheduling and can be 4-6x slower, so we use a
-    // very generous upper bound.
+    // macOS CI runners lack RT scheduling and typically take 400-600ms.
+    // Use 800ms as a generous but not excessive upper bound.
     EXPECT_GE(count, 20);
-    EXPECT_GT(elapsed_ms, 60);    // At least 60 ms
-    EXPECT_LT(elapsed_ms, 2000);  // Generous CI tolerance (macOS can be slow)
+    EXPECT_GT(elapsed_ms, 60);   // At least 60 ms
+    EXPECT_LT(elapsed_ms, 800);  // Generous CI tolerance (macOS can be 4-6x slower)
 
     writer_stop.store(true);
     writer.join();

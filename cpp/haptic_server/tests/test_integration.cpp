@@ -576,6 +576,10 @@ TEST(HapticThreadTest, SequenceMonotonicallyIncreasing) {
     // The sequence should be consistent (last written value)
     // We can't easily verify monotonicity without reading multiple times,
     // but we can verify it's a reasonable number for ~30ms at 4kHz
-    EXPECT_GT(state.sequence, 50u);   // Should have run at least 50 ticks in 30ms
-    EXPECT_LT(state.sequence, 500u);  // But not unreasonably many
+    EXPECT_GT(state.sequence, 50u);   // Loop actually ran
+#ifdef __linux__
+    // Upper bound only meaningful with reliable sleep granularity.
+    // macOS CI runners oversleep by 4-11x (see copilot-instructions.md).
+    EXPECT_LT(state.sequence, 500u);
+#endif
 }

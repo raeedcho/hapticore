@@ -7,8 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ---------- Compiler warnings ----------
-add_compile_options(-Wall -Wextra -Wpedantic)
-add_compile_options($<$<CONFIG:Debug>:-Werror>)
+add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
 # ---------- CPM dependency manager ----------
 include(cmake/CPM.cmake)

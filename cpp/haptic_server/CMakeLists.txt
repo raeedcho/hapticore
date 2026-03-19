@@ -96,6 +96,14 @@ endif()
 add_executable(haptic_server src/main.cpp)
 target_link_libraries(haptic_server PRIVATE haptic_server_lib)
 
+# On Linux, set CAP_SYS_NICE to allow real-time scheduling without sudo. Ignore failures since this is a best-effort optimization.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_custom_command(TARGET haptic_server POST_BUILD
+    COMMAND sudo setcap cap_sys_nice=eip $<TARGET_FILE:haptic_server> || true
+    COMMENT "Setting CAP_SYS_NICE on haptic_server (may require sudo)"
+  )
+endif()
+
 # ---------- Tests ----------
 enable_testing()
 add_subdirectory(tests)

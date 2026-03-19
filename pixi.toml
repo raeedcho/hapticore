@@ -1,0 +1,44 @@
+[workspace]
+name = "hapticore"
+description = "Multi-process experimental control system for primate neurophysiology"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64"]
+
+# Non-Python toolchain only — Python deps come from pyproject.toml
+# via the editable install below
+[dependencies]
+python = ">=3.11,<3.13"
+cmake = ">=3.21"
+ninja = "*"
+
+# Installs hapticore + all its [project.dependencies] from pyproject.toml
+[pypi-dependencies]
+hapticore = { path = ".", editable = true }
+
+# Dev tools (not read from pyproject.toml's optional-dependencies)
+[feature.dev.dependencies]
+pytest = ">=8.0"
+pytest-benchmark = ">=4.0"
+pytest-timeout = ">=2.0"
+ruff = ">=0.4"
+mypy = ">=1.10"
+
+[feature.dev.pypi-dependencies]
+types-PyYAML = ">=6.0"
+
+[environments]
+default = { features = ["dev"], solve-group = "default" }
+
+[tasks]
+lint = "ruff check python/"
+typecheck = "mypy python/hapticore/core/ --strict"
+test-unit = "pytest tests/unit/ -v"
+test-integration = "pytest tests/integration/ -v"
+test-hardware = "pytest tests/hardware/ -m hardware -v"
+test = { depends-on = ["test-unit", "test-integration"] }
+
+# C++ haptic server (mock hardware)
+cpp-configure = { cmd = "cmake --preset dev-mock", cwd = "cpp/haptic_server" }
+cpp-build = { cmd = "cmake --build --preset dev-mock", cwd = "cpp/haptic_server", depends-on = ["cpp-configure"] }
+cpp-test = { cmd = "ctest --preset dev-mock", cwd = "cpp/haptic_server", depends-on = ["cpp-build"] }
+cpp = { depends-on = ["cpp-build", "cpp-test"] }

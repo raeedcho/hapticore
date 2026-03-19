@@ -13,3 +13,6 @@ build/
 *.ipc
 CMakeUserPresets.json
 compile_commands.json
+# pixi environments
+.pixi/*
+!.pixi/config.toml

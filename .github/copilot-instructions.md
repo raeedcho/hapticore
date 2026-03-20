@@ -95,9 +95,15 @@ cd build && ctest --output-on-failure                     # run C++ tests
 - Use `MSGPACK_DEFINE_MAP` (named keys), not `MSGPACK_DEFINE_ARRAY` (positional). Python deserializes as a dict and constructs dataclasses by keyword. Positional encoding breaks if either side adds a field.
 - Compile with `-Wall -Wextra -Wpedantic -Werror` in all builds. Fix all warnings. Make sure to build in both a Linux and macOS environment to catch platform-specific warnings.
 - Keep `ForceField::compute()` under 50 µs. Profile with a simple `clock_gettime` diff if in doubt. The full tick budget is 250 µs and includes DHD USB round-trip.
-- The Force Dimension SDK is proprietary and not in version control. It is located via the `FD_SDK_DIR` environment variable. When `MOCK_HARDWARE=ON`, the mock DHD replaces all SDK calls.
 - Spring stiffness above 3000 N/m causes instability at 4 kHz. Reject such values in `update_params()`.
 - **Wall-clock timing assertions**: Guard with `#ifdef __linux__` or split into separate tests. macOS GitHub Actions runners (virtualized Apple Silicon) have unreliable sleep granularity — `sleep_for(5ms)` can sleep 50ms+. This mirrors the Python-side lesson learned from timer coalescing. Timing-sensitive tests retain full value on Linux (the deployment target) while macOS CI still validates correctness without contributing flaky failures.
+
+### Force Dimension SDK pitfalls
+- The Force Dimension SDK is proprietary and not in version control. It is located via the `FD_SDK_DIR` environment variable. When `MOCK_HARDWARE=ON`, the mock DHD replaces all SDK calls.
+- Headers are named `dhdc.h` and `drdc.h` — NOT `dhd.h`/`drd.h`. The function names (e.g., `dhdGetPosition`) do NOT have the `c` suffix — only the header filenames do.
+- Libraries are named `libdhd` and `libdrd` — NOT `libdhdc`/`libdrdc`. The header naming convention and library naming convention do not match.
+- Libraries are NOT in `$FD_SDK_DIR/lib/`. They are in `$FD_SDK_DIR/lib/release/lin-<arch>-gcc/` where `<arch>` is the machine architecture (e.g., `x86_64`). CMakeLists.txt uses `CMAKE_SYSTEM_PROCESSOR` to resolve this automatically, matching the SDK's own Makefile convention (see `Makefile.common` in the SDK root).
+- `libdhd.a` statically depends on `libusb-1.0`. Since static libraries don't carry transitive dependencies, `usb-1.0` must be linked explicitly in `target_link_libraries` alongside `dhd` and `drd`.
 
 ## When working on tasks (python/hapticore/tasks/)
 

@@ -1,5 +1,5 @@
 #include "dhd_real.hpp"
-#include <dhd.h>
+#include <dhdc.h>
 
 bool DhdReal::open() {
     if (dhdOpen() < 0) {

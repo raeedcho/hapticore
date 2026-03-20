@@ -81,8 +81,14 @@ else()
   endif()
   set(FD_SDK_DIR $ENV{FD_SDK_DIR})
   target_include_directories(haptic_server_lib PUBLIC ${FD_SDK_DIR}/include)
-  target_link_directories(haptic_server_lib PUBLIC ${FD_SDK_DIR}/lib)
-  target_link_libraries(haptic_server_lib PUBLIC dhd drd)
+  # SDK library subdirectory follows Force Dimension's convention:
+  # lib/release/lin-<arch>-gcc (see SDK's Makefile.common)
+  target_link_directories(haptic_server_lib PUBLIC
+    ${FD_SDK_DIR}/lib/release/lin-${CMAKE_SYSTEM_PROCESSOR}-gcc
+  )
+  # libdhd.a statically links against libusb (dhdComUSB-libusb.cpp),
+  # so we must explicitly link libusb-1.0 as a transitive dependency.
+  target_link_libraries(haptic_server_lib PUBLIC dhd drd usb-1.0)
 endif()
 
 # Platform libraries

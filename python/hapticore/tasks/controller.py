@@ -200,11 +200,9 @@ class TaskController:
             event.transition.dest == self.task.INITIAL_STATE
             and event.event.name == "trial_end"
         ):
-            self.task.on_trial_end(
-                self.trial_manager.get_trial_log()[-1]["outcome"]
-                if self.trial_manager.get_trial_log()
-                else ""
-            )
+            trial_log = self.trial_manager.get_trial_log()
+            outcome = trial_log[-1]["outcome"] if trial_log else ""
+            self.task.on_trial_end(outcome)
             if not self.trial_manager.is_complete:
                 self._start_next_trial()
 

@@ -20,7 +20,16 @@ def _simulate(args: argparse.Namespace) -> None:
     config = load_config(args.config)
 
     # Import the task class
-    module_path, class_name = config.task.task_class.rsplit(".", 1)
+    task_class_path = config.task.task_class
+    if "." not in task_class_path:
+        print(
+            f"Error: task_class must be a dotted path "
+            f"(e.g. 'hapticore.tasks.center_out.CenterOutTask'), "
+            f"got '{task_class_path}'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    module_path, class_name = task_class_path.rsplit(".", 1)
     module = importlib.import_module(module_path)
     task_cls = getattr(module, class_name)
     task = task_cls()
@@ -74,7 +83,16 @@ def _simulate(args: argparse.Namespace) -> None:
 def _graph_task(args: argparse.Namespace) -> None:
     """Generate a state machine diagram for a task class."""
     # Import the task class
-    module_path, class_name = args.task_class.rsplit(".", 1)
+    task_class_path = args.task_class
+    if "." not in task_class_path:
+        print(
+            f"Error: task_class must be a dotted path "
+            f"(e.g. 'hapticore.tasks.center_out.CenterOutTask'), "
+            f"got '{task_class_path}'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    module_path, class_name = task_class_path.rsplit(".", 1)
     module = importlib.import_module(module_path)
     task_cls = getattr(module, class_name)
     task = task_cls()

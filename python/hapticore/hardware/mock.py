@@ -60,6 +60,14 @@ class MockHapticInterface:
         """Remove the state callback."""
         self._callback = None
 
+    def set_position(self, position: list[float]) -> None:
+        """Set the mock position (for scripted trajectories in tests)."""
+        self._position = list(position)
+
+    def set_velocity(self, velocity: list[float]) -> None:
+        """Set the mock velocity (for scripted trajectories in tests)."""
+        self._velocity = list(velocity)
+
 
 class MockNeuralRecording:
     """Mock neural recording interface."""

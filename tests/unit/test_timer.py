@@ -99,8 +99,9 @@ class TestTimerManager:
             expired = timer.check()
             if expired:
                 actual = time.monotonic() - start
-                # Allow 5ms tolerance
-                assert abs(actual - delay) < 0.005 or actual >= delay
+                # Timer should not fire early and should be within 5ms of target
+                assert actual >= delay - 0.001  # allow 1ms clock jitter
+                assert actual - delay < 0.005   # within 5ms of target
                 break
             if time.monotonic() - start > 0.1:
                 raise AssertionError("Timer did not expire within 100ms")

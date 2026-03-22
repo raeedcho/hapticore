@@ -67,7 +67,7 @@ def _simulate(args: argparse.Namespace) -> None:
         sync=sync,
         event_publisher=publisher,
         trial_manager=trial_manager,
-        params=param_overrides if param_overrides else None,
+        params=param_overrides or None,
         poll_rate_hz=1000.0,  # fast for simulation
     )
 

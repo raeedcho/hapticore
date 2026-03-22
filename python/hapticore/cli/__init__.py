@@ -53,6 +53,13 @@ def _simulate(args: argparse.Namespace) -> None:
     )
 
     # Create and run controller
+    # In --fast mode, override all timing parameters to 1ms for quick smoke-testing
+    param_overrides = dict(config.task.params) if config.task.params else {}
+    if args.fast:
+        for name, spec in task.PARAMS.items():
+            if spec.unit == "s" and spec.type is float:
+                param_overrides.setdefault(name, 0.001)
+
     controller = TaskController(
         task=task,
         haptic=haptic,
@@ -60,6 +67,7 @@ def _simulate(args: argparse.Namespace) -> None:
         sync=sync,
         event_publisher=publisher,
         trial_manager=trial_manager,
+        params=param_overrides if param_overrides else None,
         poll_rate_hz=1000.0,  # fast for simulation
     )
 
@@ -144,6 +152,10 @@ def main() -> None:
     sim_parser.add_argument(
         "--config", required=True,
         help="Path to experiment config YAML file",
+    )
+    sim_parser.add_argument(
+        "--fast", action="store_true",
+        help="Override all timing parameters to 1ms for quick smoke-testing",
     )
     sim_parser.set_defaults(func=_simulate)
 

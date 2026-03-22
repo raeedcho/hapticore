@@ -70,6 +70,7 @@ def _make_controller(
     task: BaseTask,
     num_trials: int = 3,
     poll_rate_hz: float = 1000.0,
+    params: dict[str, Any] | None = None,
 ) -> tuple[
     TaskController, MockHapticInterface, MockSync,
     EventPublisher, TrialManager, zmq.Context,
@@ -98,6 +99,7 @@ def _make_controller(
         sync=sync,
         event_publisher=publisher,
         trial_manager=trial_manager,
+        params=params,
         poll_rate_hz=poll_rate_hz,
     )
     return controller, haptic, sync, publisher, trial_manager, ctx
@@ -227,6 +229,52 @@ class TestControllerFullSession:
             assert len(log) == 5
             for entry in log:
                 assert entry["outcome"] == "success"
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+
+class TestControllerParamOverrides:
+    def test_config_params_override_defaults(self) -> None:
+        """Verify config param overrides take effect instead of ParamSpec defaults."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller(
+            task, num_trials=1, params={"hold_time": 0.1, "timeout": 3.0},
+        )
+        try:
+            controller.setup()
+            # Verify the overridden values are used, not the defaults
+            assert task.params["hold_time"] == 0.1
+            assert task.params["timeout"] == 3.0
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_defaults_used_when_no_overrides(self) -> None:
+        """Verify ParamSpec defaults are used when no overrides are provided."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller(task, num_trials=1)
+        try:
+            controller.setup()
+            assert task.params["hold_time"] == 0.5  # ParamSpec default
+            assert task.params["timeout"] == 2.0    # ParamSpec default
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_partial_overrides(self) -> None:
+        """Verify partial overrides merge with remaining defaults."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller(
+            task, num_trials=1, params={"hold_time": 0.2},
+        )
+        try:
+            controller.setup()
+            assert task.params["hold_time"] == 0.2  # overridden
+            assert task.params["timeout"] == 2.0    # default
         finally:
             controller.teardown()
             pub.close()

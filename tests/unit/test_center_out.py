@@ -8,7 +8,6 @@ import zmq
 
 from hapticore.core.messaging import EventPublisher, make_ipc_address
 from hapticore.hardware.mock import MockDisplay, MockHapticInterface, MockSync
-from hapticore.tasks.base import ParamSpec
 from hapticore.tasks.center_out import CenterOutTask
 from hapticore.tasks.controller import TaskController
 from hapticore.tasks.trial_manager import TrialManager
@@ -45,12 +44,7 @@ def _setup_center_out(
         randomization="sequential",
     )
 
-    # Override default params for faster testing
-    task.PARAMS = dict(task.PARAMS)
-    task.PARAMS["hold_time"] = ParamSpec(type=float, default=hold_time, unit="s")
-    task.PARAMS["reach_timeout"] = ParamSpec(type=float, default=reach_timeout, unit="s")
-    task.PARAMS["iti_duration"] = ParamSpec(type=float, default=iti_duration, unit="s")
-
+    # Pass param overrides via the params argument
     controller = TaskController(
         task=task,
         haptic=haptic,
@@ -58,6 +52,11 @@ def _setup_center_out(
         sync=sync,
         event_publisher=publisher,
         trial_manager=trial_manager,
+        params={
+            "hold_time": hold_time,
+            "reach_timeout": reach_timeout,
+            "iti_duration": iti_duration,
+        },
         poll_rate_hz=1000.0,
     )
     controller.setup()
@@ -222,7 +221,7 @@ class TestCenterOutFullSession:
             iti_duration=0.001,
         )
         try:
-            for trial_idx in range(10):
+            for _trial_idx in range(10):
                 # Already in move_to_center after trial_begin
                 assert task.state == "move_to_center"
 
@@ -256,12 +255,16 @@ class TestCenterOutFullSession:
                 for name in expired:
                     task.trigger(name)
 
-                # After trial_end, the _on_state_change callback starts the
-                # next trial automatically (if not complete)
-                if trial_idx < 9:
-                    assert task.state == "move_to_center"
-                else:
-                    assert task.state == "iti"
+                # _on_state_change sets _trial_ended flag; simulate main loop
+                # deferral by handling it here
+                assert task.state == "iti"
+                if controller._trial_ended:
+                    controller._trial_ended = False
+                    trial_log = tm.get_trial_log()
+                    outcome = trial_log[-1]["outcome"] if trial_log else ""
+                    task.on_trial_end(outcome)
+                    if not tm.is_complete:
+                        controller._start_next_trial()
 
             assert tm.is_complete
             log = tm.get_trial_log()

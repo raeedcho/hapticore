@@ -13,11 +13,13 @@ from typing import Any
 
 from transitions import Machine
 
+from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
 from hapticore.core.messages import (
     TOPIC_EVENT,
     StateTransition,
     serialize,
 )
+from hapticore.core.messaging import EventPublisher
 from hapticore.tasks.base import BaseTask
 from hapticore.tasks.timer import TimerManager
 from hapticore.tasks.trial_manager import TrialManager
@@ -39,11 +41,12 @@ class TaskController:
     def __init__(
         self,
         task: BaseTask,
-        haptic: Any,
-        display: Any,
-        sync: Any,
-        event_publisher: Any,
+        haptic: HapticInterface,
+        display: DisplayInterface,
+        sync: SyncInterface,
+        event_publisher: EventPublisher,
         trial_manager: TrialManager,
+        params: dict[str, Any] | None = None,
         poll_rate_hz: float = 100.0,
     ) -> None:
         self.task = task
@@ -52,10 +55,12 @@ class TaskController:
         self.sync = sync
         self.event_publisher = event_publisher
         self.trial_manager = trial_manager
+        self._param_overrides = params or {}
         self.timer = TimerManager()
         self.poll_rate_hz = poll_rate_hz
         self._running = False
         self._stop_requested = False
+        self._trial_ended = False
         self._machine: Machine | None = None
 
     def setup(self) -> None:
@@ -94,11 +99,15 @@ class TaskController:
         )
 
     def _validate_params(self) -> dict[str, Any]:
-        """Validate and merge task parameters against ParamSpec definitions."""
+        """Validate and merge task parameters against ParamSpec definitions.
+
+        Merges config overrides (from ``self._param_overrides``) with defaults
+        from the task's ``PARAMS`` definitions. Config values take precedence
+        over defaults.
+        """
         result: dict[str, Any] = {}
         for name, spec in self.task.PARAMS.items():
-            value = spec.default
-            result[name] = value
+            value = self._param_overrides.get(name, spec.default)
             # Type check
             if not isinstance(value, spec.type):
                 raise TypeError(
@@ -114,6 +123,7 @@ class TaskController:
                 raise ValueError(
                     f"Parameter '{name}' = {value} is above maximum {spec.max}"
                 )
+            result[name] = value
         return result
 
     def run(self) -> None:
@@ -123,7 +133,8 @@ class TaskController:
         1. Read the latest haptic state.
         2. Check timers and fire expired triggers.
         3. Call task.check_triggers().
-        4. Sleep to maintain poll_rate_hz.
+        4. Handle deferred trial advancement (from _on_state_change).
+        5. Sleep to maintain poll_rate_hz.
         """
         if self._stop_requested:
             return
@@ -152,12 +163,21 @@ class TaskController:
             if haptic_state is not None:
                 self.task.check_triggers(haptic_state)
 
-            # 4. Check if session is complete
+            # 4. Handle deferred trial advancement
+            if self._trial_ended:
+                self._trial_ended = False
+                trial_log = self.trial_manager.get_trial_log()
+                outcome = trial_log[-1]["outcome"] if trial_log else ""
+                self.task.on_trial_end(outcome)
+                if not self.trial_manager.is_complete:
+                    self._start_next_trial()
+
+            # 5. Check if session is complete
             if self.trial_manager.is_complete and self.task.state == self.task.INITIAL_STATE:
                 self._running = False
                 break
 
-            # 5. Sleep to maintain poll rate
+            # 6. Sleep to maintain poll rate
             remaining = next_tick - time.monotonic()
             if remaining > 0:
                 time.sleep(remaining)
@@ -175,7 +195,9 @@ class TaskController:
     def _on_state_change(self, event: Any) -> None:
         """Callback invoked by the transitions library after every state change.
 
-        Creates and publishes a StateTransition event.
+        Creates and publishes a StateTransition event. Trial advancement is
+        deferred to the main loop via the ``_trial_ended`` flag to avoid
+        reentrant callbacks.
         """
         transition = StateTransition(
             timestamp=time.monotonic(),
@@ -194,17 +216,12 @@ class TaskController:
             transition.trial_number,
         )
 
-        # If we just transitioned to the initial state and the last trigger was
-        # "trial_end", we need to start the next trial or end the session.
+        # Defer trial advancement to the main loop to avoid reentrant callbacks.
         if (
             event.transition.dest == self.task.INITIAL_STATE
             and event.event.name == "trial_end"
         ):
-            trial_log = self.trial_manager.get_trial_log()
-            outcome = trial_log[-1]["outcome"] if trial_log else ""
-            self.task.on_trial_end(outcome)
-            if not self.trial_manager.is_complete:
-                self._start_next_trial()
+            self._trial_ended = True
 
     def _start_next_trial(self) -> bool:
         """Advance the trial manager and start the next trial.

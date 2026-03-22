@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import time
 import uuid
+from abc import ABC
 from typing import Any
 
 
@@ -35,7 +36,7 @@ class ParamSpec:
     max: float | int | None = None
 
 
-class BaseTask:
+class BaseTask(ABC):
     """Base class for all behavioral tasks.
 
     Subclasses MUST define these class attributes:
@@ -77,10 +78,10 @@ class BaseTask:
         self.current_condition: dict[str, Any] = {}
         self.trial_number: int = -1
 
-    def cleanup(self) -> None:
+    def cleanup(self) -> None:  # noqa: B027
         """Called when the session ends. Override to release task-specific resources."""
 
-    def check_triggers(self, haptic_state: Any) -> None:
+    def check_triggers(self, haptic_state: Any) -> None:  # noqa: B027
         """Called every main-loop iteration with the latest haptic state.
 
         Override this to fire triggers based on continuous data (e.g.,
@@ -95,7 +96,7 @@ class BaseTask:
         """
         self.current_condition = condition
 
-    def on_trial_end(self, outcome: str) -> None:
+    def on_trial_end(self, outcome: str) -> None:  # noqa: B027
         """Called at the end of each trial with the outcome string.
 
         Override for trial-end cleanup. Default does nothing.

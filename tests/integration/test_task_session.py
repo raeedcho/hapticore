@@ -223,3 +223,85 @@ class TestFullSession:
             subscriber.close()
             publisher.close()
             ctx.term()
+
+
+class TestCenterOutIntegration:
+    """Integration test using controller.run() with the real CenterOutTask."""
+
+    def test_center_out_via_controller_run(self) -> None:
+        """Run CenterOutTask through controller.run() with a state-reactive mock.
+
+        The mock auto-moves to the correct position based on the task's state,
+        so the main loop drives the full state machine without manual triggers.
+        """
+        from hapticore.tasks.center_out import CenterOutTask
+
+        task = CenterOutTask()
+
+        # Create a mock that auto-advances position based on task state
+        haptic = MockHapticInterface(initial_position=[0.1, 0.0, 0.0])
+        original_get_state = haptic.get_latest_state
+
+        def state_reactive_get_state() -> Any:
+            # Move the mock position based on the task's current state
+            if hasattr(task, "state"):
+                if task.state in ("move_to_center", "hold_center"):
+                    haptic.set_position([0.0, 0.0, 0.0])
+                elif task.state in ("reach", "hold_target"):
+                    target = task.current_condition.get(
+                        "target_position", [0.08, 0.0]
+                    )
+                    if len(target) == 2:
+                        target = [target[0], target[1], 0.0]
+                    haptic.set_position(target)
+            return original_get_state()
+
+        haptic.get_latest_state = state_reactive_get_state  # type: ignore[assignment]
+
+        display = MockDisplay()
+        sync = MockSync()
+
+        ctx = zmq.Context()
+        address = make_ipc_address("int_co")
+        publisher = EventPublisher(ctx, address)
+
+        num_trials = 5
+        conditions = [
+            {"target_id": i, "target_position": [0.08, 0.0]}
+            for i in range(num_trials)
+        ]
+        tm = TrialManager(
+            conditions=conditions,
+            block_size=num_trials,
+            num_blocks=1,
+            randomization="sequential",
+        )
+
+        controller = TaskController(
+            task=task,
+            haptic=haptic,
+            display=display,
+            sync=sync,
+            event_publisher=publisher,
+            trial_manager=tm,
+            params={
+                "hold_time": 0.001,
+                "reach_timeout": 2.0,
+                "iti_duration": 0.001,
+            },
+            poll_rate_hz=5000.0,
+        )
+
+        try:
+            controller.setup()
+            controller.run()
+
+            assert tm.is_complete
+            log = tm.get_trial_log()
+            assert len(log) == num_trials
+            for entry in log:
+                assert entry["outcome"] == "success"
+        finally:
+            controller.teardown()
+            publisher.close()
+            ctx.term()

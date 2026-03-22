@@ -153,8 +153,11 @@ class TrialManager:
 
     @property
     def is_complete(self) -> bool:
-        """True if all trials have been completed."""
-        return self._trial_index >= len(self._sequence) - 1
+        """True if all trials have been advanced through AND the last trial has been logged."""
+        return (
+            self._trial_index >= len(self._sequence) - 1
+            and len(self._trial_log) >= len(self._sequence)
+        )
 
     def advance(self) -> dict[str, Any] | None:
         """Advance to the next trial.

@@ -100,7 +100,13 @@ class TestTrialManager:
         assert tm.is_complete is False
         tm.advance()
         assert tm.is_complete is False
+        tm.log_trial("success")
+        # Last trial started but not yet logged
+        assert tm.is_complete is False
         tm.advance()
+        assert tm.is_complete is False
+        tm.log_trial("success")
+        # All trials advanced and logged
         assert tm.is_complete is True
 
     def test_log_trial_and_get_log(self) -> None:

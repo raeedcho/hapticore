@@ -62,6 +62,12 @@ class TemplateTask(BaseTask):
     # ---- State callbacks ----
     # Implement on_enter_<state> and on_exit_<state> for each state.
     # These are called automatically by the transitions library.
+    #
+    # IMPORTANT: All on_enter_*/on_exit_* callbacks must accept an
+    # `event` parameter (can default to None). This is required by the
+    # transitions library's send_event=True setting used by TaskController.
+    # If you forget this parameter, you will get a confusing TypeError
+    # at runtime.
 
     def on_enter_active(self, event: Any = None) -> None:
         """Called when entering the 'active' state.

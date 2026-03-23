@@ -58,7 +58,7 @@ def _simulate(args: argparse.Namespace) -> None:
     if args.fast:
         for name, spec in task.PARAMS.items():
             if spec.unit == "s" and spec.type is float:
-                param_overrides.setdefault(name, 0.001)
+                param_overrides[name] = 0.001
 
     controller = TaskController(
         task=task,

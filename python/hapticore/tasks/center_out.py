@@ -141,7 +141,7 @@ class CenterOutTask(BaseTask):
 
         if self.state == "move_to_center":
             if self.distance(pos, [0.0, 0.0, 0.0]) < self.params["target_radius"]:
-                self.trigger("at_center")  # type: ignore[attr-defined]
+                self.trigger("at_center")
 
         elif self.state == "reach":
             target = self.current_condition.get("target_position", [0.08, 0.0])
@@ -149,11 +149,11 @@ class CenterOutTask(BaseTask):
             if len(target) == 2:
                 target = [target[0], target[1], 0.0]
             if self.distance(pos, target) < self.params["target_radius"]:
-                self.trigger("at_target")  # type: ignore[attr-defined]
+                self.trigger("at_target")
 
         elif (
             self.state == "hold_center"
             and self.distance(pos, [0.0, 0.0, 0.0]) > self.params["target_radius"]
         ):
             self.timer.cancel("hold_complete")
-            self.trigger("broke_hold")  # type: ignore[attr-defined]
+            self.trigger("broke_hold")

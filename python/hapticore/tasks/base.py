@@ -12,7 +12,7 @@ import dataclasses
 import time
 import uuid
 from abc import ABC
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclasses.dataclass(frozen=True)
@@ -48,7 +48,11 @@ class BaseTask(ABC):
     Subclasses MAY define:
         HARDWARE: dict[str, type]        — logical hardware role → Protocol type
     """
+    # Injected by transitions.Machine at runtime via TaskController.setup()
+    trigger: Callable[..., bool]
+    state: str
 
+    # These must be overridden by subclasses
     PARAMS: dict[str, ParamSpec]
     STATES: list[str]
     TRANSITIONS: list[dict[str, Any]]

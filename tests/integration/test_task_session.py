@@ -306,6 +306,7 @@ class TestCenterOutIntegration:
             publisher.close()
             ctx.term()
 
+
 class TestCLISimulate:
     """Integration tests for the CLI simulate command."""
 

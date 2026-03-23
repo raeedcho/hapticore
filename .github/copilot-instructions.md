@@ -79,7 +79,7 @@ cd build && ctest --output-on-failure                     # run C++ tests
 
 ### Python pitfalls
 - Do not import PsychoPy in any process except the display process. PsychoPy creates an OpenGL context on import and must own the main thread.
-- Do not use `time.sleep()` for timing in the task controller. Use `time.monotonic()` polling or the TimerManager.
+- Do not use `time.sleep()` for timing in the task controller. Use `time.monotonic()` polling or the TimerManager. (Exception: the main loop's rate-limiting sleep at the end of each tick is fine — it yields CPU, not delays task logic.)
 - Do not use `json` for message serialization — use `msgpack`. JSON is too slow for 1 kHz messaging.
 - Do not use `threading` for parallelism in Python. Use `multiprocessing` or separate processes communicating via ZeroMQ. The GIL prevents true parallelism in threads.
 - Do not use `zmq.REQ`/`zmq.REP` sockets — use `zmq.DEALER`/`zmq.ROUTER` for non-blocking command/response. REQ/REP deadlocks if a message is lost.

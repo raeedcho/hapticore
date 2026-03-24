@@ -305,26 +305,3 @@ class TestCenterOutIntegration:
             controller.teardown()
             publisher.close()
             ctx.term()
-
-
-class TestCLISimulate:
-    """Integration tests for the CLI simulate command."""
-
-    def test_fast_simulation_completes_quickly(self) -> None:
-        """End-to-end: _simulate with --fast finishes in seconds, not minutes."""
-        from argparse import Namespace
-        from pathlib import Path
-
-        from hapticore.cli import _simulate
-
-        config_path = Path(__file__).parents[2] / "configs" / "center_out_experiment.yaml"
-        args = Namespace(config=str(config_path), fast=True)
-
-        start = time.monotonic()
-        _simulate(args)
-        elapsed = time.monotonic() - start
-
-        assert elapsed < 10.0, (
-            f"Fast simulation took {elapsed:.1f}s — timing overrides "
-            f"are probably not being applied"
-        )

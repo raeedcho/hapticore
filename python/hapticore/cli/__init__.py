@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import subprocess
 import sys
 
 
@@ -126,8 +127,10 @@ def _graph_task(args: argparse.Namespace) -> None:
         show_conditions=True,
     )
 
-    output = args.output or f"{class_name}.png"
+    output = args.output or f"{class_name}.svg"
     try:
+        # Ensure graphviz plugins are registered (needed for conda/pixi installs)
+        subprocess.run(["dot", "-c"], capture_output=True)
         task.get_graph().draw(output, prog="dot")  # type: ignore[attr-defined]
         print(f"State machine diagram saved to: {output}")
     except Exception as e:

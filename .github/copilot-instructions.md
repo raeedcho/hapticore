@@ -59,20 +59,26 @@ hapticore/
 ## Build and test commands
 
 ```bash
-# Python
-pip install -e ".[dev]"          # install package with dev dependencies
-pytest tests/unit/               # run unit tests (~30 seconds)
-pytest tests/integration/        # run integration tests with mocks (~2 minutes)
-pytest tests/hardware/ -m hardware  # run hardware tests (requires physical devices)
-ruff check python/               # lint
-mypy python/hapticore/core/      # type check core module (strict mode)
+# Python (primary workflow — uses pixi)
+pixi install                         # install all dependencies + editable package
+pixi run test-unit                   # run Python unit tests
+pixi run test-integration            # run Python integration tests
+pixi run lint                        # ruff check
+pixi run typecheck                   # mypy strict
+pixi run cpp                         # configure + build + test C++ (mock)
+pixi run test-hardware               # hardware tests (requires running server)
 
-# C++ haptic server
-cmake -S cpp/haptic_server -B build -DMOCK_HARDWARE=ON   # configure with mock DHD
-cmake --build build --parallel                            # build
-cd build && ctest --output-on-failure                     # run C++ tests
-# Or use the convenience script:
-./cpp/haptic_server/build.sh
+# pip install -e ".[dev]" still works for Python-only development
+# but won't provide cmake or ninja.
+
+# C++ haptic server (manual, inside pixi shell)
+pixi run cpp                         # full mock build + test via pixi tasks
+# Or manually inside pixi shell:
+pixi shell
+cd cpp/haptic_server
+cmake --preset dev-mock
+cmake --build --preset dev-mock
+ctest --preset dev-mock
 ```
 
 ## Common pitfalls an agent should avoid

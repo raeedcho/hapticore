@@ -2,18 +2,31 @@
 
 First-time setup for running Hapticore with real hardware on the Ubuntu rig machine. This covers the haptic server (C++ with the delta.3) and the hardware test suite. For development with mock hardware on macOS, see `cpp/haptic_server/BUILDING.md`.
 
+**Why pixi?** Hapticore uses [pixi](https://pixi.sh) for environment management. Pixi manages both the Python environment and C++ build tools (cmake, ninja) from a single lockfile (`pixi.lock`), while keeping system libraries (libzmq, libusb) outside the environment to avoid linking conflicts with the proprietary Force Dimension SDK. This means a new developer only needs two `apt install` packages and `pixi install` to get a fully working environment.
+
 ## Prerequisites
 
 ### System packages
 
+Only two system packages are needed — everything else (Python, cmake, ninja, pytest, ruff, mypy) comes from pixi:
+
 ```bash
-sudo apt update
-sudo apt install -y \
-    build-essential g++ cmake ninja-build \
-    libzmq3-dev \
-    libusb-1.0-0-dev \
-    python3.12 python3.12-venv python3-pip
+sudo apt install -y libzmq3-dev libusb-1.0-0-dev
 ```
+
+You also need a C++17 compiler (GCC). On Ubuntu this is usually already installed, but if not:
+
+```bash
+sudo apt install -y build-essential g++
+```
+
+### Install pixi
+
+```bash
+curl -fsSL https://pixi.sh/install.sh | bash
+```
+
+Restart your shell (or `source ~/.bashrc`) after installation.
 
 ### Force Dimension SDK
 
@@ -24,17 +37,20 @@ sudo mkdir -p /opt/forcedimension
 sudo tar xf sdk-3.17.x-linux-x86_64.tar.gz -C /opt/forcedimension
 ```
 
-Add to your shell profile (`~/.bashrc` or `~/.zshrc`):
+Key details about the SDK layout (discovered during hardware bring-up):
 
-```bash
-export FD_SDK_DIR=/opt/forcedimension/sdk-3.17.0
+- **Headers** are named `dhdc.h` and `drdc.h` (not `dhd.h`/`drd.h`). The `c` suffix is only in the header filenames — function names like `dhdGetPosition` do not have it.
+- **Libraries** (`libdhd.a`, `libdrd.a`) are located at `$FD_SDK_DIR/lib/release/lin-<arch>-gcc/` (e.g., `lib/release/lin-x86_64-gcc/`), NOT at `$FD_SDK_DIR/lib/`. The CMakeLists.txt resolves this path automatically using `CMAKE_SYSTEM_PROCESSOR`.
+- **`libusb-1.0`** is a transitive dependency of `libdhd.a`. Since static libraries don't carry transitive dependencies, it must be installed as a system package (handled by the `apt install` above) and is linked explicitly in `target_link_libraries`.
+
+On the rig machine, `FD_SDK_DIR` is set via `pixi.toml`'s `[activation.env]` section so it is automatically available inside the pixi environment:
+
+```toml
+[activation.env]
+FD_SDK_DIR = "/opt/forcedimension/sdk-3.17.0"
 ```
 
-Reload:
-
-```bash
-source ~/.bashrc
-```
+This is already configured in the rig machine's working copy. For a fresh clone, add this section to `pixi.toml` (but do not commit it — the path is machine-specific).
 
 ### USB permissions for the delta.3
 
@@ -57,9 +73,28 @@ sudo usermod -aG plugdev $USER
 
 Log out and back in for the group change to take effect.
 
-## Building the haptic server
+## Clone and install
 
 ```bash
+git clone https://github.com/raeedcho/hapticore.git
+cd hapticore
+pixi install
+```
+
+That's it for the Python environment, build tools, and all dev dependencies. Pixi reads `pixi.toml` (for cmake, ninja, and dev tools) and `pyproject.toml` (for Python package dependencies) and installs everything into an isolated environment.
+
+To verify:
+
+```bash
+pixi run test-unit
+```
+
+## Building the haptic server
+
+Enter the pixi environment, then build:
+
+```bash
+pixi shell
 cd cpp/haptic_server
 cmake --preset dev-real
 cmake --build --preset dev-real
@@ -172,25 +207,6 @@ export HAPTICORE_CMD_ADDRESS=tcp://rigmachine:5556
 | `--cpu-core` | `1` | CPU core to pin the haptic thread to |
 | `--no-calibrate` | off | Skip auto-calibration on startup |
 
-## Python environment
-
-Install the Python package for running hardware tests and (later) the task controller:
-
-```bash
-cd /path/to/hapticore
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-Or, if using mamba/conda:
-
-```bash
-mamba create -n hapticore python=3.12
-mamba activate hapticore
-pip install -e ".[dev]"
-```
-
 ## Running hardware tests
 
 Hardware tests connect to a running haptic server and exercise the real device. They are tagged with `@pytest.mark.hardware` and excluded from CI.
@@ -202,7 +218,7 @@ Hardware tests connect to a running haptic server and exercise the real device. 
 3. Run the tests:
 
 ```bash
-pytest tests/hardware/ -m hardware -v
+pixi run test-hardware
 ```
 
 To use TCP addresses (e.g., server on a different machine):
@@ -210,7 +226,7 @@ To use TCP addresses (e.g., server on a different machine):
 ```bash
 HAPTICORE_PUB_ADDRESS=tcp://rigmachine:5555 \
 HAPTICORE_CMD_ADDRESS=tcp://rigmachine:5556 \
-pytest tests/hardware/ -m hardware -v
+pixi run test-hardware
 ```
 
 ### What the tests verify

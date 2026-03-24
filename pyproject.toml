@@ -59,4 +59,5 @@ markers = [
     "hardware: tests that require physical hardware",
     "benchmark: benchmark tests",
     "slow: performance tests with strict thresholds (run on lab machine)",
+    "uitl: user-in-the-loop tests requiring interactive confirmation from a human operator (never run in CI)",
 ]

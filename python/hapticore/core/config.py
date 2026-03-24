@@ -74,7 +74,9 @@ class TaskConfig(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     conditions: list[dict[str, Any]] = Field(default_factory=list)
     block_size: int = Field(default=20, gt=0)
-    num_blocks: int = Field(default=10, gt=0)
+    # None means open-ended (run until request_stop is called). When an integer
+    # is provided Pydantic enforces gt=0; the constraint is not applied to None.
+    num_blocks: int | None = Field(default=10, gt=0)
     randomization: str = Field(
         default="pseudorandom", pattern=r"^(pseudorandom|sequential|latin_square)$"
     )

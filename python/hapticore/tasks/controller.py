@@ -8,6 +8,7 @@ polls haptic state, checks timers, and dispatches triggers.
 from __future__ import annotations
 
 import logging
+import signal
 import time
 from typing import Any
 
@@ -159,11 +160,18 @@ class TaskController:
         """Main loop. Blocks until the session is complete or stop() is called.
 
         Each iteration:
-        1. Read the latest haptic state.
-        2. Check timers and fire expired triggers.
-        3. Call task.check_triggers().
-        4. Handle deferred trial advancement (from _on_state_change).
-        5. Sleep to maintain poll_rate_hz.
+        1. Handle any pending SIGINT escalation (Ctrl+C).
+        2. Read the latest haptic state.
+        3. Check timers and fire expired triggers.
+        4. Call task.check_triggers().
+        5. Handle deferred trial advancement (from _on_state_change).
+        6. Sleep to maintain poll_rate_hz.
+
+        Ctrl+C escalation:
+
+        * 1st Ctrl+C — finish current block (calls ``request_stop(after="block")``).
+        * 2nd Ctrl+C — finish current trial (calls ``request_stop(after="trial")``).
+        * 3rd Ctrl+C — hard kill (re-raises ``KeyboardInterrupt``).
         """
         if self._stop_requested:
             return
@@ -171,45 +179,79 @@ class TaskController:
         self._stop_requested = False
         tick_duration = 1.0 / self.poll_rate_hz
 
+        # --- SIGINT handler --------------------------------------------------
+        _sigint_count = 0
+
+        def _handle_sigint(signum: int, frame: Any) -> None:
+            nonlocal _sigint_count
+            _sigint_count += 1
+
+        _prev_sigint_handler = signal.signal(signal.SIGINT, _handle_sigint)
+        _last_handled_sigint = 0
+        # ---------------------------------------------------------------------
+
         # Start the first trial
         if not self._start_next_trial():
             logger.warning("No trials to run")
             self._running = False
+            signal.signal(signal.SIGINT, _prev_sigint_handler)
             return
 
-        while self._running:
-            next_tick = time.monotonic() + tick_duration
+        try:
+            while self._running:
+                next_tick = time.monotonic() + tick_duration
 
-            # 1. Read haptic state
-            haptic_state = self.haptic.get_latest_state()
+                # 1. Handle pending Ctrl+C signals (escalating)
+                if _sigint_count > _last_handled_sigint:
+                    _last_handled_sigint = _sigint_count
+                    if _sigint_count == 1:
+                        logger.info(
+                            "Ctrl+C received: finishing current block "
+                            "(press again to finish trial, 3rd time to force quit)"
+                        )
+                        self.trial_manager.request_stop(after="block")
+                    elif _sigint_count == 2:
+                        logger.info(
+                            "Ctrl+C received again: finishing current trial "
+                            "(press again to force quit)"
+                        )
+                        self.trial_manager.request_stop(after="trial")
+                    else:
+                        raise KeyboardInterrupt
 
-            # 2. Check timers — fire expired triggers
-            expired = self.timer.check()
-            for trigger_name in expired:
-                self.task.trigger(trigger_name)
+                # 2. Read haptic state
+                haptic_state = self.haptic.get_latest_state()
 
-            # 3. Let the task check triggers based on haptic state
-            if haptic_state is not None:
-                self.task.check_triggers(haptic_state)
+                # 3. Check timers — fire expired triggers
+                expired = self.timer.check()
+                for trigger_name in expired:
+                    self.task.trigger(trigger_name)
 
-            # 4. Handle deferred trial advancement
-            if self._trial_ended:
-                self._trial_ended = False
-                trial_log = self.trial_manager.get_trial_log()
-                outcome = trial_log[-1]["outcome"] if trial_log else ""
-                self.task.on_trial_end(outcome)
-                if not self.trial_manager.is_complete:
-                    self._start_next_trial()
+                # 4. Let the task check triggers based on haptic state
+                if haptic_state is not None:
+                    self.task.check_triggers(haptic_state)
 
-            # 5. Check if session is complete
-            if self.trial_manager.is_complete and self.task.state == self.task.INITIAL_STATE:
-                self._running = False
-                break
+                # 5. Handle deferred trial advancement
+                if self._trial_ended:
+                    self._trial_ended = False
+                    trial_log = self.trial_manager.get_trial_log()
+                    outcome = trial_log[-1]["outcome"] if trial_log else ""
+                    self.task.on_trial_end(outcome)
+                    if not self.trial_manager.is_complete:
+                        self._start_next_trial()
 
-            # 6. Sleep to maintain poll rate
-            remaining = next_tick - time.monotonic()
-            if remaining > 0:
-                time.sleep(remaining)
+                # 6. Check if session is complete
+                if self.trial_manager.is_complete and self.task.state == self.task.INITIAL_STATE:
+                    self._running = False
+                    break
+
+                # 7. Sleep to maintain poll rate
+                remaining = next_tick - time.monotonic()
+                if remaining > 0:
+                    time.sleep(remaining)
+
+        finally:
+            signal.signal(signal.SIGINT, _prev_sigint_handler)
 
     def stop(self) -> None:
         """Signal the main loop to stop after the current iteration."""

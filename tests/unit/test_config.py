@@ -74,6 +74,15 @@ class TestValueConstraints:
         with pytest.raises(ValidationError):
             TaskConfig(task_class="hapticore.tasks.example.Task", randomization="invalid")
 
+    def test_num_blocks_none_allowed(self) -> None:
+        """num_blocks=None represents an open-ended session."""
+        config = TaskConfig(task_class="hapticore.tasks.example.Task", num_blocks=None)
+        assert config.num_blocks is None
+
+    def test_num_blocks_zero_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            TaskConfig(task_class="hapticore.tasks.example.Task", num_blocks=0)
+
 
 class TestDefaults:
     """Tests for default value application."""

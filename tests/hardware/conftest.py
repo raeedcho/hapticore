@@ -32,20 +32,44 @@ from hapticore.core.messages import HapticState
 # Address configuration
 # ---------------------------------------------------------------------------
 
+DEFAULT_PUB = "ipc:///tmp/hapticore_haptic_state"
+DEFAULT_CMD = "ipc:///tmp/hapticore_haptic_cmd"
+
+
 def _pub_address() -> str:
-    return os.environ.get(
-        "HAPTICORE_PUB_ADDRESS", "ipc:///tmp/hapticore_haptic_state"
-    )
+    return os.environ.get("HAPTICORE_PUB_ADDRESS", DEFAULT_PUB)
 
 
 def _cmd_address() -> str:
-    return os.environ.get(
-        "HAPTICORE_CMD_ADDRESS", "ipc:///tmp/hapticore_haptic_cmd"
-    )
+    return os.environ.get("HAPTICORE_CMD_ADDRESS", DEFAULT_CMD)
 
 
 # ---------------------------------------------------------------------------
-# ZMQ fixtures
+# Session-scoped fixtures (shared across all hardware & interactive tests)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def pub_address() -> str:
+    """PUB address of the haptic server (session-scoped)."""
+    return _pub_address()
+
+
+@pytest.fixture(scope="session")
+def cmd_address() -> str:
+    """CMD address of the haptic server (session-scoped)."""
+    return _cmd_address()
+
+
+@pytest.fixture(scope="session")
+def zmq_context() -> Generator[zmq.Context[zmq.Socket[bytes]], None, None]:
+    """Session-scoped ZMQ context for interactive tests."""
+    ctx: zmq.Context[zmq.Socket[bytes]] = zmq.Context()
+    yield ctx
+    ctx.term()
+
+
+# ---------------------------------------------------------------------------
+# Module-scoped fixtures (for automated hardware tests)
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")

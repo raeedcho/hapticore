@@ -248,6 +248,27 @@ pixi run test-hardware
 
 The final test always reverts to NullField so the handle is free-moving when tests complete.
 
+### Running interactive (feel) tests
+
+Interactive tests keep force fields alive and prompt you to evaluate how
+they feel. You must be holding the delta.3 handle during these tests.
+
+1. Start the haptic server.
+2. Run:
+
+   ```bash
+   pytest tests/hardware/ -m interactive -v -s
+   ```
+
+3. Follow the on-screen prompts. For each test, move the handle and
+   answer `y` or `n` to confirm or reject the expected feel.
+
+To run *only* the automated hardware tests (excluding interactive):
+
+```bash
+pytest tests/hardware/ -m "hardware and not interactive" -v
+```
+
 ## Troubleshooting
 
 **"Error: failed to open haptic device"**

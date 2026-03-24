@@ -203,3 +203,173 @@ class TestTrialManager:
     def test_empty_conditions_raises(self) -> None:
         with pytest.raises(ValueError):
             TrialManager(conditions=[], block_size=1, num_blocks=1)
+
+    def test_zero_num_blocks_raises(self) -> None:
+        with pytest.raises(ValueError):
+            TrialManager(conditions=self._make_conditions(2), block_size=2, num_blocks=0)
+
+
+class TestTrialManagerInfiniteSession:
+    """Tests for open-ended sessions (num_blocks=None)."""
+
+    def _make_conditions(self, n: int = 4) -> list[dict]:
+        return [{"target_id": i} for i in range(n)]
+
+    def test_construction_with_none_num_blocks(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(4),
+            block_size=4,
+            num_blocks=None,
+        )
+        # Only first block generated eagerly
+        assert tm.total_trials == 4
+
+    def test_advance_generates_new_blocks(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2),
+            block_size=2,
+            num_blocks=None,
+            randomization="sequential",
+        )
+        # Exhaust first block
+        assert tm.advance() is not None
+        assert tm.advance() is not None
+        # Should auto-generate a second block
+        c = tm.advance()
+        assert c is not None
+        assert tm.total_trials == 4  # two blocks generated
+
+    def test_is_complete_never_without_stop(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2),
+            block_size=2,
+            num_blocks=None,
+            randomization="sequential",
+        )
+        tm.advance()
+        tm.log_trial("success")
+        tm.advance()
+        tm.log_trial("success")
+        # Even after completing two blocks, not complete — needs explicit stop
+        assert tm.is_complete is False
+
+    def test_request_stop_invalid_raises(self) -> None:
+        tm = TrialManager(conditions=self._make_conditions(2), block_size=2, num_blocks=None)
+        with pytest.raises(ValueError, match="after must be"):
+            tm.request_stop(after="immediately")
+
+
+class TestTrialManagerRequestStop:
+    """Tests for graceful-stop behaviour."""
+
+    def _make_conditions(self, n: int = 4) -> list[dict]:
+        return [{"target_id": i} for i in range(n)]
+
+    def _make_tm(self, num_blocks: int | None = 4) -> TrialManager:
+        return TrialManager(
+            conditions=self._make_conditions(2),
+            block_size=2,
+            num_blocks=num_blocks,
+            randomization="sequential",
+        )
+
+    # ---- stop after trial ----
+
+    def test_stop_after_trial_advance_returns_none(self) -> None:
+        tm = self._make_tm()
+        tm.advance()  # trial 0
+        tm.request_stop(after="trial")
+        # Next advance should return None immediately
+        assert tm.advance() is None
+
+    def test_stop_after_trial_is_complete_after_log(self) -> None:
+        tm = self._make_tm()
+        tm.advance()  # trial 0
+        assert tm.is_complete is False
+        tm.request_stop(after="trial")
+        assert tm.is_complete is False  # not logged yet
+        tm.log_trial("success")
+        assert tm.is_complete is True
+
+    def test_stop_after_trial_mid_block(self) -> None:
+        """Stop on the second trial of a 2-trial block (last trial in block 0)."""
+        tm = self._make_tm()
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.advance()  # trial 1 (last trial of block 0)
+        tm.request_stop(after="trial")
+        assert tm.advance() is None
+
+    # ---- stop after block ----
+
+    def test_stop_after_block_finishes_current_block(self) -> None:
+        tm = self._make_tm()  # block_size=2, num_blocks=4
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        # Still in block 0, should continue
+        assert tm.advance() is not None  # trial 1
+        # Now at block boundary (next would be trial 2, start of block 1)
+        assert tm.advance() is None
+
+    def test_stop_after_block_is_complete_at_boundary(self) -> None:
+        tm = self._make_tm()  # block_size=2
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        tm.advance()  # trial 1 (last in block 0)
+        assert tm.is_complete is False  # not logged yet
+        tm.log_trial("success")
+        assert tm.is_complete is True  # block boundary + logged
+
+    def test_stop_after_block_not_complete_mid_block(self) -> None:
+        """Request stop mid-block: is_complete must be False until block ends."""
+        tm = TrialManager(
+            conditions=self._make_conditions(3),
+            block_size=3,
+            num_blocks=4,
+            randomization="sequential",
+        )
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        # Trial 1 of block 0 — mid-block, not complete
+        tm.advance()
+        tm.log_trial("success")
+        assert tm.is_complete is False
+
+    def test_stop_after_block_works_for_infinite_session(self) -> None:
+        tm = self._make_tm(num_blocks=None)  # infinite
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        tm.advance()  # trial 1 (last in block 0)
+        tm.log_trial("success")
+        assert tm.is_complete is True
+        assert tm.advance() is None
+
+    # ---- stop type in summary ----
+
+    def test_summary_stop_type_completed(self) -> None:
+        tm = self._make_tm(num_blocks=1)
+        tm.advance()
+        tm.log_trial("success")
+        tm.advance()
+        tm.log_trial("success")
+        assert tm.get_summary()["stop_type"] == "completed"
+
+    def test_summary_stop_type_stopped_at_block(self) -> None:
+        tm = self._make_tm()
+        tm.advance()
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        tm.advance()
+        tm.log_trial("success")
+        assert tm.get_summary()["stop_type"] == "stopped_at_block"
+
+    def test_summary_stop_type_stopped_mid_block(self) -> None:
+        tm = self._make_tm()
+        tm.advance()
+        tm.log_trial("success")
+        tm.request_stop(after="trial")
+        assert tm.get_summary()["stop_type"] == "stopped_mid_block"

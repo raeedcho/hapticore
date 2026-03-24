@@ -67,6 +67,7 @@ class TrialManager:
         self._blocks_generated: int = 0
         self._stop_after_trial: bool = False
         self._stop_after_block: bool = False
+        self._latin_square_warned: bool = False
 
         if self._num_blocks is not None:
             # Finite session: generate the full sequence upfront
@@ -97,12 +98,14 @@ class TrialManager:
             pass  # no shuffle
         elif self._randomization == "latin_square":
             if self._block_size != len(self._conditions):
-                logger.warning(
-                    "latin_square requires block_size == len(conditions) "
-                    "(%d != %d); falling back to pseudorandom",
-                    self._block_size,
-                    len(self._conditions),
-                )
+                if not self._latin_square_warned:
+                    logger.warning(
+                        "latin_square requires block_size == len(conditions) "
+                        "(%d != %d); falling back to pseudorandom",
+                        self._block_size,
+                        len(self._conditions),
+                    )
+                    self._latin_square_warned = True
                 self._rng.shuffle(block)
             else:
                 n = len(self._conditions)
@@ -270,10 +273,20 @@ class TrialManager:
         success_count = outcomes.get("success", 0)
         accuracy = success_count / completed if completed > 0 else 0.0
 
-        if self._stop_after_trial:
-            stop_type = "stopped_mid_block"
-        elif self._stop_after_block:
-            stop_type = "stopped_at_block"
+        if self._stop_after_trial or self._stop_after_block:
+            # A stop was requested — derive stop_type from where the session
+            # actually stopped rather than which flag was set, because
+            # request_stop(after="trial") can coincide with a block boundary.
+            if completed == 0:
+                # No trials logged yet: fall back to flag-based semantics.
+                stop_type = (
+                    "stopped_mid_block" if self._stop_after_trial
+                    else "stopped_at_block"
+                )
+            else:
+                last_index = self._trial_log[-1]["trial_number"]
+                on_boundary = (last_index + 1) % self._block_size == 0
+                stop_type = "stopped_at_block" if on_boundary else "stopped_mid_block"
         else:
             stop_type = "completed"
 

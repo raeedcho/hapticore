@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import signal
+import threading
 import time
 from typing import Any
 
@@ -65,6 +66,7 @@ class TaskController:
         self._stop_requested = False
         self._trial_ended = False
         self._machine: Machine | None = None
+        self._sigint_handler_ready = threading.Event()
 
     def setup(self) -> None:
         """Wire the task into the runtime.
@@ -187,6 +189,7 @@ class TaskController:
             _sigint_count += 1
 
         _prev_sigint_handler = signal.signal(signal.SIGINT, _handle_sigint)
+        self._sigint_handler_ready.set()
         _last_handled_sigint = 0
         # ---------------------------------------------------------------------
 
@@ -195,6 +198,7 @@ class TaskController:
             logger.warning("No trials to run")
             self._running = False
             signal.signal(signal.SIGINT, _prev_sigint_handler)
+            self._sigint_handler_ready.clear()
             return
 
         try:
@@ -252,6 +256,7 @@ class TaskController:
 
         finally:
             signal.signal(signal.SIGINT, _prev_sigint_handler)
+            self._sigint_handler_ready.clear()
 
     def stop(self) -> None:
         """Signal the main loop to stop after the current iteration."""

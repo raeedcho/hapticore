@@ -403,7 +403,9 @@ class TestControllerInfiniteSession:
             log = tm.get_trial_log()
             assert len(log) > 0
             summary = tm.get_summary()
-            assert summary["stop_type"] == "stopped_mid_block"
+            # stop_type depends on whether the stop happened to land on a
+            # block boundary; either is valid for after="trial"
+            assert summary["stop_type"] in ("stopped_mid_block", "stopped_at_block")
         finally:
             controller.teardown()
             pub.close()
@@ -473,7 +475,8 @@ class TestControllerSigint:
             controller.setup()
 
             def _send_sigint() -> None:
-                time.sleep(0.05)  # let a few trials run (well < block boundary)
+                controller._sigint_handler_ready.wait(timeout=2.0)
+                time.sleep(0.01)  # let a few trials run
                 os.kill(os.getpid(), signal.SIGINT)
 
             t = threading.Thread(target=_send_sigint, daemon=True)
@@ -501,7 +504,8 @@ class TestControllerSigint:
             controller.setup()
 
             def _send_two_sigints() -> None:
-                time.sleep(0.02)   # let a few trials run
+                controller._sigint_handler_ready.wait(timeout=2.0)
+                time.sleep(0.01)   # let a few trials run
                 os.kill(os.getpid(), signal.SIGINT)
                 time.sleep(0.005)  # pause so the first is processed (> 1 loop tick)
                 os.kill(os.getpid(), signal.SIGINT)
@@ -538,7 +542,8 @@ class TestControllerSigint:
             controller.setup()
 
             def _send_three_sigints() -> None:
-                time.sleep(0.02)   # let trial start
+                controller._sigint_handler_ready.wait(timeout=2.0)
+                time.sleep(0.01)   # let trial start
                 os.kill(os.getpid(), signal.SIGINT)
                 time.sleep(0.005)
                 os.kill(os.getpid(), signal.SIGINT)

@@ -108,18 +108,38 @@ class TaskController:
         result: dict[str, Any] = {}
         for name, spec in self.task.PARAMS.items():
             value = self._param_overrides.get(name, spec.default)
-            # Type check
-            if not isinstance(value, spec.type):
-                raise TypeError(
-                    f"Parameter '{name}' must be {spec.type.__name__}, "
-                    f"got {type(value).__name__}"
-                )
-            # Bounds check for numeric types
-            if spec.min is not None and isinstance(value, (int, float)) and value < spec.min:
+            # Type check with numeric special-casing:
+            # - allow ints for float params (but not bool) and coerce to float
+            # - reject bool for int params
+            expected_type = spec.type
+            if expected_type is float:
+                # Accept ints and floats, but not bools (bool is a subclass of int)
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise TypeError(
+                        f"Parameter '{name}' must be {expected_type.__name__}, "
+                        f"got {type(value).__name__}"
+                    )
+                value = float(value)
+            elif expected_type is int:
+                # Require real ints, excluding bool
+                if not isinstance(value, int) or isinstance(value, bool):
+                    raise TypeError(
+                        f"Parameter '{name}' must be {expected_type.__name__}, "
+                        f"got {type(value).__name__}"
+                    )
+            else:
+                if not isinstance(value, expected_type):
+                    raise TypeError(
+                        f"Parameter '{name}' must be {expected_type.__name__}, "
+                        f"got {type(value).__name__}"
+                    )
+            # Bounds check for numeric types (exclude bool, which is a subclass of int)
+            is_numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+            if spec.min is not None and is_numeric and value < spec.min:
                 raise ValueError(
                     f"Parameter '{name}' = {value} is below minimum {spec.min}"
                 )
-            if spec.max is not None and isinstance(value, (int, float)) and value > spec.max:
+            if spec.max is not None and is_numeric and value > spec.max:
                 raise ValueError(
                     f"Parameter '{name}' = {value} is above maximum {spec.max}"
                 )

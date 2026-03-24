@@ -22,3 +22,4 @@ The predecessor djoshea/haptic-control system used CHAI3D because it also render
 - If a future task requires full 3D mesh collision (not anticipated given the effectively planar delta.3 workspace), a dedicated collision library like FCL could be added alongside Box2D without reintroducing CHAI3D.
 - The C++ codebase is much smaller and builds faster without CHAI3D.
 - Developers familiar with CHAI3D's API will need to learn the DHD SDK directly, though it is simpler.
+- We also link `libdrd` (the Force Dimension robotic library) for startup auto-calibration (`drdAutoInit()`). DRD is built on top of DHD and shares the device handle — opening via `drdOpen()` gives access to all DHD functions. The DRD dependency is limited to the startup sequence; the haptic loop uses only DHD calls.

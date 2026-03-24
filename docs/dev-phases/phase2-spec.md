@@ -168,6 +168,9 @@ public:
     virtual bool get_linear_velocity(Vec3& vel) = 0;
     virtual bool set_force(const Vec3& force) = 0;
     virtual bool set_effector_mass(double mass_kg) = 0;
+    virtual bool enable_force(bool enable) = 0;
+    virtual bool set_gravity_compensation(bool enable) = 0;
+    virtual bool calibrate() = 0;
     virtual std::string device_name() const = 0;
     virtual Vec3 max_force() const = 0;
 };
@@ -175,7 +178,7 @@ public:
 std::unique_ptr<DhdInterface> create_dhd_interface();
 ```
 
-**`DhdReal`** (compiled when `MOCK_HARDWARE` is off): thin wrapper calling `dhdOpen()`, `dhdGetPosition()`, `dhdGetLinearVelocity()`, `dhdSetForce()`, `dhdSetEffectorMass()`, `dhdClose()`. Include `<dhd.h>` from the SDK.
+**`DhdReal`** (compiled when `MOCK_HARDWARE` is off): thin wrapper calling `drdOpen()`, `drdClose()`, `drdAutoInit()`, `drdIsInitialized()`, `drdStop()`, `dhdGetPosition()`, `dhdGetLinearVelocity()`, `dhdSetForce()`, `dhdSetEffectorMass()`, `dhdEnableForce()`, `dhdSetGravityCompensation()`. Include `<drdc.h>` from the SDK (transitively includes `<dhdc.h>`).
 
 **`DhdMock`** (compiled when `MOCK_HARDWARE` is on): returns configurable synthetic positions/velocities. Records every `set_force()` call in an internal `std::vector<Vec3>` for test assertions. Provide setters:
 ```cpp
@@ -586,11 +589,15 @@ Usage: haptic_server [options]
 ```
 
 Startup sequence:
-1. Parse arguments
+1. Parse arguments (including `--no-calibrate`)
 2. Create `DhdInterface` via `create_dhd_interface()`. Call `open()`. If it fails, exit with error.
-3. Call `dhd->set_effector_mass(0.0)` for gravity compensation (mass configurable later).
-4. Create `TripleBuffer<HapticStateData>`
-5. Create initial `NullField` as the active field
+3. If auto-calibrate enabled, call `dhd->calibrate()`. Log warning on failure (non-fatal).
+4. Call `dhd->set_gravity_compensation(true)`.
+5. Call `dhd->enable_force(true)`. If it fails, exit with error.
+6. Call `dhd->set_effector_mass(0.0)` for gravity compensation (mass configurable later).
+7. Run startup diagnostic (verify gravity compensation produces forces).
+8. Create `TripleBuffer<HapticStateData>`
+9. Create initial `NullField` as the active field
 6. Define command handler lambda that dispatches based on method string (see Step 9)
 7. Launch three threads: haptic, publisher, command
 8. Install `SIGINT`/`SIGTERM` handler that requests stop on all threads

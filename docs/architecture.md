@@ -50,7 +50,7 @@ Hapticore is a three-tier system for primate neurophysiology experiments involvi
 
 The haptic server is a standalone C++ executable with three threads.
 
-**Haptic thread** (SCHED_FIFO priority 80, pinned CPU core): Runs at 4 kHz. Each tick: read device position/velocity via `dhdGetPosition()`/`dhdGetLinearVelocity()` → evaluate the active `ForceField::compute(pos, vel, dt)` → clamp forces to device limits → apply via `dhdSetForce()` → write state to a triple buffer. Uses `clock_nanosleep()` for precise timing and `mlockall()` to prevent page faults.
+**Haptic thread** (SCHED_FIFO priority 80, pinned CPU core): Runs at 4 kHz. Each tick: read device position/velocity via `dhdGetPosition()`/`dhdGetLinearVelocity()` → evaluate the active `ForceField::compute(pos, vel, dt)` → clamp forces to device limits → apply via `dhdSetForce()` → write state to a triple buffer. Uses `clock_nanosleep()` for precise timing and `mlockall()` to prevent page faults. Note: the SDK transparently adds gravity compensation forces on top of the application's force vector inside `dhdSetForce()`. The force computed by `ForceField::compute()` represents the task-level force only; the actual force applied to the device includes gravity compensation computed by the SDK based on the current joint configuration.
 
 **Publisher thread**: Reads latest state from the triple buffer at a configurable rate (default 200 Hz). Serializes with msgpack (named keys via `MSGPACK_DEFINE_MAP`). Sends on ZMQ PUB socket.
 
@@ -65,11 +65,11 @@ The haptic server is a standalone C++ executable with three threads.
 - `PhysicsField`: wraps a Box2D world for rigid-body dynamics and collision (see ADR-007). Supports polygons, circles, revolute/prismatic joints, and static obstacles. Used for tasks involving collisions (e.g., Tetris-like block placement, air hockey) and underactuated dynamics (e.g., pivoted rod navigation). The monkey controls a kinematic body; Box2D computes reaction forces from contacts and constraints.
 - `CompositeField`: sum of multiple fields
 
-**Safety**: force clamping every tick, communication timeout (revert to NullField + damping if no heartbeat in 500 ms), maximum stiffness enforcement.
+**Safety**: force clamping every tick, communication timeout (revert to NullField + damping if no heartbeat in 500 ms), maximum stiffness enforcement, auto-calibration at startup (with `--no-calibrate` override).
 
 **Key design principle**: Python never sends raw force values. Python sends *field parameters* (spring constant, target position, pendulum length, or a full physics world specification). The C++ thread evaluates forces at 4 kHz using these parameters. This decouples the 4 kHz control rate from the ~100 Hz Python rate. See ADR-002 for rationale.
 
-**Dependencies**: Force Dimension DHD SDK, Box2D v3.0 (via CPM.cmake), cppzmq, msgpack-cxx, pthreads/rt.
+**Dependencies**: Force Dimension SDK (DHD for haptic control, DRD for startup calibration), Box2D v3.0 (via CPM.cmake), cppzmq, msgpack-cxx, pthreads/rt.
 
 ## Tier 2: Python task control
 

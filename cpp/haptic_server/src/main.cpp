@@ -120,7 +120,9 @@ int main(int argc, char* argv[]) {
 
     // 2. Auto-calibrate if needed (skips if already calibrated this power cycle)
     if (auto_calibrate && !dhd->calibrate()) {
-        std::cerr << "Warning: calibration failed — positions may be inaccurate\n";
+        std::cerr << "Warning: calibration failed — positions may be inaccurate. "
+                  << "If not calibrated this power cycle, try power-cycling "
+                  << "and restarting.\n";
     }
 
     // 3. Gravity compensation and force enable
@@ -141,11 +143,12 @@ int main(int argc, char* argv[]) {
         // include gravity compensation (nonzero unless at singularity).
         Vec3 zero_force = {0.0, 0.0, 0.0};
         dhd->set_force(zero_force);
-        // Read back the position to compute expected gravity comp magnitude.
-        // On mock hardware this will be zero, which is fine.
         double pos_mag = std::sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
         if (pos_mag > 1e-6) {
             std::cout << "Gravity compensation check: device at nonzero position\n";
+        } else {
+            std::cout << "Gravity compensation check: device at origin "
+                      << "(expected for mock hardware)\n";
         }
     }
 

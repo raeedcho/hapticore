@@ -47,7 +47,8 @@ bool DhdReal::set_gravity_compensation(bool enable) {
 
 bool DhdReal::calibrate() {
     if (!drdIsSupported()) {
-        std::cerr << "Warning: device does not support DRD auto-calibration\n";
+        std::cerr << "Warning: device does not report DRD support "
+                  << "(unexpected for delta.3)\n";
         return false;
     }
     if (drdIsInitialized()) {

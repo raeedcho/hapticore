@@ -137,11 +137,6 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    if (!dhd->set_effector_mass(0.0)) {
-        std::cerr << "Error: failed to set effector mass\n";
-        return EXIT_FAILURE;
-    }
-
     // 4. Startup diagnostic: position sanity check
     {
         Vec3 pos{};

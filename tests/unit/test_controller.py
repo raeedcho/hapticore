@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import pytest
 import zmq
 
 from hapticore.core.messages import TOPIC_EVENT, StateTransition, deserialize
@@ -279,3 +280,31 @@ class TestControllerParamOverrides:
             controller.teardown()
             pub.close()
             ctx.term()
+
+    def test_unknown_param_raises(self) -> None:
+        """Verify unknown parameter names in overrides raise ValueError."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller(
+            task, num_trials=1, params={"holdtime": 0.2},  # typo
+        )
+        try:
+            with pytest.raises(ValueError, match="Unknown parameter"):
+                controller.setup()
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+
+class TestControllerValidation:
+    def test_zero_poll_rate_raises(self) -> None:
+        """Verify poll_rate_hz=0 raises ValueError."""
+        task = SimpleTestTask()
+        with pytest.raises(ValueError, match="poll_rate_hz must be positive"):
+            _make_controller(task, poll_rate_hz=0.0)
+
+    def test_negative_poll_rate_raises(self) -> None:
+        """Verify negative poll_rate_hz raises ValueError."""
+        task = SimpleTestTask()
+        with pytest.raises(ValueError, match="poll_rate_hz must be positive"):
+            _make_controller(task, poll_rate_hz=-10.0)

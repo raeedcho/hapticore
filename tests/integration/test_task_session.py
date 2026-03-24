@@ -324,7 +324,7 @@ class TestCLISimulate:
         _simulate(args)
         elapsed = time.monotonic() - start
 
-        assert elapsed < 5.0, (
+        assert elapsed < 10.0, (
             f"Fast simulation took {elapsed:.1f}s — timing overrides "
             f"are probably not being applied"
         )

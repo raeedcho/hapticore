@@ -33,6 +33,18 @@ bool DhdMock::set_effector_mass(double mass_kg) {
     return true;
 }
 
+bool DhdMock::enable_force(bool /*enable*/) {
+    return true;
+}
+
+bool DhdMock::set_gravity_compensation(bool /*enable*/) {
+    return true;
+}
+
+bool DhdMock::calibrate() {
+    return true;
+}
+
 std::string DhdMock::device_name() const {
     return "MockDHD";
 }

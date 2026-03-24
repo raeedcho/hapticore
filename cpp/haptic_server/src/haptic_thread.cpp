@@ -100,7 +100,11 @@ void HapticThread::run(std::atomic<bool>& stop_requested) {
         force = clamp_force(force);
 
         // 7. Apply force to device
-        dhd_->set_force(force);
+        if (!dhd_->set_force(force)) {
+            // Record error; avoid logging from the RT loop to prevent
+            // unpredictable latency.  The flag is checked on shutdown.
+            force_error_logged_ = true;
+        }
 
         // 8. Populate state in triple buffer
         auto& state = state_buffer_.write_buffer();
@@ -161,7 +165,13 @@ void HapticThread::run(std::atomic<bool>& stop_requested) {
 #endif
     }
 
-    // Close the device on shutdown
+    // Report set_force errors that occurred during the RT loop
+    if (force_error_logged_) {
+        std::cerr << "Warning: dhdSetForce failed at least once during the session\n";
+    }
+
+    // Disable force rendering and close the device on shutdown
+    dhd_->enable_force(false);
     dhd_->close();
 }
 

@@ -133,3 +133,25 @@ def receive_n_states(
 ) -> list[HapticState]:
     """Receive n state messages."""
     return [receive_state(sub) for _ in range(n)]
+
+
+def drain_and_receive_state(
+    sub: zmq.Socket[bytes],
+    settle_time: float = 0.05,
+) -> HapticState:
+    """Drain stale messages from the ZMQ SUB queue, then read fresh state.
+
+    The module-scoped SUB socket accumulates messages at ~200 Hz.  After a
+    command changes the active field, older messages published before the
+    change may still be queued.  This helper discards them, waits briefly
+    for the new state to propagate, and returns the first fresh message.
+    """
+    time.sleep(settle_time)
+    # Drain all buffered messages
+    while True:
+        try:
+            sub.recv_multipart(flags=zmq.NOBLOCK)
+        except zmq.Again:
+            break
+    # Now read the next fresh message
+    return receive_state(sub)

@@ -13,6 +13,9 @@ public:
     virtual bool get_linear_velocity(Vec3& vel) = 0;
     virtual bool set_force(const Vec3& force) = 0;
     virtual bool set_effector_mass(double mass_kg) = 0;
+    virtual bool enable_force(bool enable) = 0;
+    virtual bool set_gravity_compensation(bool enable) = 0;
+    virtual bool calibrate() = 0;
     virtual std::string device_name() const = 0;
     virtual Vec3 max_force() const = 0;
 };

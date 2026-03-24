@@ -25,7 +25,7 @@ import time
 import pytest
 import zmq
 
-from .conftest import receive_n_states, receive_state, send_command
+from .conftest import drain_and_receive_state, receive_n_states, receive_state, send_command
 
 pytestmark = pytest.mark.hardware
 
@@ -123,9 +123,7 @@ class TestCommandRoundTrip:
         )
         assert resp["success"] is True
 
-        # Wait for the next state to reflect the change
-        time.sleep(0.05)
-        state = receive_state(state_sub)
+        state = drain_and_receive_state(state_sub)
         assert state.active_field == "null"
 
 
@@ -153,14 +151,8 @@ class TestSpringField:
             },
         )
         assert resp["success"] is True
-        # Let the field take effect and settle
-        time.sleep(0.1)
-        # Drain any stale messages
-        while True:
-            try:
-                state_sub.recv_multipart(flags=zmq.NOBLOCK)
-            except zmq.Again:
-                break
+        # Drain stale messages so subsequent reads see the new field
+        drain_and_receive_state(state_sub, settle_time=0.1)
 
     def test_active_field_is_spring_damper(
         self, state_sub: zmq.Socket[bytes]
@@ -224,7 +216,9 @@ class TestForceClamping:
             },
         )
         assert resp["success"] is True
-        time.sleep(0.1)
+
+        # Drain stale messages before verifying clamped forces
+        drain_and_receive_state(state_sub, settle_time=0.1)
 
         # Collect several states and verify clamping
         states = receive_n_states(state_sub, 20)
@@ -264,6 +258,9 @@ class TestHeartbeatTimeout:
         # Now stop sending heartbeats and wait for timeout (500ms + margin)
         time.sleep(0.7)
 
+        # Drain stale messages from before timeout
+        drain_and_receive_state(state_sub)
+
         states = receive_n_states(state_sub, 10)
         for state in states:
             mag = math.sqrt(sum(f ** 2 for f in state.force))
@@ -292,8 +289,7 @@ class TestHeartbeatTimeout:
         )
         assert resp["success"] is True
 
-        time.sleep(0.1)
-        state = receive_state(state_sub)
+        state = drain_and_receive_state(state_sub, settle_time=0.1)
         assert state.active_field == "spring_damper"
 
 

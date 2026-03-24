@@ -58,6 +58,9 @@ private:
     // Track whether we've already transitioned to the safety field
     bool in_safety_mode_ = false;
 
+    // Log only the first set_force error to avoid console spam in the RT loop
+    bool force_error_logged_ = false;
+
     // Mutex-protected state snapshot for get_state command
     mutable std::mutex state_mtx_;
     HapticStateData last_state_;

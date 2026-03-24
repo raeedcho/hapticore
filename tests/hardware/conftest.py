@@ -133,3 +133,19 @@ def receive_n_states(
 ) -> list[HapticState]:
     """Receive n state messages."""
     return [receive_state(sub) for _ in range(n)]
+
+
+def drain_and_receive_state(
+    sub: zmq.Socket[bytes],
+    settle_time: float = 0.05,
+) -> HapticState:
+    """Drain stale messages, wait for fresh state."""
+    time.sleep(settle_time)
+    # Drain all buffered messages
+    while True:
+        try:
+            sub.recv_multipart(flags=zmq.NOBLOCK)
+        except zmq.Again:
+            break
+    # Now read the next fresh message
+    return receive_state(sub)

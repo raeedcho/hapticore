@@ -30,11 +30,10 @@ This builds with mock DHD stubs and runs all unit tests.
 
 ## Building with real hardware (rig machine only)
 
-Requires the Force Dimension SDK. On the rig machine, `FD_SDK_DIR` should be set via `pixi.toml`'s `[activation.env]` section so it is automatically available inside `pixi shell`:
+Requires the Force Dimension SDK. Set the `FD_SDK_DIR` environment variable:
 
-```toml
-[activation.env]
-FD_SDK_DIR = "/opt/forcedimension/sdk-3.17.0"
+```bash
+export FD_SDK_DIR=/opt/forcedimension/sdk-3.17.0
 ```
 
 Then build inside the pixi environment:

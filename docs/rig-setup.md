@@ -2,22 +2,20 @@
 
 First-time setup for running Hapticore with real hardware on the Ubuntu rig machine. This covers the haptic server (C++ with the delta.3) and the hardware test suite. For development with mock hardware on macOS, see `cpp/haptic_server/BUILDING.md`.
 
-**Why pixi?** Hapticore uses [pixi](https://pixi.sh) for environment management. Pixi manages both the Python environment and C++ build tools (cmake, ninja) from a single lockfile (`pixi.lock`), while keeping system libraries (libzmq, libusb) outside the environment to avoid linking conflicts with the proprietary Force Dimension SDK. This means a new developer only needs two `apt install` packages and `pixi install` to get a fully working environment.
+**Why pixi?** Hapticore uses [pixi](https://pixi.sh) for environment management. Pixi manages both the Python environment and C++ build tools (cmake, ninja) from a single lockfile (`pixi.lock`), while keeping system libraries (libzmq, libusb) outside the environment to avoid linking conflicts with the proprietary Force Dimension SDK. This means a new developer only needs a few `apt install` packages and `pixi install` to get a fully working environment.
 
 ## Prerequisites
 
 ### System packages
 
-Only two system packages are needed — everything else (Python, cmake, ninja, pytest, ruff, mypy) comes from pixi:
+Only a few system packages are needed — everything else (Python, cmake, ninja, pytest, ruff, mypy) comes from pixi:
 
 ```bash
-sudo apt install -y libzmq3-dev libusb-1.0-0-dev
-```
-
-You also need a C++17 compiler (GCC). On Ubuntu this is usually already installed, but if not:
-
-```bash
-sudo apt install -y build-essential g++
+sudo apt update
+sudo apt install -y \
+    build-essential g++ \
+    libzmq3-dev \
+    libusb-1.0-0-dev \
 ```
 
 ### Install pixi
@@ -43,14 +41,17 @@ Key details about the SDK layout (discovered during hardware bring-up):
 - **Libraries** (`libdhd.a`, `libdrd.a`) are located at `$FD_SDK_DIR/lib/release/lin-<arch>-gcc/` (e.g., `lib/release/lin-x86_64-gcc/`), NOT at `$FD_SDK_DIR/lib/`. The CMakeLists.txt resolves this path automatically using `CMAKE_SYSTEM_PROCESSOR`.
 - **`libusb-1.0`** is a transitive dependency of `libdhd.a`. Since static libraries don't carry transitive dependencies, it must be installed as a system package (handled by the `apt install` above) and is linked explicitly in `target_link_libraries`.
 
-On the rig machine, `FD_SDK_DIR` is set via `pixi.toml`'s `[activation.env]` section so it is automatically available inside the pixi environment:
+Add to your shell profile (`~/.bashrc` or `~/.zshrc`):
 
-```toml
-[activation.env]
-FD_SDK_DIR = "/opt/forcedimension/sdk-3.17.0"
+```bash
+export FD_SDK_DIR=/opt/forcedimension/sdk-3.17.0
 ```
 
-This is already configured in the rig machine's working copy. For a fresh clone, add this section to `pixi.toml` (but do not commit it — the path is machine-specific).
+Reload:
+
+```bash
+source ~/.bashrc
+```
 
 ### USB permissions for the delta.3
 

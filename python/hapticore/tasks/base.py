@@ -12,7 +12,8 @@ import dataclasses
 import time
 import uuid
 from abc import ABC
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 @dataclasses.dataclass(frozen=True)

@@ -109,11 +109,11 @@ def _graph_task(args: argparse.Namespace) -> None:
         from transitions.extensions import GraphMachine
     except ImportError:
         print(
-            "Error: graphviz support requires the 'graphviz' package.\n"
-            "Install with: pip install graphviz\n"
-            "Also install the system 'dot' binary:\n"
+            "Error: diagram support requires 'pygraphviz'.\n"
+            "Install with: pip install 'hapticore[diagrams]'\n"
+            "Also install the system graphviz development libraries:\n"
             "  macOS: brew install graphviz\n"
-            "  Ubuntu: apt install graphviz",
+            "  Ubuntu: apt install graphviz libgraphviz-dev",
             file=sys.stderr,
         )
         sys.exit(1)

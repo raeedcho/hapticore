@@ -25,7 +25,9 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
     "types-PyYAML>=6.0",
-    "graphviz>=0.20",
+]
+diagrams = [
+    "pygraphviz>=1.11",
 ]
 
 [project.scripts]

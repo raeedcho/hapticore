@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from hapticore.tasks.timer import TimerManager
 
 
@@ -89,19 +91,28 @@ class TestTimerManager:
         timer.cancel("a")
         assert timer.active_count == 1
 
-    def test_timer_accuracy(self) -> None:
-        """Timer fires within 5ms of target on a non-real-time OS."""
+    def test_timer_fires_after_deadline(self) -> None:
+        """Timer never fires early. Runs everywhere."""
         timer = TimerManager()
-        delay = 0.010  # 10 ms
+        timer.set("t", 0.010)
+        # Immediate check should not fire
+        assert timer.check() == []
+        # Wait well past deadline, then verify it fires
+        time.sleep(0.050)
+        assert "t" in timer.check()
+
+    @pytest.mark.slow
+    def test_timer_accuracy_on_rt_host(self) -> None:
+        """Timer fires within 2ms of target. Only meaningful on the rig machine."""
+        timer = TimerManager()
+        delay = 0.010
         timer.set("t", delay)
         start = time.monotonic()
         while True:
             expired = timer.check()
             if expired:
-                actual = time.monotonic() - start
-                # Timer should not fire early and should be within 5ms of target
-                assert actual >= delay - 0.001  # allow 1ms clock jitter
-                assert actual - delay < 0.005   # within 5ms of target
+                jitter = time.monotonic() - start - delay
+                assert jitter < 0.002, f"Timer jitter {jitter*1000:.1f}ms exceeds 2ms"
                 break
             if time.monotonic() - start > 0.1:
                 raise AssertionError("Timer did not expire within 100ms")

@@ -120,7 +120,7 @@ You should see:
 ```
 Opened device: delta.3
 Device already calibrated
-Gravity compensation check: device at nonzero position
+Position sanity check: device at nonzero position
 Haptic server running.
   PUB: ipc:///tmp/hapticore_haptic_state
   CMD: ipc:///tmp/hapticore_haptic_cmd
@@ -135,7 +135,7 @@ For a fresh power-on (uncalibrated device), you will instead see:
 Opened device: delta.3
 Auto-calibrating — device will move, keep hands clear...
 Calibration complete
-Gravity compensation check: device at nonzero position
+Position sanity check: device at nonzero position
 Haptic server running.
 ...
 ```
@@ -258,11 +258,9 @@ The final test always reverts to NullField so the handle is free-moving when tes
 - This means `dhdEnableForce(DHD_ON)` was not called, or the SDK's gravity compensation pipeline is not initialized. This was a known bug fixed in Phase 2B. If you see this on an older build, rebuild from the latest code.
 - If using a custom build that skips `enable_force`, pressing the physical FORCE button on the DHC will enable the amplifiers but *not* the SDK's host-side gravity compensation — the handle will still drop.
 
-**"Warning: calibration failed"**
-- The DRD auto-calibration could not complete. The device may still work if it was calibrated in a previous session (within the same power cycle).
+**"Error: calibration failed"**
+- The DRD auto-calibration could not complete and the server exits.
 - Try running the SDK's `autocenter` example manually to diagnose.
 - Make sure the device arms can move freely — obstructions prevent calibration.
-
-**"Warning: gravity compensation forces near zero"**
-- The device is likely not calibrated (position readings are inaccurate, so gravity comp computes wrong torques).
-- Power-cycle the device and restart the server to trigger auto-calibration.
+- If the device was calibrated externally this power cycle, use `--no-calibrate` to skip.
+- Power-cycle the device and restart the server to retry auto-calibration.

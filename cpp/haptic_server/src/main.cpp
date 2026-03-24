@@ -120,35 +120,41 @@ int main(int argc, char* argv[]) {
 
     // 2. Auto-calibrate if needed (skips if already calibrated this power cycle)
     if (auto_calibrate && !dhd->calibrate()) {
-        std::cerr << "Warning: calibration failed — positions may be inaccurate. "
-                  << "If not calibrated this power cycle, try power-cycling "
-                  << "and restarting.\n";
+        std::cerr << "Error: calibration failed — cannot safely enable forces. "
+                  << "If the device has not been calibrated this power cycle, "
+                  << "power-cycle the hardware and restart the server.\n";
+        return EXIT_FAILURE;
     }
 
     // 3. Gravity compensation and force enable
-    dhd->set_gravity_compensation(true);
+    if (!dhd->set_gravity_compensation(true)) {
+        std::cerr << "Error: failed to enable gravity compensation\n";
+        return EXIT_FAILURE;
+    }
 
     if (!dhd->enable_force(true)) {
         std::cerr << "Error: failed to enable force rendering\n";
         return EXIT_FAILURE;
     }
 
-    dhd->set_effector_mass(0.0);
+    if (!dhd->set_effector_mass(0.0)) {
+        std::cerr << "Error: failed to set effector mass\n";
+        return EXIT_FAILURE;
+    }
 
-    // 4. Startup diagnostic: verify gravity compensation is producing forces
+    // 4. Startup diagnostic: position sanity check
     {
         Vec3 pos{};
-        dhd->get_position(pos);
-        // With gravity comp on and zero user force, the force applied should
-        // include gravity compensation (nonzero unless at singularity).
-        Vec3 zero_force = {0.0, 0.0, 0.0};
-        dhd->set_force(zero_force);
-        double pos_mag = std::sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
-        if (pos_mag > 1e-6) {
-            std::cout << "Gravity compensation check: device at nonzero position\n";
+        if (!dhd->get_position(pos)) {
+            std::cerr << "Warning: failed to read position during startup check\n";
         } else {
-            std::cout << "Gravity compensation check: device at origin "
-                      << "(expected for mock hardware)\n";
+            double pos_mag = std::sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
+            if (pos_mag > 1e-6) {
+                std::cout << "Position sanity check: device at nonzero position\n";
+            } else {
+                std::cout << "Position sanity check: device at origin "
+                          << "(expected for mock hardware)\n";
+            }
         }
     }
 

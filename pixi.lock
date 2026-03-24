@@ -278,7 +278,7 @@ packages:
 - pypi: ./
   name: hapticore
   version: 0.1.0
-  sha256: b01ba1f76477717eb9deb38db5210ee07027614a70c0d9a569d677407eb3172f
+  sha256: 16eaa0cbe20b33c50250b08f748179dadbb2f8c9d7c2561bf3daa67328496ce0
   requires_dist:
   - pyzmq>=26.0
   - msgpack>=1.0
@@ -293,7 +293,7 @@ packages:
   - ruff>=0.4 ; extra == 'dev'
   - mypy>=1.10 ; extra == 'dev'
   - types-pyyaml>=6.0 ; extra == 'dev'
-  - graphviz>=0.20 ; extra == 'dev'
+  - pygraphviz>=1.11 ; extra == 'diagrams'
   requires_python: '>=3.11'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-h33c6efd_0.conda
   sha256: fbf86c4a59c2ed05bbffb2ba25c7ed94f6185ec30ecb691615d42342baa1a16a

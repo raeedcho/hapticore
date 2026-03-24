@@ -71,9 +71,9 @@ pixi run test-hardware               # hardware tests (requires running server)
 # pip install -e ".[dev]" still works for Python-only development
 # but won't provide cmake or ninja.
 
-# C++ haptic server (manual, inside pixi shell)
+# C++ haptic server (via pixi task or manual CMake)
 pixi run cpp                         # full mock build + test via pixi tasks
-# Or manually inside pixi shell:
+# Or run CMake manually inside a pixi shell:
 pixi shell
 cd cpp/haptic_server
 cmake --preset dev-mock

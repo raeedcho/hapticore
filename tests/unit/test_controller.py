@@ -372,7 +372,7 @@ class TestControllerInfiniteSession:
             # Session should have stopped at a block boundary
             log = tm.get_trial_log()
             assert len(log) > 0
-            assert len(log) % tm._block_size == 0, (
+            assert len(log) % tm.block_size == 0, (
                 f"Expected whole blocks logged, got {len(log)}"
             )
             summary = tm.get_summary()
@@ -413,7 +413,16 @@ class TestControllerInfiniteSession:
 
 
 class TestControllerSigint:
-    """Tests for escalating Ctrl+C (SIGINT) handling in run()."""
+    """Tests for escalating Ctrl+C (SIGINT) handling in run().
+
+    .. note:: Inter-signal sleeps (``time.sleep(0.005)``) are vulnerable to
+       macOS CI timer coalescing — if two signals arrive in the same poll tick,
+       ``_sigint_count`` jumps by 2 and the "block stop" escalation level is
+       skipped. This doesn't affect correctness (the result is a more urgent
+       stop), but could cause ``test_first_sigint_requests_block_stop`` to
+       fail in a future variant with tighter timing.  See also the macOS CI
+       timing notes in ``docs/adr/001-zmq-msgpack.md``.
+    """
 
     def _make_sigint_controller(
         self,
@@ -484,9 +493,10 @@ class TestControllerSigint:
             controller.run()
             t.join(timeout=2.0)
 
-            assert tm._stop_after_block is True
+            summary = tm.get_summary()
+            assert summary["stop_type"] == "stopped_at_block"
             log = tm.get_trial_log()
-            assert len(log) % tm._block_size == 0
+            assert len(log) % tm.block_size == 0
         finally:
             controller.teardown()
             pub.close()
@@ -515,7 +525,8 @@ class TestControllerSigint:
             controller.run()
             t.join(timeout=2.0)
 
-            assert tm._stop_after_trial is True
+            summary = tm.get_summary()
+            assert summary["stop_type"] in ("stopped_mid_block", "stopped_at_block")
         finally:
             controller.teardown()
             pub.close()

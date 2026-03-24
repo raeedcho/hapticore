@@ -384,3 +384,45 @@ class TestTrialManagerRequestStop:
         tm.request_stop(after="trial")
         # Last logged trial is at index 1 → (1+1) % 2 == 0 → block boundary
         assert tm.get_summary()["stop_type"] == "stopped_at_block"
+
+    def test_summary_stop_type_hard_stopped(self) -> None:
+        """A session aborted via controller.stop() reports 'hard_stopped'."""
+        tm = self._make_tm(num_blocks=4)  # finite, expects 8 trials
+        tm.advance()
+        tm.log_trial("success")
+        # Only 1 trial completed out of 8 — no stop flags set
+        assert tm.get_summary()["stop_type"] == "hard_stopped"
+
+    def test_summary_completed_finite_all_done(self) -> None:
+        """A finite session that runs all trials reports 'completed'."""
+        tm = self._make_tm(num_blocks=1)  # 2 trials
+        tm.advance()
+        tm.log_trial("success")
+        tm.advance()
+        tm.log_trial("success")
+        assert tm.get_summary()["stop_type"] == "completed"
+
+
+class TestTrialManagerProperties:
+    """Tests for read-only properties."""
+
+    def _make_conditions(self, n: int = 4) -> list[dict]:
+        return [{"target_id": i} for i in range(n)]
+
+    def test_is_open_ended_true(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2), block_size=2, num_blocks=None,
+        )
+        assert tm.is_open_ended is True
+
+    def test_is_open_ended_false(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2), block_size=2, num_blocks=3,
+        )
+        assert tm.is_open_ended is False
+
+    def test_block_size_property(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2), block_size=5, num_blocks=1,
+        )
+        assert tm.block_size == 5

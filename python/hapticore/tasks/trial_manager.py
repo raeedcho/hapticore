@@ -91,13 +91,19 @@ class TrialManager:
         if self._num_blocks is not None and self._blocks_generated >= self._num_blocks:
             return
 
-        block = self._make_block()
         block_idx = self._blocks_generated
 
-        if self._randomization == "sequential":
-            pass  # no shuffle
-        elif self._randomization == "latin_square":
-            if self._block_size != len(self._conditions):
+        if self._randomization == "latin_square" and self._block_size == len(self._conditions):
+            # Latin square: deterministic cyclic shift (no _make_block needed)
+            n = len(self._conditions)
+            shift = block_idx % n
+            block = [dict(self._conditions[(shift + i) % n]) for i in range(n)]
+        else:
+            block = self._make_block()
+            if self._randomization == "sequential":
+                pass  # no shuffle
+            elif self._randomization == "latin_square":
+                # block_size != len(conditions): fall back to pseudorandom
                 if not self._latin_square_warned:
                     logger.warning(
                         "latin_square requires block_size == len(conditions) "
@@ -107,12 +113,8 @@ class TrialManager:
                     )
                     self._latin_square_warned = True
                 self._rng.shuffle(block)
-            else:
-                n = len(self._conditions)
-                shift = block_idx % n
-                block = [dict(self._conditions[(shift + i) % n]) for i in range(n)]
-        else:  # pseudorandom (default)
-            self._rng.shuffle(block)
+            else:  # pseudorandom (default)
+                self._rng.shuffle(block)
 
         self._sequence.extend(block)
         self._blocks_generated += 1
@@ -130,8 +132,25 @@ class TrialManager:
     # ------------------------------------------------------------------
 
     @property
+    def block_size(self) -> int:
+        """Number of trials per block."""
+        return self._block_size
+
+    @property
+    def is_open_ended(self) -> bool:
+        """True if the session runs indefinitely until :meth:`request_stop`."""
+        return self._num_blocks is None
+
+    @property
     def total_trials(self) -> int:
-        """Number of trials generated so far (grows for infinite sessions)."""
+        """Number of trials generated so far.
+
+        For finite sessions (``num_blocks`` is an integer), this equals the
+        total planned trial count and is constant after init.  For open-ended
+        sessions (``num_blocks=None``), this grows as new blocks are generated
+        on demand — use per-block counts rather than ``current_trial /
+        total_trials`` for progress reporting.
+        """
         return len(self._sequence)
 
     @property
@@ -205,7 +224,9 @@ class TrialManager:
         """
         if after == "trial":
             self._stop_after_trial = True
-            self._stop_after_block = True  # also stop at block boundary
+            # Defensive: also set block-level stop so is_complete returns True
+            # even if the _stop_after_trial check is ever refactored out.
+            self._stop_after_block = True
             logger.info("Stop requested: will stop after the current trial")
         elif after == "block":
             self._stop_after_block = True
@@ -262,7 +283,8 @@ class TrialManager:
 
         Returns a dict with keys: total_trials, completed_trials,
         outcomes (count by type), accuracy (fraction of 'success' outcomes),
-        stop_type ('completed', 'stopped_at_block', or 'stopped_mid_block').
+        stop_type (``"completed"``, ``"stopped_at_block"``,
+        ``"stopped_mid_block"``, or ``"hard_stopped"``).
         """
         outcomes: dict[str, int] = {}
         for entry in self._trial_log:
@@ -288,7 +310,25 @@ class TrialManager:
                 on_boundary = (last_index + 1) % self._block_size == 0
                 stop_type = "stopped_at_block" if on_boundary else "stopped_mid_block"
         else:
-            stop_type = "completed"
+            # No graceful stop was requested.  Check whether the session
+            # actually ran to completion — if not (e.g. hard stop via
+            # controller.stop()), report it honestly.
+            if self._num_blocks is not None:
+                expected = self._num_blocks * self._block_size
+                stop_type = "hard_stopped" if completed < expected else "completed"
+            elif completed == 0:
+                # Open-ended session that never ran — no work done, no stop
+                # requested.  Report as hard_stopped since the session didn't
+                # reach a natural or graceful end.
+                stop_type = "hard_stopped"
+            else:
+                # Open-ended session with no stop requested but trials logged.
+                logger.warning(
+                    "Open-ended session ended without a stop request "
+                    "after %d trial(s) — reporting as hard_stopped",
+                    completed,
+                )
+                stop_type = "hard_stopped"
 
         return {
             "total_trials": self.total_trials,

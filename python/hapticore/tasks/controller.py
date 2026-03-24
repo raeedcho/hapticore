@@ -66,6 +66,9 @@ class TaskController:
         self._stop_requested = False
         self._trial_ended = False
         self._machine: Machine | None = None
+        # Test synchronization point: set after the SIGINT handler is
+        # installed in run(), cleared when restored.  Allows tests to wait
+        # until it's safe to send SIGINT without a race.
         self._sigint_handler_ready = threading.Event()
 
     def setup(self) -> None:
@@ -183,13 +186,22 @@ class TaskController:
 
         # --- SIGINT handler --------------------------------------------------
         _sigint_count = 0
+        _in_main_thread = threading.current_thread() is threading.main_thread()
 
         def _handle_sigint(signum: int, frame: Any) -> None:
             nonlocal _sigint_count
             _sigint_count += 1
 
-        _prev_sigint_handler = signal.signal(signal.SIGINT, _handle_sigint)
-        self._sigint_handler_ready.set()
+        if _in_main_thread:
+            _prev_sigint_handler = signal.signal(signal.SIGINT, _handle_sigint)
+            self._sigint_handler_ready.set()
+        else:
+            _prev_sigint_handler = None
+            logger.warning(
+                "TaskController.run() called from a non-main thread; "
+                "Ctrl+C handling is disabled (signal handlers can only "
+                "be installed from the main thread)"
+            )
         _last_handled_sigint = 0
         # ---------------------------------------------------------------------
 
@@ -197,8 +209,9 @@ class TaskController:
         if not self._start_next_trial():
             logger.warning("No trials to run")
             self._running = False
-            signal.signal(signal.SIGINT, _prev_sigint_handler)
-            self._sigint_handler_ready.clear()
+            if _in_main_thread:
+                signal.signal(signal.SIGINT, _prev_sigint_handler)
+                self._sigint_handler_ready.clear()
             return
 
         try:
@@ -255,8 +268,9 @@ class TaskController:
                     time.sleep(remaining)
 
         finally:
-            signal.signal(signal.SIGINT, _prev_sigint_handler)
-            self._sigint_handler_ready.clear()
+            if _in_main_thread:
+                signal.signal(signal.SIGINT, _prev_sigint_handler)
+                self._sigint_handler_ready.clear()
 
     def stop(self) -> None:
         """Signal the main loop to stop after the current iteration."""

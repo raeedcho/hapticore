@@ -878,7 +878,7 @@ packages:
 - pypi: ./
   name: hapticore
   version: 0.1.0
-  sha256: 475d70df4ecf201e74c6cd445bbd35efa749d44f051c15c8e413f375accdde20
+  sha256: 43e2e633f5de29406b4a866ff886fa46af9c8126cfb7d2d5e7b114a4b1d80626
   requires_dist:
   - pyzmq>=26.0
   - msgpack>=1.0

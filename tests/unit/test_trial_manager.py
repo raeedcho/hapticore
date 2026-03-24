@@ -373,3 +373,14 @@ class TestTrialManagerRequestStop:
         tm.log_trial("success")
         tm.request_stop(after="trial")
         assert tm.get_summary()["stop_type"] == "stopped_mid_block"
+
+    def test_summary_stop_type_trial_at_block_boundary(self) -> None:
+        """request_stop(after='trial') at a block boundary reports 'stopped_at_block'."""
+        tm = self._make_tm()  # block_size=2
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.advance()  # trial 1 (last in block 0)
+        tm.log_trial("success")
+        tm.request_stop(after="trial")
+        # Last logged trial is at index 1 → (1+1) % 2 == 0 → block boundary
+        assert tm.get_summary()["stop_type"] == "stopped_at_block"

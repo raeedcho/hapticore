@@ -49,6 +49,8 @@ class TaskController:
         params: dict[str, Any] | None = None,
         poll_rate_hz: float = 100.0,
     ) -> None:
+        if poll_rate_hz <= 0:
+            raise ValueError(f"poll_rate_hz must be positive, got {poll_rate_hz}")
         self.task = task
         self.haptic = haptic
         self.display = display
@@ -105,6 +107,13 @@ class TaskController:
         from the task's ``PARAMS`` definitions. Config values take precedence
         over defaults.
         """
+        # Check for unknown parameter names (catches config typos)
+        unknown = set(self._param_overrides) - set(self.task.PARAMS)
+        if unknown:
+            raise ValueError(
+                f"Unknown parameter(s): {', '.join(sorted(unknown))}. "
+                f"Valid parameters: {', '.join(sorted(self.task.PARAMS))}"
+            )
         result: dict[str, Any] = {}
         for name, spec in self.task.PARAMS.items():
             value = self._param_overrides.get(name, spec.default)

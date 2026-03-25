@@ -22,15 +22,28 @@ bool DhdReal::is_open() const {
 }
 
 bool DhdReal::get_position(Vec3& pos) {
-    return dhdGetPosition(&pos[0], &pos[1], &pos[2]) >= 0;
+    Vec3 dhd;
+    if (dhdGetPosition(&dhd[0], &dhd[1], &dhd[2]) < 0) return false;
+    // Remap: Lab X = DHD Y (horizontal), Lab Y = DHD Z (vertical), Lab Z = DHD X (depth)
+    pos[0] = dhd[1];
+    pos[1] = dhd[2];
+    pos[2] = dhd[0];
+    return true;
 }
 
 bool DhdReal::get_linear_velocity(Vec3& vel) {
-    return dhdGetLinearVelocity(&vel[0], &vel[1], &vel[2]) >= 0;
+    Vec3 dhd;
+    if (dhdGetLinearVelocity(&dhd[0], &dhd[1], &dhd[2]) < 0) return false;
+    // Remap: Lab X = DHD Y, Lab Y = DHD Z, Lab Z = DHD X
+    vel[0] = dhd[1];
+    vel[1] = dhd[2];
+    vel[2] = dhd[0];
+    return true;
 }
 
 bool DhdReal::set_force(const Vec3& force) {
-    return dhdSetForce(force[0], force[1], force[2]) >= 0;
+    // Inverse remap: DHD X = Lab Z, DHD Y = Lab X, DHD Z = Lab Y
+    return dhdSetForce(force[2], force[0], force[1]) >= 0;
 }
 
 bool DhdReal::set_effector_mass(double mass_kg) {

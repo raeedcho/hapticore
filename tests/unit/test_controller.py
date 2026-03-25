@@ -421,7 +421,7 @@ class TestControllerSigint:
        skipped. This doesn't affect correctness (the result is a more urgent
        stop), but could cause ``test_first_sigint_requests_block_stop`` to
        fail in a future variant with tighter timing.  See also the macOS CI
-       timing notes in ``docs/adr/001-zmq-msgpack.md``.
+       timing notes in ``docs/adr/001-zeromq-over-rpclib.md``.
     """
 
     def _make_sigint_controller(

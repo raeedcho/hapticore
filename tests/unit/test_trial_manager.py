@@ -250,7 +250,7 @@ class TestTrialManagerInfiniteSession:
         tm.log_trial("success")
         tm.advance()
         tm.log_trial("success")
-        # Even after completing two blocks, not complete — needs explicit stop
+        # Even after completing one full block, not complete — needs explicit stop
         assert tm.is_complete is False
 
     def test_request_stop_invalid_raises(self) -> None:
@@ -292,7 +292,7 @@ class TestTrialManagerRequestStop:
         assert tm.is_complete is True
 
     def test_stop_after_trial_mid_block(self) -> None:
-        """Stop on the second trial of a 2-trial block (last trial in block 0)."""
+        """Stop after the last trial of block 0 (block-boundary stop with more blocks remaining)."""
         tm = self._make_tm()
         tm.advance()  # trial 0
         tm.log_trial("success")

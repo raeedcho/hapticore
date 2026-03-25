@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-03-25  
-**Context:** The configuration system used a single flat YAML file per experiment, loaded via `yaml.safe_load()` and validated with `ExperimentConfig(BaseModel).model_validate()`. Every monkey running the same task on the same rig got a separate config file duplicating all hardware settings. A change to a rig's monitor distance or Teensy port required editing every config file referencing that rig.
+**Context:** The configuration system used a single flat YAML file per experiment, loaded via `yaml.safe_load()` and validated with `ExperimentConfig(BaseModel).model_validate()`. Every monkey running the same task on the same rig got a separate config file duplicating all hardware settings. A change to a rig's monitor distance or Teensy port required editing every config file referencing that rig. As the lab scales to multiple animals, tasks, and rigs, this duplication becomes a maintenance hazard.
 
 ## Decision
 

@@ -152,9 +152,10 @@ class TestLayeredMerge:
         assert config.haptic.force_limit_n == 20.0  # example_config overrides rig's 15.0
 
     def test_deep_merge_preserves_other_fields(self) -> None:
-        """Rig sets workspace_bounds and force_limit_n; task overrides only publish_rate_hz.
+        """Rig sets workspace_bounds and force_limit_n; task file overrides publish_rate_hz.
 
-        Deep merge ensures workspace_bounds and force_limit_n are preserved.
+        Deep merge ensures workspace_bounds and force_limit_n from the rig layer
+        are preserved even though the later task file also contains a haptic section.
         """
         config = load_config(
             FIXTURES_DIR / "rig.yaml",

@@ -295,27 +295,55 @@ class TrialManager:
         success_count = outcomes.get("success", 0)
         accuracy = success_count / completed if completed > 0 else 0.0
 
-        if self._stop_after_trial or self._stop_after_block:
-            # A stop was requested — derive stop_type from where the session
-            # actually stopped rather than which flag was set, because
-            # request_stop(after="trial") can coincide with a block boundary.
-            if completed == 0:
-                # No trials logged yet: fall back to flag-based semantics.
-                stop_type = (
-                    "stopped_mid_block" if self._stop_after_trial
-                    else "stopped_at_block"
-                )
+        # Determine stop_type. For finite sessions, treat completion of all
+        # planned trials as "completed" even if a stop was requested late.
+        if self._num_blocks is not None:
+            expected = self._num_blocks * self._block_size
+            if completed >= expected:
+                # All planned trials ran; report as completed regardless of
+                # any graceful stop flags that might have been set near the end.
+                stop_type = "completed"
             else:
-                last_index = self._trial_log[-1]["trial_number"]
-                on_boundary = (last_index + 1) % self._block_size == 0
-                stop_type = "stopped_at_block" if on_boundary else "stopped_mid_block"
+                # Finite session that did not reach the planned number of trials.
+                if self._stop_after_trial or self._stop_after_block:
+                    # A graceful stop was requested — derive stop_type from where
+                    # the session actually stopped rather than which flag was set,
+                    # because request_stop(after="trial") can coincide with a block
+                    # boundary.
+                    if completed == 0:
+                        # No trials logged yet: fall back to flag-based semantics.
+                        stop_type = (
+                            "stopped_mid_block" if self._stop_after_trial
+                            else "stopped_at_block"
+                        )
+                    else:
+                        last_index = self._trial_log[-1]["trial_number"]
+                        on_boundary = (last_index + 1) % self._block_size == 0
+                        stop_type = (
+                            "stopped_at_block" if on_boundary else "stopped_mid_block"
+                        )
+                else:
+                    # No graceful stop requested but finite session ended early
+                    # (e.g. hard stop via controller.stop()).
+                    stop_type = "hard_stopped"
         else:
-            # No graceful stop was requested.  Check whether the session
-            # actually ran to completion — if not (e.g. hard stop via
-            # controller.stop()), report it honestly.
-            if self._num_blocks is not None:
-                expected = self._num_blocks * self._block_size
-                stop_type = "hard_stopped" if completed < expected else "completed"
+            # Open-ended session: no finite expected trial count.
+            if self._stop_after_trial or self._stop_after_block:
+                # A stop was requested — derive stop_type from where the session
+                # actually stopped rather than which flag was set, because
+                # request_stop(after="trial") can coincide with a block boundary.
+                if completed == 0:
+                    # No trials logged yet: fall back to flag-based semantics.
+                    stop_type = (
+                        "stopped_mid_block" if self._stop_after_trial
+                        else "stopped_at_block"
+                    )
+                else:
+                    last_index = self._trial_log[-1]["trial_number"]
+                    on_boundary = (last_index + 1) % self._block_size == 0
+                    stop_type = (
+                        "stopped_at_block" if on_boundary else "stopped_mid_block"
+                    )
             elif completed == 0:
                 # Open-ended session that never ran — no work done, no stop
                 # requested.  Report as hard_stopped since the session didn't

@@ -65,7 +65,7 @@ def heartbeat_keeper(
                     dealer.recv_multipart()
                 stop_event.wait(interval)
         finally:
-            dealer.close()
+            dealer.close(linger=0)
 
     thread = threading.Thread(target=_heartbeat_loop, daemon=True)
     thread.start()

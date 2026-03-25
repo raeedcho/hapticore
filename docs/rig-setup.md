@@ -251,7 +251,8 @@ The final test always reverts to NullField so the handle is free-moving when tes
 ### Running interactive (feel) tests
 
 Interactive tests keep force fields alive and prompt you to evaluate how
-they feel. You must be holding the delta.3 handle during these tests.
+they feel. They support single-person remote operation — the robot can be
+in a different room from the terminal.
 
 1. Start the haptic server.
 2. Run:
@@ -260,8 +261,18 @@ they feel. You must be holding the delta.3 handle during these tests.
    pytest tests/hardware/ -m interactive -v -s
    ```
 
-3. Follow the on-screen prompts. For each test, move the handle and
-   answer `y` or `n` to confirm or reject the expected feel.
+3. For each test, the flow is:
+   - Read the instructions on screen.
+   - Press **Enter** to start the countdown.
+   - Walk to the device and grab the handle during the countdown.
+   - Evaluate the feel during the timed window (default 10 s).
+   - Walk back to the terminal and answer `y` or `n`.
+
+Adjust timing for your environment:
+
+```bash
+pytest tests/hardware/ -m interactive -v -s --countdown=8 --duration=15
+```
 
 To run *only* the automated hardware tests (excluding interactive):
 

@@ -1,0 +1,32 @@
+# Center-out reaching task configuration
+# Contains task-specific settings: task class, parameters, conditions, trial structure
+
+task:
+  task_class: "hapticore.tasks.center_out.CenterOutTask"
+  params:
+    num_targets: 8
+    target_distance: 0.08
+    target_radius: 0.015
+    hold_time: 0.5
+    reach_timeout: 2.0
+    iti_duration: 1.0
+  conditions:
+    - target_id: 0
+      target_position: [0.08, 0.0]
+    - target_id: 1
+      target_position: [0.0566, 0.0566]
+    - target_id: 2
+      target_position: [0.0, 0.08]
+    - target_id: 3
+      target_position: [-0.0566, 0.0566]
+    - target_id: 4
+      target_position: [-0.08, 0.0]
+    - target_id: 5
+      target_position: [-0.0566, -0.0566]
+    - target_id: 6
+      target_position: [0.0, -0.08]
+    - target_id: 7
+      target_position: [0.0566, -0.0566]
+  block_size: 8
+  num_blocks: 20
+  randomization: "pseudorandom"

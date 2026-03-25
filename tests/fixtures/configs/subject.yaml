@@ -1,0 +1,7 @@
+# Test fixture: subject layer
+subject:
+  subject_id: "test_monkey"
+  species: "macaque"
+  implant_info:
+    array_type: "utah"
+    hemisphere: "right"

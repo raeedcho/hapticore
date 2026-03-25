@@ -402,6 +402,28 @@ class TestTrialManagerRequestStop:
         tm.log_trial("success")
         assert tm.get_summary()["stop_type"] == "completed"
 
+    def test_summary_completed_despite_late_request_stop_block(self) -> None:
+        """Finite session reports 'completed' even if request_stop(after='block') was called late."""
+        tm = self._make_tm(num_blocks=1)  # 2 trials total
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")  # called during last block
+        tm.advance()  # trial 1
+        tm.log_trial("success")
+        # All planned trials ran — stop_type should be "completed" not "stopped_at_block"
+        assert tm.get_summary()["stop_type"] == "completed"
+
+    def test_summary_completed_despite_late_request_stop_trial(self) -> None:
+        """Finite session reports 'completed' even if request_stop(after='trial') was called late."""
+        tm = self._make_tm(num_blocks=1)  # 2 trials total
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.advance()  # trial 1
+        tm.request_stop(after="trial")  # called during last trial
+        tm.log_trial("success")
+        # All planned trials ran — stop_type should be "completed" not "stopped_mid_block"
+        assert tm.get_summary()["stop_type"] == "completed"
+
 
 class TestTrialManagerProperties:
     """Tests for read-only properties."""

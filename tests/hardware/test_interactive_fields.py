@@ -6,6 +6,7 @@ Requires:  a running haptic server with the real delta.3 and a human operator.
 
 from __future__ import annotations
 
+import sys
 import time
 
 import pytest
@@ -23,9 +24,16 @@ def user_confirms(prompt: str) -> bool:
     - n / no   -> return False
     - q / quit / abort / exit -> skip the current test
     Any other input will cause the prompt to be shown again.
+
+    Skips automatically when stdin is not a TTY (e.g. CI or missing ``-s``).
     """
+    if not sys.stdin.isatty():
+        pytest.skip("Interactive test requires a TTY (run with -s)")
     while True:
-        response = input(f"\n>>> {prompt} [y/n/q]: ").strip().lower()
+        try:
+            response = input(f"\n>>> {prompt} [y/n/q]: ").strip().lower()
+        except EOFError:
+            pytest.skip("stdin closed — cannot prompt operator (run with -s)")
         if response in ("y", "yes"):
             return True
         if response in ("n", "no"):
@@ -42,10 +50,17 @@ def dealer(cmd_address: str, zmq_context: zmq.Context) -> zmq.Socket:  # type: i
     sock.setsockopt(zmq.RCVTIMEO, 3000)
     sock.connect(cmd_address)
     time.sleep(0.1)
-    yield sock  # type: ignore[misc]
-    # Revert to NullField on teardown so handle is free
-    send_command(sock, "set_force_field", {"type": "null", "params": {}})
-    sock.close()
+    try:
+        yield sock  # type: ignore[misc]
+    finally:
+        # Best-effort revert to NullField on teardown so handle is free.
+        # If the server is down/unresponsive, send_command may raise TimeoutError;
+        # we ignore this so teardown errors don't mask real test failures.
+        try:
+            send_command(sock, "set_force_field", {"type": "null", "params": {}})
+        except TimeoutError:
+            pass
+        sock.close(linger=0)
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +187,7 @@ class TestCartPendulumFeel:
                     "pendulum_length": 0.6,
                     "ball_mass": 0.6,
                     "cup_mass": 2.4,
-                    "damping": 0.05,
+                    "angular_damping": 0.05,
                 },
             })
             assert resp["success"]
@@ -217,9 +232,11 @@ class TestCompositeFieldFeel:
                         {
                             "type": "workspace_limit",
                             "params": {
-                                "x_min": -0.05, "x_max": 0.05,
-                                "y_min": -0.05, "y_max": 0.05,
-                                "z_min": -0.05, "z_max": 0.05,
+                                "bounds": {
+                                    "x": [-0.05, 0.05],
+                                    "y": [-0.05, 0.05],
+                                    "z": [-0.05, 0.05],
+                                },
                                 "stiffness": 2000,
                                 "damping": 20,
                             },

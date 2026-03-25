@@ -54,11 +54,11 @@ def dealer(cmd_address: str, zmq_context: zmq.Context) -> zmq.Socket:  # type: i
         yield sock  # type: ignore[misc]
     finally:
         # Best-effort revert to NullField on teardown so handle is free.
-        # If the server is down/unresponsive, send_command may raise TimeoutError;
-        # we ignore this so teardown errors don't mask real test failures.
+        # If the server is down/unresponsive, send_command may raise TimeoutError
+        # or ZMQError; we ignore this so teardown errors don't mask real test failures.
         try:
             send_command(sock, "set_force_field", {"type": "null", "params": {}})
-        except TimeoutError:
+        except (TimeoutError, zmq.ZMQError):
             pass
         sock.close(linger=0)
 

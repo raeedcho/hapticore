@@ -8,7 +8,6 @@ evaluates the feel of the device.
 from __future__ import annotations
 
 import threading
-import time
 import uuid
 from contextlib import contextmanager
 from typing import Generator
@@ -38,7 +37,8 @@ def heartbeat_keeper(
     ctx : zmq.Context, optional
         Shared ZMQ context.  A new one is created if not provided.
     """
-    assert interval < 0.5, "Heartbeat interval must be less than server timeout (0.5 s)"
+    if interval >= 0.5:
+        raise ValueError("Heartbeat interval must be less than server timeout (0.5 s)")
 
     own_ctx = ctx is None
     if own_ctx:

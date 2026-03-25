@@ -45,6 +45,10 @@ hapticore/
 └── pyproject.toml
 ```
 
+## Coordinate convention (see ADR-008)
+
+All positions, velocities, and forces use the **lab frame**: X = horizontal (+ right), Y = vertical (+ up), Z = depth (+ toward operator). This differs from the DHD SDK's native frame (X=depth, Y=horizontal, Z=vertical). The remap is applied inside `DhdReal` at the lowest layer, so all force fields, protocol messages, and Python clients see lab-frame values. `DhdMock` does not remap. Do not introduce DHD-frame assumptions anywhere above `DhdReal`.
+
 ## Key conventions
 
 - Every hardware interaction goes through a Protocol (ABC) interface defined in `core/interfaces.py`. Real implementations and mock implementations both satisfy the same Protocol. This is how we test without hardware.
@@ -144,3 +148,4 @@ Before proposing alternatives to a settled decision, check `docs/adr/` for conte
 - `005`: No Bonsai
 - `006`: Monorepo
 - `007`: Box2D for 2D physics
+- `008`: Lab coordinate convention (DHD SDK remap in `DhdReal`)

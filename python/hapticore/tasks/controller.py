@@ -205,16 +205,13 @@ class TaskController:
         _last_handled_sigint = 0
         # ---------------------------------------------------------------------
 
-        # Start the first trial
-        if not self._start_next_trial():
-            logger.warning("No trials to run")
-            self._running = False
-            if _in_main_thread:
-                signal.signal(signal.SIGINT, _prev_sigint_handler)
-                self._sigint_handler_ready.clear()
-            return
-
         try:
+            # Start the first trial
+            if not self._start_next_trial():
+                logger.warning("No trials to run")
+                self._running = False
+                return
+
             while self._running:
                 next_tick = time.monotonic() + tick_duration
 

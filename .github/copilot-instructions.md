@@ -132,7 +132,19 @@ The server has three threads: haptic (SCHED_FIFO priority 80, 4 kHz), publisher 
 
 ## When working on configuration (python/hapticore/core/config.py)
 
-All config models use Pydantic v2 BaseModel. The top-level `ExperimentConfig` composes SubjectConfig, HapticConfig, DisplayConfig, RecordingConfig, TaskConfig, SyncConfig, and ZMQConfig. Load from YAML with `yaml.safe_load()` then validate with `ExperimentConfig.model_validate()`.
+All nested config models use Pydantic v2 `BaseModel`. The top-level `ExperimentConfig` is a `pydantic-settings` `BaseSettings` subclass supporting layered YAML files, environment variables, and CLI arguments.
+
+Load configs with `load_config(*yaml_paths)` which deep-merges multiple YAML files (later files win):
+
+```python
+config = load_config(
+    "configs/rig/default.yaml",
+    "configs/subject/monkey_a.yaml",
+    "configs/task/center_out.yaml",
+)
+```
+
+Environment variables use `HAPTICORE_` prefix and `__` (double underscore) delimiter for nesting: `HAPTICORE_HAPTIC__FORCE_LIMIT_N=15.0`. Single underscores within field names (e.g., `force_limit_n`) are not delimiters.
 
 ## ADRs (architecture decision records)
 
@@ -144,3 +156,4 @@ Before proposing alternatives to a settled decision, check `docs/adr/` for conte
 - `005`: No Bonsai
 - `006`: Monorepo
 - `007`: Box2D for 2D physics
+- `008`: pydantic-settings with layered YAML composition

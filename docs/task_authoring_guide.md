@@ -4,16 +4,25 @@ This guide explains how to create a new behavioral task in Hapticore. A "task" d
 
 ## What you need to create
 
-A new task requires two things: a **task module** (Python file) and an **experiment config** (YAML file). Optionally, you may also define a **stimulus config** (YAML) and add a new **force field** (C++, only for novel haptic interactions not covered by existing fields).
+A new task requires two things: a **task module** (Python file) and a **task config** (YAML file in `configs/task/`). Optionally, you may also define a **stimulus config** (YAML) and add a new **force field** (C++, only for novel haptic interactions not covered by existing fields).
 
 ## Quick start: copy the template
 
 ```bash
 cp python/hapticore/tasks/template_task.py python/hapticore/tasks/my_task.py
-cp configs/example_config.yaml configs/my_experiment.yaml
+# Create a task config in the layered configs directory
+cp configs/task/center_out.yaml configs/task/my_task.yaml
 ```
 
-Edit both files following the instructions below.
+Edit both files following the instructions below. At run time, compose the task config with rig and subject layers:
+
+```python
+config = load_config(
+    "configs/rig/default.yaml",
+    "configs/subject/monkey_a.yaml",
+    "configs/task/my_task.yaml",
+)
+```
 
 ## Step 1: Define the task class
 
@@ -156,9 +165,10 @@ The task controller's main loop polls haptic state at ~100 Hz. Override `check_t
 
 ## Step 3: Define trial conditions
 
-In your experiment config YAML:
+Create a task config YAML in `configs/task/`. This file contains only the task-specific settings:
 
 ```yaml
+# configs/task/center_out.yaml
 task:
   task_class: "hapticore.tasks.center_out.CenterOutTask"
   params:
@@ -177,6 +187,31 @@ task:
   block_size: 8          # one of each target per block
   num_blocks: 20
   randomization: "pseudorandom"
+```
+
+Subject-specific overrides (e.g., different hold time for a new animal) go in a separate subject YAML:
+
+```yaml
+# configs/subject/monkey_a.yaml
+subject:
+  subject_id: "monkey_A"
+  species: "macaque"
+  implant_info:
+    array_type: "utah"
+    hemisphere: "left"
+    area: "M1"
+```
+
+Compose them at load time with `load_config()`:
+
+```python
+from hapticore.core.config import load_config
+
+config = load_config(
+    "configs/rig/default.yaml",       # rig hardware settings
+    "configs/subject/monkey_a.yaml",  # subject identity
+    "configs/task/center_out.yaml",   # task params + conditions
+)
 ```
 
 The `TrialManager` automatically shuffles conditions within each block, presents them sequentially, and exposes `self.current_condition` to the task at each trial start.
@@ -313,10 +348,14 @@ Use **PhysicsField** when the task involves:
 
 ## Step 5: Test without hardware
 
-Run your task in simulation mode:
+Run your task in simulation mode using a single flat config or layered configs:
 
 ```bash
+# Single flat YAML
 hapticore simulate --config configs/my_experiment.yaml
+
+# Or use a flat YAML that includes all sections
+hapticore simulate --config configs/example_config.yaml
 ```
 
 This launches all processes with mock hardware:
@@ -368,7 +407,8 @@ This uses the `transitions` library's `GraphMachine` to produce an SVG showing a
 | File | Required? | Purpose |
 |------|-----------|---------|
 | `python/hapticore/tasks/my_task.py` | Yes | Task class with STATES, TRANSITIONS, callbacks |
-| `configs/my_experiment.yaml` | Yes | Experiment config with task params and conditions |
+| `configs/task/my_task.yaml` | Yes | Task config with params and conditions |
+| `configs/subject/monkey_x.yaml` | Yes (per subject) | Subject identity and implant info |
 | `tests/unit/test_my_task.py` | Recommended | Automated state-machine tests with mocks |
 | `cpp/.../my_custom_field.h/.cpp` | Only for novel analytical force computations | Custom ForceField subclass |
 

@@ -37,13 +37,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--countdown",
         default=5,
-        type=float,
+        type=int,
         help="Seconds to count down before activating a field (default: 5)",
     )
     parser.addoption(
         "--duration",
         default=10,
-        type=float,
+        type=int,
         help="Seconds to keep the field active for evaluation (default: 10)",
     )
 
@@ -93,7 +93,10 @@ def zmq_context() -> Generator[zmq.Context[zmq.Socket[bytes]], None, None]:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def state_sub(zmq_context: zmq.Context[zmq.Socket[bytes]]) -> Generator[zmq.Socket[bytes], None, None]:
+def state_sub(
+    pub_address: str,
+    zmq_context: zmq.Context[zmq.Socket[bytes]],
+) -> Generator[zmq.Socket[bytes], None, None]:
     """SUB socket connected to the haptic server's state PUB.
 
     Module-scoped so the slow-joiner delay is paid once.
@@ -101,7 +104,7 @@ def state_sub(zmq_context: zmq.Context[zmq.Socket[bytes]]) -> Generator[zmq.Sock
     sub = zmq_context.socket(zmq.SUB)
     sub.setsockopt(zmq.SUBSCRIBE, b"state")
     sub.setsockopt(zmq.RCVTIMEO, 3000)  # 3 second timeout
-    sub.connect(_pub_address())
+    sub.connect(pub_address)
     # Allow time for ZMQ slow-joiner
     time.sleep(0.3)
     yield sub
@@ -109,11 +112,14 @@ def state_sub(zmq_context: zmq.Context[zmq.Socket[bytes]]) -> Generator[zmq.Sock
 
 
 @pytest.fixture(scope="module")
-def cmd_dealer(zmq_context: zmq.Context[zmq.Socket[bytes]]) -> Generator[zmq.Socket[bytes], None, None]:
+def cmd_dealer(
+    cmd_address: str,
+    zmq_context: zmq.Context[zmq.Socket[bytes]],
+) -> Generator[zmq.Socket[bytes], None, None]:
     """DEALER socket connected to the haptic server's command ROUTER."""
     dealer = zmq_context.socket(zmq.DEALER)
     dealer.setsockopt(zmq.RCVTIMEO, 3000)
-    dealer.connect(_cmd_address())
+    dealer.connect(cmd_address)
     time.sleep(0.1)
     yield dealer
     dealer.close()

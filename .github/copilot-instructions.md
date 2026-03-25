@@ -81,6 +81,8 @@ cmake --build --preset dev-mock
 ctest --preset dev-mock
 ```
 
+After any change to `pixi.toml` or `pyproject.toml`, always run `pixi install` and commit the updated `pixi.lock` alongside it. CI will fail if the lockfile is out of sync.
+
 ## Common pitfalls an agent should avoid
 
 ### Python pitfalls

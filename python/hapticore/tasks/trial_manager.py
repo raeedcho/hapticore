@@ -323,11 +323,6 @@ class TrialManager:
                 stop_type = "hard_stopped"
             else:
                 # Open-ended session with no stop requested but trials logged.
-                logger.warning(
-                    "Open-ended session ended without a stop request "
-                    "after %d trial(s) — reporting as hard_stopped",
-                    completed,
-                )
                 stop_type = "hard_stopped"
 
         return {

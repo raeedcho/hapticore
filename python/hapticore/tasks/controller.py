@@ -267,6 +267,12 @@ class TaskController:
                 if remaining > 0:
                     time.sleep(remaining)
 
+            if not self.trial_manager.is_complete:
+                logger.warning(
+                    "Session ended without completing — %d trial(s) logged",
+                    len(self.trial_manager.get_trial_log()),
+                )
+
         finally:
             if _in_main_thread:
                 signal.signal(signal.SIGINT, _prev_sigint_handler)

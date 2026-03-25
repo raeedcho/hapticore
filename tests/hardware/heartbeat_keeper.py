@@ -37,6 +37,8 @@ def heartbeat_keeper(
     ctx : zmq.Context, optional
         Shared ZMQ context.  A new one is created if not provided.
     """
+    if interval <= 0:
+        raise ValueError("Heartbeat interval must be positive")
     if interval >= 0.5:
         raise ValueError("Heartbeat interval must be less than server timeout (0.5 s)")
 

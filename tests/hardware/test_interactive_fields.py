@@ -75,15 +75,15 @@ def run_timed_evaluation(
     description: str,
     feel_instructions: str,
     prompt: str,
-    countdown: float = 5.0,
-    duration: float = 10.0,
+    countdown: int = 5,
+    duration: int = 10,
 ) -> bool:
     """Timed evaluation flow for single-person remote testing.
 
     1. Show instructions and wait for the operator to press Enter.
     2. Countdown so the operator can walk to the device and grab the handle.
     3. Activate the field with a heartbeat for *duration* seconds.
-    4. Revert to NullField (handle goes free).
+    4. Revert to NullField while heartbeat is still active (handle goes free).
     5. Ask the operator to confirm or reject the feel.
     """
     print(f"\n--- {description} ---")
@@ -92,27 +92,26 @@ def run_timed_evaluation(
     _wait_for_enter("\nPress Enter when ready to start the countdown...")
 
     # Countdown
-    for i in range(int(countdown), 0, -1):
+    for i in range(countdown, 0, -1):
         print(f"  {i}...")
         time.sleep(1)
     print("  GO — field is active\n")
 
-    # Activate field with heartbeat
+    # Activate field with heartbeat, revert to NullField before stopping heartbeat
     with heartbeat_keeper(cmd_address, ctx=zmq_context):
         resp = send_command(dealer, "set_force_field", field_params)
         assert resp["success"], f"set_force_field failed: {resp}"
 
-        for remaining in range(int(duration), 0, -1):
+        for remaining in range(duration, 0, -1):
             print(f"  {remaining}s remaining...", end="\r", flush=True)
             time.sleep(1)
 
-    print("  Done — field deactivated, handle is free.      ")
+        # Revert to NullField while heartbeat is still active so handle goes free cleanly
+        revert_resp = send_command(dealer, "set_force_field", {"type": "null", "params": {}})
+        if not revert_resp.get("success"):
+            print(f"\n  Warning: NullField revert returned {revert_resp}")
 
-    # Revert to NullField so the handle is free while the operator answers
-    try:
-        send_command(dealer, "set_force_field", {"type": "null", "params": {}})
-    except (TimeoutError, zmq.ZMQError):
-        pass
+    print("  Field deactivated, handle is free.            ")
 
     return user_confirms(prompt)
 
@@ -143,15 +142,15 @@ def dealer(cmd_address: str, zmq_context: zmq.Context) -> zmq.Socket:  # type: i
 
 
 @pytest.fixture
-def countdown(request: pytest.FixtureRequest) -> float:
+def countdown(request: pytest.FixtureRequest) -> int:
     """Countdown seconds before field activation (``--countdown``)."""
-    return float(request.config.getoption("--countdown"))
+    return int(request.config.getoption("--countdown"))
 
 
 @pytest.fixture
-def duration(request: pytest.FixtureRequest) -> float:
+def duration(request: pytest.FixtureRequest) -> int:
     """Evaluation window duration in seconds (``--duration``)."""
-    return float(request.config.getoption("--duration"))
+    return int(request.config.getoption("--duration"))
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +168,8 @@ class TestSpringDamperFeel:
         dealer: zmq.Socket,  # type: ignore[type-arg]
         cmd_address: str,
         zmq_context: zmq.Context,  # type: ignore[type-arg]
-        countdown: float,
-        duration: float,
+        countdown: int,
+        duration: int,
     ) -> None:
         assert run_timed_evaluation(
             dealer, cmd_address, zmq_context,
@@ -193,8 +192,8 @@ class TestSpringDamperFeel:
         dealer: zmq.Socket,  # type: ignore[type-arg]
         cmd_address: str,
         zmq_context: zmq.Context,  # type: ignore[type-arg]
-        countdown: float,
-        duration: float,
+        countdown: int,
+        duration: int,
     ) -> None:
         assert run_timed_evaluation(
             dealer, cmd_address, zmq_context,
@@ -218,8 +217,8 @@ class TestSpringDamperFeel:
         dealer: zmq.Socket,  # type: ignore[type-arg]
         cmd_address: str,
         zmq_context: zmq.Context,  # type: ignore[type-arg]
-        countdown: float,
-        duration: float,
+        countdown: int,
+        duration: int,
     ) -> None:
         assert run_timed_evaluation(
             dealer, cmd_address, zmq_context,
@@ -252,8 +251,8 @@ class TestConstantFieldFeel:
         dealer: zmq.Socket,  # type: ignore[type-arg]
         cmd_address: str,
         zmq_context: zmq.Context,  # type: ignore[type-arg]
-        countdown: float,
-        duration: float,
+        countdown: int,
+        duration: int,
     ) -> None:
         assert run_timed_evaluation(
             dealer, cmd_address, zmq_context,
@@ -282,8 +281,8 @@ class TestCartPendulumFeel:
         dealer: zmq.Socket,  # type: ignore[type-arg]
         cmd_address: str,
         zmq_context: zmq.Context,  # type: ignore[type-arg]
-        countdown: float,
-        duration: float,
+        countdown: int,
+        duration: int,
     ) -> None:
         assert run_timed_evaluation(
             dealer, cmd_address, zmq_context,
@@ -320,8 +319,8 @@ class TestCompositeFieldFeel:
         dealer: zmq.Socket,  # type: ignore[type-arg]
         cmd_address: str,
         zmq_context: zmq.Context,  # type: ignore[type-arg]
-        countdown: float,
-        duration: float,
+        countdown: int,
+        duration: int,
     ) -> None:
         assert run_timed_evaluation(
             dealer, cmd_address, zmq_context,

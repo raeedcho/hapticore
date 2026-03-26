@@ -902,6 +902,16 @@ TEST(ChannelFieldTest, RejectsNonIntegerAxis) {
     EXPECT_FALSE(field.update_params(oh.get()));
 }
 
+TEST(ChannelFieldTest, RejectsNegativeAxisValue) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("axes");
+        pk.pack_array(1); pk.pack(-1);
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
 TEST(ChannelFieldTest, RejectsNonArrayAxes) {
     ChannelField field;
     auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {

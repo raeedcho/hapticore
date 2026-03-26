@@ -40,8 +40,7 @@ bool ChannelField::update_params(const msgpack::object& params) {
             std::array<bool, 3> parsed_active = {false, false, false};
             for (uint32_t j = 0; j < val.via.array.size; ++j) {
                 auto& elem = val.via.array.ptr[j];
-                if (elem.type != msgpack::type::POSITIVE_INTEGER &&
-                    elem.type != msgpack::type::NEGATIVE_INTEGER) {
+                if (elem.type != msgpack::type::POSITIVE_INTEGER) {
                     return false;
                 }
                 auto axis = elem.via.u64;

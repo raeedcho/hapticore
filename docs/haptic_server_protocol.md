@@ -13,6 +13,18 @@ The server binds two ZeroMQ sockets. Addresses are configured via the YAML confi
 
 For cross-machine operation, use `tcp://*:5555` (state) and `tcp://*:5556` (command).
 
+## Coordinate convention
+
+All positions, velocities, and forces in state messages and command parameters use the **lab frame**:
+
+| Lab axis | Direction | Sign convention |
+|----------|-----------|-----------------|
+| X | Left / right (horizontal) | + = rightward |
+| Y | Up / down (vertical) | + = upward |
+| Z | Forward / backward (depth) | + = toward operator |
+
+This differs from the Force Dimension DHD SDK's native frame (X=depth, Y=horizontal, Z=vertical). The remap is applied inside `DhdReal` (see ADR-008) so all other code — force fields, protocol messages, and Python clients — works in the lab frame transparently. `DhdMock` does not remap (it already operates in lab frame by definition).
+
 ## State messages (PUB socket → SUB clients)
 
 Published as ZeroMQ multipart: `[topic, payload]`.

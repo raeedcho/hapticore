@@ -45,6 +45,7 @@ set(LIB_SOURCES
   src/force_fields/spring_damper_field.cpp
   src/force_fields/workspace_limit_field.cpp
   src/force_fields/cart_pendulum_field.cpp
+  src/force_fields/channel_field.cpp
   src/force_fields/composite_field.cpp
   src/force_fields/field_factory.cpp
   src/publisher_thread.cpp

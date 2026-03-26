@@ -32,9 +32,8 @@ private:
 
     // Acceleration filter state
     double filtered_accel_ = 0.0;
-    static constexpr double kNominalDt = 0.00025; // 4 kHz sampling interval
+    bool first_tick_ = true; // suppress first-tick transient after reset/construction
     static constexpr double k2Pi = 6.283185307179586; // 2*pi, avoids non-standard M_PI
-    double accel_filter_alpha_ = 1.0 - std::exp(-k2Pi * 30.0 * kNominalDt); // ~30 Hz at 4 kHz
 
     // Parameters
     double ball_mass_ = 0.6;

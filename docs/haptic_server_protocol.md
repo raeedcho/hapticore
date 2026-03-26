@@ -192,6 +192,7 @@ Dynamics: 2D cart-pendulum. Cup position = `pos[0]` (x-axis). RK4 integration pe
 | `cup_x` | float | Cup position (meters) |
 | `ball_x` | float | Ball world x position: `cup_x + L*sin(phi)` |
 | `ball_y` | float | Ball y position relative to cup: `-L*cos(phi)` |
+| `filtered_accel` | float | Low-pass-filtered cup acceleration estimate (m/s²) |
 
 ### `composite`
 

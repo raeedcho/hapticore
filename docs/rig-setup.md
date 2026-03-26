@@ -258,7 +258,7 @@ in a different room from the terminal.
 2. Run:
 
    ```bash
-   pytest tests/hardware/ -m interactive -v -s
+   pixi run test-interactive
    ```
 
 3. For each test, the flow is:
@@ -271,13 +271,7 @@ in a different room from the terminal.
 Adjust timing for your environment:
 
 ```bash
-pytest tests/hardware/ -m interactive -v -s --countdown=8 --duration=15
-```
-
-To run *only* the automated hardware tests (excluding interactive):
-
-```bash
-pytest tests/hardware/ -m "hardware and not interactive" -v
+pixi run test-interactive --countdown=8 --duration=15
 ```
 
 ## Troubleshooting

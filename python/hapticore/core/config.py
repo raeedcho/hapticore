@@ -13,9 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic_settings.sources.providers.cli import CliSettingsSource
-from pydantic_settings.sources.providers.yaml import YamlConfigSettingsSource
+from pydantic_settings import (
+    BaseSettings,
+    CliSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 
 
 class ZMQConfig(BaseModel):
@@ -202,3 +205,33 @@ def load_config(
             return tuple(sources)
 
     return _ConfigWithSources(**init_kwargs)
+
+
+def load_session_config(
+    rig: str | Path,
+    subject: str | Path,
+    task: str | Path,
+    *extra: str | Path,
+    overrides: dict[str, Any] | None = None,
+    cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
+) -> ExperimentConfig:
+    """Load a complete session config with all required layers.
+
+    This is the primary entry point for real experiment sessions.
+    Each required layer is a named argument to prevent accidentally
+    omitting a config file.
+
+    For flexible or testing use, use ``load_config(*yaml_paths)`` directly.
+
+    Args:
+        rig: Path to rig config YAML (haptic, display, sync, ZMQ settings).
+        subject: Path to subject config YAML (subject_id, species, implant_info).
+        task: Path to task config YAML (task_class, params, conditions).
+        *extra: Additional YAML files merged on top (e.g., experiment name, overrides).
+        overrides: Dict of keyword overrides (highest priority after CLI).
+        cli_parse_args: If truthy, parse CLI arguments via pydantic-settings.
+    """
+    return load_config(
+        rig, subject, task, *extra,
+        overrides=overrides, cli_parse_args=cli_parse_args,
+    )

@@ -12,13 +12,40 @@ def _simulate(args: argparse.Namespace) -> None:
     """Run a task in simulation mode with mock hardware."""
     import zmq
 
-    from hapticore.core.config import load_config
+    from hapticore.core.config import load_config, load_session_config
     from hapticore.core.messaging import EventPublisher, make_ipc_address
     from hapticore.hardware.mock import MockDisplay, MockHapticInterface, MockSync
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
 
-    config = load_config(args.config)
+    # Build overrides dict
+    session_overrides: dict[str, object] = {}
+    if args.experiment_name:
+        session_overrides["experiment_name"] = args.experiment_name
+
+    if args.config:
+        # Backward-compatible single flat file mode
+        config = load_config(
+            args.config,
+            overrides=session_overrides or None,
+        )
+    elif args.rig and args.subject and args.task:
+        # Layered mode with required rig/subject/task arguments
+        extra: list[str] = args.extra_config or []
+        config = load_session_config(
+            args.rig,
+            args.subject,
+            args.task,
+            *extra,
+            overrides=session_overrides or None,
+        )
+    else:
+        print(
+            "Error: provide either --config for a flat YAML file, or "
+            "all three of --rig, --subject, and --task for layered configs.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Import the task class
     task_class_path = config.task.task_class
@@ -153,8 +180,30 @@ def main() -> None:
         help="Run a task with mock hardware",
     )
     sim_parser.add_argument(
-        "--config", required=True,
-        help="Path to experiment config YAML file",
+        "--experiment-name",
+        help="Name for this experiment session (overrides YAML value)",
+    )
+    # Layered config mode (preferred)
+    sim_parser.add_argument(
+        "--rig",
+        help="Path to rig config YAML (haptic, display, sync, ZMQ settings)",
+    )
+    sim_parser.add_argument(
+        "--subject",
+        help="Path to subject config YAML (subject_id, species, implant_info)",
+    )
+    sim_parser.add_argument(
+        "--task",
+        help="Path to task config YAML (task_class, params, conditions)",
+    )
+    sim_parser.add_argument(
+        "--extra-config", nargs="*", default=[],
+        help="Additional YAML files merged on top (e.g., overrides)",
+    )
+    # Backward-compatible flat config mode
+    sim_parser.add_argument(
+        "--config",
+        help="Path to a single flat experiment config YAML (skips layer validation)",
     )
     sim_parser.add_argument(
         "--fast", action="store_true",

@@ -37,5 +37,7 @@ configs/
 ## Consequences
 
 - `load_config()` now accepts `*yaml_paths` (variadic) instead of a single `yaml_path`. Call sites passing a single path still work.
+- `load_session_config()` requires `rig`, `subject`, and `task` as named arguments. Omitting any one raises a `TypeError` at call time — catching missing-layer bugs before config loading. This is the primary entry point for real experiment sessions.
+- The CLI `simulate` command supports layered mode (`--rig`, `--subject`, `--task`, `--experiment-name`) and backward-compatible flat mode (`--config`).
 - Environment variables with the `HAPTICORE_` prefix are now automatically read. Stale env vars in a shell session could silently override YAML values. Mitigated by using `__` (double underscore) as the nested delimiter to avoid ambiguity with field names containing single underscores.
-- The `pydantic-settings` YAML source requires the `pyyaml` package, which is already a dependency.
+- The `pydantic-settings` YAML source requires the `pyyaml` package, which is already a dependency. The version constraint is `pydantic-settings[yaml]>=2.3` to ensure YAML and CLI source support.

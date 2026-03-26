@@ -165,7 +165,21 @@ configs/
 └── example_experiment.yaml   # experiment_name + any overrides
 ```
 
-Each layer file contains only the keys it owns. Deep merge combines them:
+Each layer file contains only the keys it owns. Deep merge combines them.
+
+**Session loading** (preferred for real experiments):
+
+```python
+config = load_session_config(
+    rig="configs/rig/default.yaml",
+    subject="configs/subject/example_subject.yaml",
+    task="configs/task/center_out.yaml",
+)
+```
+
+`load_session_config()` requires rig, subject, and task paths as named arguments — omitting one raises `TypeError` before any config loading happens. This prevents silently running with default rig values when a layer file is forgotten. Additional YAML files can be passed as extra positional arguments.
+
+**Flexible loading** (for tests and scripting):
 
 ```python
 config = load_config(
@@ -177,5 +191,19 @@ config = load_config(
 ```
 
 A single flat YAML still works for simple setups: `load_config("configs/my_experiment.yaml")`.
+
+**CLI usage**:
+
+```bash
+# Layered mode (preferred)
+hapticore simulate \
+    --rig configs/rig/default.yaml \
+    --subject configs/subject/example_subject.yaml \
+    --task configs/task/center_out.yaml \
+    --experiment-name "my_session_2026_03_25"
+
+# Flat file mode (backward compatible)
+hapticore simulate --config configs/example_config.yaml
+```
 
 See ADR-009 for the rationale behind this design.

@@ -63,8 +63,12 @@ class TestCLISimulate:
 
         from hapticore.cli import _simulate
 
-        config_path = Path(__file__).parents[2] / "configs" / "center_out_experiment.yaml"
-        args = Namespace(config=str(config_path), fast=True)
+        config_path = Path(__file__).parents[2] / "configs" / "example_config.yaml"
+        args = Namespace(
+            config=str(config_path),
+            rig=None, subject=None, task=None, extra_config=[],
+            experiment_name=None, fast=True,
+        )
 
         start = time.monotonic()
         _simulate(args)

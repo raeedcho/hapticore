@@ -37,8 +37,8 @@ task:  # required
   task_class: "hapticore.tasks.center_out.CenterOutTask"  # required
   params:
     target_radius: 0.02
-    hold_time_s: 0.5
-    reach_timeout_s: 2.0
+    hold_time: 0.5
+    reach_timeout: 2.0
   conditions:
     - target_angle: 0
       target_distance: 0.08

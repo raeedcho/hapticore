@@ -293,3 +293,19 @@ class TestLoadSessionConfig:
                 subject=CONFIGS_DIR / "subject" / "example_subject.yaml",
                 task=CONFIGS_DIR / "task" / "center_out.yaml",
             )
+
+    def test_session_config_missing_subject_raises(self) -> None:
+        """Omitting the subject argument raises TypeError at call time."""
+        with pytest.raises(TypeError):
+            load_session_config(  # type: ignore[call-arg]
+                rig=CONFIGS_DIR / "rig" / "default.yaml",
+                task=CONFIGS_DIR / "task" / "center_out.yaml",
+            )
+
+    def test_session_config_missing_task_raises(self) -> None:
+        """Omitting the task argument raises TypeError at call time."""
+        with pytest.raises(TypeError):
+            load_session_config(  # type: ignore[call-arg]
+                rig=CONFIGS_DIR / "rig" / "default.yaml",
+                subject=CONFIGS_DIR / "subject" / "example_subject.yaml",
+            )

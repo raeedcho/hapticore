@@ -57,6 +57,7 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 markers = [
     "hardware: tests that require physical hardware",
+    "interactive: tests requiring a human operator at the device (implies hardware)",
     "benchmark: benchmark tests",
     "slow: performance tests with strict thresholds (run on lab machine)",
 ]

@@ -29,43 +29,82 @@ from hapticore.core.messages import HapticState
 
 
 # ---------------------------------------------------------------------------
+# pytest command-line options
+# ---------------------------------------------------------------------------
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add command-line options for interactive feel-test timing."""
+    parser.addoption(
+        "--countdown",
+        default=5,
+        type=int,
+        help="Seconds to count down before activating a field (default: 5)",
+    )
+    parser.addoption(
+        "--duration",
+        default=10,
+        type=int,
+        help="Seconds to keep the field active for evaluation (default: 10)",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Address configuration
 # ---------------------------------------------------------------------------
 
+DEFAULT_PUB = "ipc:///tmp/hapticore_haptic_state"
+DEFAULT_CMD = "ipc:///tmp/hapticore_haptic_cmd"
+
+
 def _pub_address() -> str:
-    return os.environ.get(
-        "HAPTICORE_PUB_ADDRESS", "ipc:///tmp/hapticore_haptic_state"
-    )
+    return os.environ.get("HAPTICORE_PUB_ADDRESS", DEFAULT_PUB)
 
 
 def _cmd_address() -> str:
-    return os.environ.get(
-        "HAPTICORE_CMD_ADDRESS", "ipc:///tmp/hapticore_haptic_cmd"
-    )
+    return os.environ.get("HAPTICORE_CMD_ADDRESS", DEFAULT_CMD)
 
 
 # ---------------------------------------------------------------------------
-# ZMQ fixtures
+# Session-scoped fixtures (shared across all hardware & interactive tests)
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="module")
-def zmq_ctx() -> Generator[zmq.Context[zmq.Socket[bytes]], None, None]:
-    """Shared ZMQ context for the test module."""
+@pytest.fixture(scope="session")
+def pub_address() -> str:
+    """PUB address of the haptic server (session-scoped)."""
+    return _pub_address()
+
+
+@pytest.fixture(scope="session")
+def cmd_address() -> str:
+    """CMD address of the haptic server (session-scoped)."""
+    return _cmd_address()
+
+
+@pytest.fixture(scope="session")
+def zmq_context() -> Generator[zmq.Context[zmq.Socket[bytes]], None, None]:
+    """Session-scoped ZMQ context shared by all hardware and interactive tests."""
     ctx: zmq.Context[zmq.Socket[bytes]] = zmq.Context()
     yield ctx
     ctx.term()
 
 
+# ---------------------------------------------------------------------------
+# Module-scoped fixtures (for automated hardware tests)
+# ---------------------------------------------------------------------------
+
 @pytest.fixture(scope="module")
-def state_sub(zmq_ctx: zmq.Context[zmq.Socket[bytes]]) -> Generator[zmq.Socket[bytes], None, None]:
+def state_sub(
+    pub_address: str,
+    zmq_context: zmq.Context[zmq.Socket[bytes]],
+) -> Generator[zmq.Socket[bytes], None, None]:
     """SUB socket connected to the haptic server's state PUB.
 
     Module-scoped so the slow-joiner delay is paid once.
     """
-    sub = zmq_ctx.socket(zmq.SUB)
+    sub = zmq_context.socket(zmq.SUB)
     sub.setsockopt(zmq.SUBSCRIBE, b"state")
     sub.setsockopt(zmq.RCVTIMEO, 3000)  # 3 second timeout
-    sub.connect(_pub_address())
+    sub.connect(pub_address)
     # Allow time for ZMQ slow-joiner
     time.sleep(0.3)
     yield sub
@@ -73,11 +112,14 @@ def state_sub(zmq_ctx: zmq.Context[zmq.Socket[bytes]]) -> Generator[zmq.Socket[b
 
 
 @pytest.fixture(scope="module")
-def cmd_dealer(zmq_ctx: zmq.Context[zmq.Socket[bytes]]) -> Generator[zmq.Socket[bytes], None, None]:
+def cmd_dealer(
+    cmd_address: str,
+    zmq_context: zmq.Context[zmq.Socket[bytes]],
+) -> Generator[zmq.Socket[bytes], None, None]:
     """DEALER socket connected to the haptic server's command ROUTER."""
-    dealer = zmq_ctx.socket(zmq.DEALER)
+    dealer = zmq_context.socket(zmq.DEALER)
     dealer.setsockopt(zmq.RCVTIMEO, 3000)
-    dealer.connect(_cmd_address())
+    dealer.connect(cmd_address)
     time.sleep(0.1)
     yield dealer
     dealer.close()

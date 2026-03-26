@@ -37,6 +37,7 @@ typecheck = "mypy python/hapticore/core/ --strict"
 test-unit = "pytest tests/unit/ -v"
 test-integration = "pytest tests/integration/ -v"
 test-hardware = "pytest tests/hardware/ -m hardware -v"
+test-interactive = "pytest tests/hardware/ -m interactive -v -s"
 test = { depends-on = ["test-unit", "test-integration"] }
 
 # C++ haptic server (mock hardware)

@@ -248,6 +248,38 @@ pixi run test-hardware
 
 The final test always reverts to NullField so the handle is free-moving when tests complete.
 
+### Running interactive (feel) tests
+
+Interactive tests keep force fields alive and prompt you to evaluate how
+they feel. They support single-person remote operation — the robot can be
+in a different room from the terminal.
+
+1. Start the haptic server.
+2. Run:
+
+   ```bash
+   pytest tests/hardware/ -m interactive -v -s
+   ```
+
+3. For each test, the flow is:
+   - Read the instructions on screen.
+   - Press **Enter** to start the countdown.
+   - Walk to the device and grab the handle during the countdown.
+   - Evaluate the feel during the timed window (default 10 s).
+   - Walk back to the terminal and answer `y` or `n`.
+
+Adjust timing for your environment:
+
+```bash
+pytest tests/hardware/ -m interactive -v -s --countdown=8 --duration=15
+```
+
+To run *only* the automated hardware tests (excluding interactive):
+
+```bash
+pytest tests/hardware/ -m "hardware and not interactive" -v
+```
+
 ## Troubleshooting
 
 **"Error: failed to open haptic device"**

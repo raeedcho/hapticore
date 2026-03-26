@@ -1,0 +1,35 @@
+# Default rig configuration
+# Contains hardware-specific settings: haptic workspace, display, ZMQ addresses, sync
+
+haptic:
+  server_address: "localhost"
+  workspace_bounds:
+    x: [-0.15, 0.15]
+    y: [-0.15, 0.15]
+    z: [-0.15, 0.15]
+  force_limit_n: 20.0
+  publish_rate_hz: 200.0
+
+display:
+  resolution: [1920, 1080]
+  refresh_rate_hz: 60
+  fullscreen: true
+  monitor_distance_cm: 50.0
+  background_color: [0.0, 0.0, 0.0]
+
+recording:
+  ripple_enabled: false
+  spikeglx_enabled: false
+  lsl_enabled: true
+  save_dir: "data"
+
+sync:
+  teensy_port: "/dev/ttyACM0"
+  sync_pulse_rate_hz: 1.0
+  event_code_bits: 8
+
+zmq:
+  event_pub_address: "ipc:///tmp/hapticore_events"
+  haptic_state_address: "ipc:///tmp/hapticore_haptic_state"
+  haptic_command_address: "ipc:///tmp/hapticore_haptic_cmd"
+  transport: "ipc"

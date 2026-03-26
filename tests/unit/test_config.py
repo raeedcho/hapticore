@@ -13,9 +13,11 @@ from hapticore.core.config import (
     SubjectConfig,
     TaskConfig,
     load_config,
+    load_session_config,
 )
 
 CONFIGS_DIR = Path(__file__).resolve().parents[2] / "configs"
+FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "configs"
 
 
 class TestLoadConfig:
@@ -31,7 +33,7 @@ class TestLoadConfig:
         config = load_config(CONFIGS_DIR / "example_config.yaml")
         dumped = config.model_dump()
         restored = ExperimentConfig.model_validate(dumped)
-        assert restored == config
+        assert restored.model_dump() == config.model_dump()
 
 
 class TestRequiredFields:
@@ -108,3 +110,202 @@ class TestDefaults:
     def test_subject_species_default(self) -> None:
         config = SubjectConfig(subject_id="test")
         assert config.species == "macaque"
+
+
+class TestLayeredMerge:
+    """Tests for layered YAML configuration merging."""
+
+    def test_rig_subject_task_layers(self) -> None:
+        """Load rig + subject + task + experiment YAMLs, all sections present."""
+        config = load_config(
+            FIXTURES_DIR / "rig.yaml",
+            FIXTURES_DIR / "subject.yaml",
+            FIXTURES_DIR / "task.yaml",
+            FIXTURES_DIR / "experiment.yaml",
+        )
+        assert config.experiment_name == "test_experiment"
+        assert config.subject.subject_id == "test_monkey"
+        assert config.task.task_class == "hapticore.tasks.center_out.CenterOutTask"
+        assert config.haptic.force_limit_n == 15.0
+        assert config.sync.teensy_port == "/dev/ttyACM0"
+
+    def test_rig_task_no_subject(self) -> None:
+        """Load rig + task (no subject YAML), subject from overrides."""
+        config = load_config(
+            FIXTURES_DIR / "rig.yaml",
+            FIXTURES_DIR / "task.yaml",
+            FIXTURES_DIR / "experiment.yaml",
+            overrides={"subject": {"subject_id": "fallback_monkey"}},
+        )
+        assert config.subject.subject_id == "fallback_monkey"
+        assert config.subject.species == "macaque"  # default
+        assert config.haptic.force_limit_n == 15.0
+
+    def test_later_file_wins(self) -> None:
+        """When two files both set haptic.force_limit_n, the later file wins."""
+        config = load_config(
+            FIXTURES_DIR / "rig.yaml",
+            FIXTURES_DIR / "subject.yaml",
+            FIXTURES_DIR / "task.yaml",
+            FIXTURES_DIR / "experiment.yaml",
+            CONFIGS_DIR / "example_config.yaml",  # sets force_limit_n=20.0
+        )
+        assert config.haptic.force_limit_n == 20.0  # example_config overrides rig's 15.0
+
+    def test_deep_merge_preserves_other_fields(self) -> None:
+        """Rig sets workspace_bounds and force_limit_n; task file overrides publish_rate_hz.
+
+        Deep merge ensures workspace_bounds and force_limit_n from the rig layer
+        are preserved even though the later task file also contains a haptic section.
+        """
+        config = load_config(
+            FIXTURES_DIR / "rig.yaml",
+            FIXTURES_DIR / "subject.yaml",
+            FIXTURES_DIR / "task_with_haptic_override.yaml",
+            FIXTURES_DIR / "experiment.yaml",
+        )
+        # From rig.yaml
+        assert config.haptic.force_limit_n == 15.0
+        assert config.haptic.workspace_bounds["x"] == [-0.10, 0.10]
+        # From task_with_haptic_override.yaml
+        assert config.haptic.publish_rate_hz == 500.0
+
+    def test_layered_loading_from_configs_dir(self) -> None:
+        """Load from the real configs/ layered directory."""
+        config = load_config(
+            CONFIGS_DIR / "rig" / "default.yaml",
+            CONFIGS_DIR / "subject" / "example_subject.yaml",
+            CONFIGS_DIR / "task" / "center_out.yaml",
+            CONFIGS_DIR / "example_experiment.yaml",
+        )
+        assert config.experiment_name == "center_out_reaching"
+        assert config.subject.subject_id == "monkey_M"
+        assert config.task.task_class == "hapticore.tasks.center_out.CenterOutTask"
+        assert config.task.block_size == 8
+
+    def test_overrides_take_priority(self) -> None:
+        """Constructor overrides take priority over YAML values."""
+        config = load_config(
+            CONFIGS_DIR / "example_config.yaml",
+            overrides={"experiment_name": "overridden"},
+        )
+        assert config.experiment_name == "overridden"
+
+
+class TestEnvVarOverride:
+    """Tests for environment variable overrides."""
+
+    def test_env_overrides_yaml(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """HAPTICORE_ env vars override YAML values."""
+        monkeypatch.setenv("HAPTICORE_HAPTIC__FORCE_LIMIT_N", "15.0")
+        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        assert config.haptic.force_limit_n == 15.0
+
+    def test_env_nested_delimiter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Double-underscore delimiter works for nested fields."""
+        monkeypatch.setenv("HAPTICORE_DISPLAY__REFRESH_RATE_HZ", "120")
+        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        assert config.display.refresh_rate_hz == 120
+
+    def test_env_does_not_wipe_other_nested_fields(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Setting one nested env var preserves other nested defaults."""
+        monkeypatch.setenv("HAPTICORE_HAPTIC__FORCE_LIMIT_N", "10.0")
+        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        assert config.haptic.force_limit_n == 10.0
+        assert config.haptic.publish_rate_hz == 200.0  # preserved from YAML
+
+
+class TestSerializationCompatibility:
+    """Tests for downstream serialization compatibility (SessionManager)."""
+
+    def test_model_dump_json_round_trip(self) -> None:
+        """model_dump_json() produces valid JSON that reconstructs the config."""
+        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        json_str = config.model_dump_json()
+        restored = ExperimentConfig.model_validate_json(json_str)
+        assert restored.model_dump() == config.model_dump()
+
+    def test_layered_model_dump_json_round_trip(self) -> None:
+        """Layered config round-trips through JSON correctly."""
+        config = load_config(
+            FIXTURES_DIR / "rig.yaml",
+            FIXTURES_DIR / "subject.yaml",
+            FIXTURES_DIR / "task.yaml",
+            FIXTURES_DIR / "experiment.yaml",
+        )
+        json_str = config.model_dump_json()
+        restored = ExperimentConfig.model_validate_json(json_str)
+        assert restored.model_dump() == config.model_dump()
+
+    def test_model_dump_contains_all_sections(self) -> None:
+        """model_dump() output contains all expected top-level keys."""
+        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        dumped = config.model_dump()
+        expected_keys = {
+            "experiment_name", "subject", "haptic", "display",
+            "recording", "task", "sync", "zmq",
+        }
+        assert set(dumped.keys()) == expected_keys
+
+
+class TestCliOverride:
+    """Tests for CLI argument overrides."""
+
+    def test_cli_overrides_yaml(self) -> None:
+        """CLI arguments override YAML values."""
+        config = load_config(
+            CONFIGS_DIR / "example_config.yaml",
+            cli_parse_args=["--haptic.force_limit_n=30.0"],
+        )
+        assert config.haptic.force_limit_n == 30.0
+
+    def test_cli_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """CLI arguments take precedence over environment variables."""
+        monkeypatch.setenv("HAPTICORE_HAPTIC__FORCE_LIMIT_N", "10.0")
+        config = load_config(
+            CONFIGS_DIR / "example_config.yaml",
+            cli_parse_args=["--haptic.force_limit_n=30.0"],
+        )
+        assert config.haptic.force_limit_n == 30.0
+
+
+class TestLoadSessionConfig:
+    """Tests for load_session_config() with required layers."""
+
+    def test_session_config_loads(self) -> None:
+        """All three required layers produce a valid config."""
+        config = load_session_config(
+            rig=CONFIGS_DIR / "rig" / "default.yaml",
+            subject=CONFIGS_DIR / "subject" / "example_subject.yaml",
+            task=CONFIGS_DIR / "task" / "center_out.yaml",
+            extra=[CONFIGS_DIR / "example_experiment.yaml"],
+        )
+        assert config.experiment_name == "center_out_reaching"
+        assert config.subject.subject_id == "monkey_M"
+        assert config.task.task_class == "hapticore.tasks.center_out.CenterOutTask"
+
+    def test_session_config_missing_rig_raises(self) -> None:
+        """Omitting the rig argument raises TypeError at call time."""
+        with pytest.raises(TypeError):
+            load_session_config(  # type: ignore[call-arg]
+                subject=CONFIGS_DIR / "subject" / "example_subject.yaml",
+                task=CONFIGS_DIR / "task" / "center_out.yaml",
+            )
+
+    def test_session_config_missing_subject_raises(self) -> None:
+        """Omitting the subject argument raises TypeError at call time."""
+        with pytest.raises(TypeError):
+            load_session_config(  # type: ignore[call-arg]
+                rig=CONFIGS_DIR / "rig" / "default.yaml",
+                task=CONFIGS_DIR / "task" / "center_out.yaml",
+            )
+
+    def test_session_config_missing_task_raises(self) -> None:
+        """Omitting the task argument raises TypeError at call time."""
+        with pytest.raises(TypeError):
+            load_session_config(  # type: ignore[call-arg]
+                rig=CONFIGS_DIR / "rig" / "default.yaml",
+                subject=CONFIGS_DIR / "subject" / "example_subject.yaml",
+            )

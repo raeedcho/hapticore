@@ -142,4 +142,69 @@ The `field_state` dict within `HapticState` carries force-field-specific state. 
 
 ## Configuration
 
-Pydantic v2 models loaded from YAML. Top-level `ExperimentConfig` composes: SubjectConfig, HapticConfig, DisplayConfig, RecordingConfig, TaskConfig, SyncConfig, ZMQConfig. Validated at load time — invalid parameters fail before any hardware initializes. Resolved config saved as JSON alongside every recording session.
+The configuration system uses `pydantic-settings` for layered composition from multiple sources. The top-level `ExperimentConfig` (a `BaseSettings` subclass) composes: SubjectConfig, HapticConfig, DisplayConfig, RecordingConfig, TaskConfig, SyncConfig, ZMQConfig. All nested models remain plain `BaseModel`. Validated at load time — invalid parameters fail before any hardware initializes. Resolved config saved as JSON alongside every recording session.
+
+**Source priority** (highest wins):
+
+1. CLI arguments (via `cli_parse_args` parameter to `load_config()`)
+2. Constructor kwargs (`overrides` dict passed to `load_config()`)
+3. Environment variables (`HAPTICORE_` prefix, `__` double-underscore delimiter)
+4. YAML files (layered with deep merge — later files override earlier ones)
+5. Field defaults in the Pydantic models
+
+**Layered YAML structure**:
+
+```
+configs/
+├── rig/
+│   └── default.yaml          # haptic workspace, display, ZMQ, sync
+├── subject/
+│   └── example_subject.yaml  # subject_id, species, implant_info
+├── task/
+│   └── center_out.yaml       # task_class, params, conditions, block structure
+└── example_experiment.yaml   # experiment_name + any overrides
+```
+
+Each layer file contains only the keys it owns. Deep merge combines them.
+
+**Session loading** (preferred for real experiments):
+
+```python
+config = load_session_config(
+    rig="configs/rig/default.yaml",
+    subject="configs/subject/example_subject.yaml",
+    task="configs/task/center_out.yaml",
+    overrides={"experiment_name": "center_out_2026_03_25"},
+)
+```
+
+`load_session_config()` requires rig, subject, and task paths as **keyword-only** arguments — omitting one raises `TypeError` before any config loading happens. This prevents silently running with default rig values when a layer file is forgotten. Additional YAML files can be passed as `extra=[...]`. The required `experiment_name` field can be provided via an extra YAML or `overrides={"experiment_name": ...}`.
+
+**Flexible loading** (for tests and scripting):
+
+```python
+config = load_config(
+    "configs/rig/default.yaml",
+    "configs/subject/example_subject.yaml",
+    "configs/task/center_out.yaml",
+    "configs/example_experiment.yaml",
+)
+```
+
+A single flat YAML still works for simple setups: `load_config("configs/my_experiment.yaml")`.
+
+**CLI usage**:
+
+```bash
+# Layered mode (preferred)
+hapticore simulate \
+    --rig configs/rig/default.yaml \
+    --subject configs/subject/example_subject.yaml \
+    --task configs/task/center_out.yaml \
+    --experiment-name "my_session_2026_03_25"
+
+# Flat file mode (backward compatible)
+hapticore simulate --config configs/example_config.yaml
+```
+
+See ADR-009 for the rationale behind this design.

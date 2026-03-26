@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from hapticore.core.messaging import make_ipc_address
+
+
+@pytest.fixture(autouse=True)
+def _clean_hapticore_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent stale HAPTICORE_ env vars from leaking into tests."""
+    for key in list(os.environ):
+        if key.startswith("HAPTICORE_"):
+            monkeypatch.delenv(key)
 
 
 @pytest.fixture

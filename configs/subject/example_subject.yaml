@@ -1,0 +1,10 @@
+# Example subject configuration
+# Contains subject-specific settings: identity, species, implant info
+
+subject:
+  subject_id: "monkey_M"
+  species: "macaque"
+  implant_info:
+    array_type: "utah"
+    hemisphere: "left"
+    area: "M1"

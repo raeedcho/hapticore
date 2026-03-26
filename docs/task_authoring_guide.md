@@ -288,7 +288,7 @@ self.haptic.send_command(Command(
 ))
 ```
 
-To add a *new* analytical force field (e.g., a velocity-dependent curl field), create a C++ `ForceField` subclass in `cpp/haptic_server/include/fields/`, implement `compute(pos, vel, dt)`, and register the type name in the command dispatcher. See `CartPendulumField` as a reference.
+To add a *new* analytical force field (e.g., a velocity-dependent curl field), create a C++ `ForceField` subclass in `cpp/haptic_server/src/force_fields/`, implement `compute(pos, vel, dt)`, and register the type name in the command dispatcher. See `CartPendulumField` as a reference.
 
 ### Approach B: Physics world (tasks with collisions and rigid bodies)
 

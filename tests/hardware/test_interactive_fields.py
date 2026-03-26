@@ -370,9 +370,9 @@ class TestChannelFeelPlane:
 
     def test_constrained_to_plane(
         self,
-        dealer: zmq.Socket,
+        dealer: zmq.Socket,  # type: ignore[type-arg]
         cmd_address: str,
-        zmq_context: zmq.Context,
+        zmq_context: zmq.Context,  # type: ignore[type-arg]
         countdown: int,
         duration: int,
     ) -> None:
@@ -406,9 +406,9 @@ class TestChannelFeelLine:
 
     def test_constrained_to_line(
         self,
-        dealer: zmq.Socket,
+        dealer: zmq.Socket,  # type: ignore[type-arg]
         cmd_address: str,
-        zmq_context: zmq.Context,
+        zmq_context: zmq.Context,  # type: ignore[type-arg]
         countdown: int,
         duration: int,
     ) -> None:

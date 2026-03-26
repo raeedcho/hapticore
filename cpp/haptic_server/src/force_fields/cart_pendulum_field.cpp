@@ -15,8 +15,9 @@ Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
     cup_x_ = pos[0];
     double vel_x = vel[0];
 
-    // Estimate cup acceleration via finite difference + EMA low-pass filter
-    double raw_accel = (vel_x - vel_x_prev_) / dt;
+    // Estimate cup acceleration via finite difference + EMA low-pass filter.
+    // Use kNominalDt here to match the sample period used to precompute accel_filter_alpha_.
+    double raw_accel = (vel_x - vel_x_prev_) / kNominalDt;
     vel_x_prev_ = vel_x;
     filtered_accel_ = accel_filter_alpha_ * raw_accel + (1.0 - accel_filter_alpha_) * filtered_accel_;
 

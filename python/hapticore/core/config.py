@@ -9,6 +9,7 @@ Load from YAML with load_config().
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -208,18 +209,19 @@ def load_config(
 
 
 def load_session_config(
+    *,
     rig: str | Path,
     subject: str | Path,
     task: str | Path,
-    *extra: str | Path,
+    extra: Sequence[str | Path] = (),
     overrides: dict[str, Any] | None = None,
     cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
 ) -> ExperimentConfig:
     """Load a complete session config with all required layers.
 
     This is the primary entry point for real experiment sessions.
-    Each required layer is a named argument to prevent accidentally
-    omitting a config file.
+    All parameters are keyword-only to prevent accidentally omitting or
+    mis-ordering a config file.
 
     For flexible or testing use, use ``load_config(*yaml_paths)`` directly.
 
@@ -227,7 +229,8 @@ def load_session_config(
         rig: Path to rig config YAML (haptic, display, sync, ZMQ settings).
         subject: Path to subject config YAML (subject_id, species, implant_info).
         task: Path to task config YAML (task_class, params, conditions).
-        *extra: Additional YAML files merged on top (e.g., experiment name, overrides).
+        extra: Additional YAML files merged on top (later files win). Pass as a
+            list or tuple, e.g. ``extra=["configs/example_experiment.yaml"]``.
         overrides: Dict of keyword overrides (highest priority after CLI).
         cli_parse_args: If truthy, parse CLI arguments via pydantic-settings.
     """

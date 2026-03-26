@@ -277,10 +277,10 @@ class TestLoadSessionConfig:
     def test_session_config_loads(self) -> None:
         """All three required layers produce a valid config."""
         config = load_session_config(
-            CONFIGS_DIR / "rig" / "default.yaml",
-            CONFIGS_DIR / "subject" / "example_subject.yaml",
-            CONFIGS_DIR / "task" / "center_out.yaml",
-            CONFIGS_DIR / "example_experiment.yaml",
+            rig=CONFIGS_DIR / "rig" / "default.yaml",
+            subject=CONFIGS_DIR / "subject" / "example_subject.yaml",
+            task=CONFIGS_DIR / "task" / "center_out.yaml",
+            extra=[CONFIGS_DIR / "example_experiment.yaml"],
         )
         assert config.experiment_name == "center_out_reaching"
         assert config.subject.subject_id == "monkey_M"

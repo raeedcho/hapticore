@@ -31,12 +31,11 @@ def _simulate(args: argparse.Namespace) -> None:
         )
     elif args.rig and args.subject and args.task:
         # Layered mode with required rig/subject/task arguments
-        extra: list[str] = args.extra_config or []
         config = load_session_config(
-            args.rig,
-            args.subject,
-            args.task,
-            *extra,
+            rig=args.rig,
+            subject=args.subject,
+            task=args.task,
+            extra=args.extra_config or [],
             overrides=session_overrides or None,
         )
     else:

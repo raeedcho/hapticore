@@ -14,13 +14,14 @@ cp python/hapticore/tasks/template_task.py python/hapticore/tasks/my_task.py
 cp configs/task/center_out.yaml configs/task/my_task.yaml
 ```
 
-Edit both files following the instructions below. At run time, compose the task config with rig and subject layers:
+Edit both files following the instructions below. At run time, compose the task config with rig and subject layers and supply a per-session experiment name:
 
 ```python
 config = load_config(
     "configs/rig/default.yaml",
     "configs/subject/monkey_a.yaml",
     "configs/task/my_task.yaml",
+    overrides={"experiment_name": "my_first_experiment"},
 )
 ```
 

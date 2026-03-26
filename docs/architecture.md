@@ -174,10 +174,11 @@ config = load_session_config(
     rig="configs/rig/default.yaml",
     subject="configs/subject/example_subject.yaml",
     task="configs/task/center_out.yaml",
+    overrides={"experiment_name": "center_out_2026_03_25"},
 )
 ```
 
-`load_session_config()` requires rig, subject, and task paths as named arguments — omitting one raises `TypeError` before any config loading happens. This prevents silently running with default rig values when a layer file is forgotten. Additional YAML files can be passed as extra positional arguments.
+`load_session_config()` requires rig, subject, and task paths as **keyword-only** arguments — omitting one raises `TypeError` before any config loading happens. This prevents silently running with default rig values when a layer file is forgotten. Additional YAML files can be passed as `extra=[...]`. The required `experiment_name` field can be provided via an extra YAML or `overrides={"experiment_name": ...}`.
 
 **Flexible loading** (for tests and scripting):
 

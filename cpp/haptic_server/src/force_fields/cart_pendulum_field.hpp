@@ -33,7 +33,8 @@ private:
     // Acceleration filter state
     double filtered_accel_ = 0.0;
     static constexpr double kNominalDt = 0.00025; // 4 kHz sampling interval
-    double accel_filter_alpha_ = 1.0 - std::exp(-2.0 * M_PI * 30.0 * kNominalDt); // ~30 Hz at 4 kHz
+    static constexpr double k2Pi = 6.283185307179586; // 2*pi, avoids non-standard M_PI
+    double accel_filter_alpha_ = 1.0 - std::exp(-k2Pi * 30.0 * kNominalDt); // ~30 Hz at 4 kHz
 
     // Parameters
     double ball_mass_ = 0.6;
@@ -50,6 +51,6 @@ private:
     State derivatives(const State& s, double x_accel) const;
 
     static double compute_alpha(double cutoff_hz, double dt) {
-        return 1.0 - std::exp(-2.0 * M_PI * cutoff_hz * dt);
+        return 1.0 - std::exp(-k2Pi * cutoff_hz * dt);
     }
 };

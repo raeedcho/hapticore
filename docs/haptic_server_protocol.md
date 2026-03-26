@@ -13,6 +13,18 @@ The server binds two ZeroMQ sockets. Addresses are configured via the YAML confi
 
 For cross-machine operation, use `tcp://*:5555` (state) and `tcp://*:5556` (command).
 
+## Coordinate convention
+
+All positions, velocities, and forces in state messages and command parameters use the **lab frame**:
+
+| Lab axis | Direction | Sign convention |
+|----------|-----------|-----------------|
+| X | Left / right (horizontal) | + = rightward |
+| Y | Up / down (vertical) | + = upward |
+| Z | Forward / backward (depth) | + = toward operator |
+
+This differs from the Force Dimension DHD SDK's native frame (X=depth, Y=horizontal, Z=vertical). The remap is applied inside `DhdReal` (see ADR-008) so all other code — force fields, protocol messages, and Python clients — works in the lab frame transparently. `DhdMock` does not remap (it already operates in lab frame by definition).
+
 ## State messages (PUB socket → SUB clients)
 
 Published as ZeroMQ multipart: `[topic, payload]`.
@@ -166,6 +178,7 @@ Force: for each axis, if `pos[i] < min[i]`, apply `K * (min[i] - pos[i]) - B * v
 | `angular_damping` | float | 0.1 | ≥ 0 | Angular damping in N·m·s/rad |
 | `spill_threshold` | float | 1.5708 | > 0 | Ball spill angle in radians (π/2) |
 | `cup_inertia_enabled` | bool | true | — | Include cup inertial resistance |
+| `accel_filter_hz` | float | 30.0 | 5 ≤ f ≤ 200 | Low-pass cutoff for cup acceleration estimate (Hz) |
 
 Dynamics: 2D cart-pendulum. Cup position = `pos[0]` (x-axis). RK4 integration per tick.
 
@@ -179,6 +192,7 @@ Dynamics: 2D cart-pendulum. Cup position = `pos[0]` (x-axis). RK4 integration pe
 | `cup_x` | float | Cup position (meters) |
 | `ball_x` | float | Ball world x position: `cup_x + L*sin(phi)` |
 | `ball_y` | float | Ball y position relative to cup: `-L*cos(phi)` |
+| `filtered_accel` | float | Low-pass-filtered cup acceleration estimate (m/s²) |
 
 ### `composite`
 

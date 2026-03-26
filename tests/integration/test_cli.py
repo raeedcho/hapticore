@@ -57,14 +57,44 @@ class TestCLISimulate:
     """Integration tests for the CLI simulate command."""
 
     def test_fast_simulation_completes_quickly(self) -> None:
-        """End-to-end: _simulate with --fast finishes in seconds, not minutes."""
+        """End-to-end: _simulate with --fast and --config finishes in seconds."""
         from argparse import Namespace
         from pathlib import Path
 
         from hapticore.cli import _simulate
 
-        config_path = Path(__file__).parents[2] / "configs" / "center_out_experiment.yaml"
-        args = Namespace(config=str(config_path), fast=True)
+        config_path = Path(__file__).parents[2] / "configs" / "example_config.yaml"
+        args = Namespace(
+            config=str(config_path),
+            rig=None, subject=None, task=None, extra_config=[],
+            experiment_name=None, fast=True,
+        )
+
+        start = time.monotonic()
+        _simulate(args)
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 10.0, (
+            f"Fast simulation took {elapsed:.1f}s — timing overrides "
+            f"are probably not being applied"
+        )
+
+    def test_fast_simulation_layered_mode(self) -> None:
+        """End-to-end: _simulate with --rig/--subject/--task layered configs."""
+        from argparse import Namespace
+        from pathlib import Path
+
+        from hapticore.cli import _simulate
+
+        configs = Path(__file__).parents[2] / "configs"
+        args = Namespace(
+            config=None,
+            rig=str(configs / "rig" / "default.yaml"),
+            subject=str(configs / "subject" / "example_subject.yaml"),
+            task=str(configs / "task" / "center_out.yaml"),
+            extra_config=[str(configs / "example_experiment.yaml")],
+            experiment_name=None, fast=True,
+        )
 
         start = time.monotonic()
         _simulate(args)

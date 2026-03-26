@@ -1,0 +1,14 @@
+# Test fixture: task layer that overrides a haptic setting
+task:
+  task_class: "hapticore.tasks.center_out.CenterOutTask"
+  params:
+    hold_time: 0.3
+  conditions:
+    - target_id: 0
+      target_position: [0.08, 0.0]
+  block_size: 1
+  num_blocks: 5
+  randomization: "pseudorandom"
+
+haptic:
+  publish_rate_hz: 500.0

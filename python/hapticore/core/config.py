@@ -1,17 +1,25 @@
 """Pydantic v2 configuration models for experiment setup.
 
-All config models use Pydantic BaseModel with Field() constraints.
+All nested config models use Pydantic BaseModel with Field() constraints.
+The top-level ExperimentConfig uses pydantic-settings BaseSettings for
+layered configuration from YAML files, environment variables, and CLI args.
 Invalid configs fail at load time, not during an experiment.
 Load from YAML with load_config().
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import yaml
 from pydantic import BaseModel, Field
+from pydantic_settings import (
+    BaseSettings,
+    CliSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 
 
 class ZMQConfig(BaseModel):
@@ -74,7 +82,9 @@ class TaskConfig(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     conditions: list[dict[str, Any]] = Field(default_factory=list)
     block_size: int = Field(default=20, gt=0)
-    num_blocks: int = Field(default=10, gt=0)
+    # None means open-ended (run until request_stop is called). When an integer
+    # is provided Pydantic enforces gt=0; the constraint is not applied to None.
+    num_blocks: int | None = Field(default=10, gt=0)
     randomization: str = Field(
         default="pseudorandom", pattern=r"^(pseudorandom|sequential|latin_square)$"
     )
@@ -88,11 +98,22 @@ class SyncConfig(BaseModel):
     event_code_bits: int = Field(default=8, ge=1, le=16)
 
 
-class ExperimentConfig(BaseModel):
+class ExperimentConfig(BaseSettings):
     """Top-level experiment configuration.
 
-    Composes all sub-configurations. Load from YAML with load_config().
+    Composes all sub-configurations. Uses pydantic-settings for layered
+    configuration from YAML files, environment variables (HAPTICORE_ prefix,
+    __ delimiter), and CLI arguments.
+
+    Load from YAML with load_config().
     """
+
+    model_config = SettingsConfigDict(
+        env_prefix="HAPTICORE_",
+        env_nested_delimiter="__",
+        nested_model_default_partial_update=True,
+        cli_parse_args=False,
+    )
 
     experiment_name: str
     subject: SubjectConfig
@@ -104,9 +125,116 @@ class ExperimentConfig(BaseModel):
     zmq: ZMQConfig = Field(default_factory=ZMQConfig)
 
 
-def load_config(yaml_path: str | Path) -> ExperimentConfig:
-    """Load and validate experiment configuration from a YAML file."""
-    path = Path(yaml_path)
-    with path.open() as f:
-        raw = yaml.safe_load(f)
-    return ExperimentConfig.model_validate(raw)
+def load_config(
+    *yaml_paths: str | Path,
+    overrides: dict[str, Any] | None = None,
+    cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
+) -> ExperimentConfig:
+    """Load experiment config from layered YAML files.
+
+    Files are merged left-to-right (later files override earlier ones).
+    Environment variables (HAPTICORE_ prefix, __ delimiter) override YAML values.
+    CLI arguments override everything when ``cli_parse_args`` is set.
+
+    Priority order (highest wins first):
+
+    1. CLI arguments (if cli_parse_args is set)
+    2. Constructor kwargs (overrides dict)
+    3. Environment variables (HAPTICORE_ prefix, __ delimiter)
+    4. YAML files (layered with deep merge, later files win)
+    5. Field defaults in the Pydantic models
+
+    Typical usage::
+
+        config = load_config(
+            "configs/rig/default.yaml",
+            "configs/subject/example_subject.yaml",
+            "configs/task/center_out.yaml",
+            "configs/example_experiment.yaml",
+        )
+
+    A single flat YAML file also works::
+
+        config = load_config("configs/example_config.yaml")
+
+    Args:
+        *yaml_paths: YAML file paths, merged left-to-right.
+        overrides: Dict of keyword overrides (highest priority after CLI).
+        cli_parse_args: If truthy, parse CLI arguments via pydantic-settings.
+    """
+    yaml_file_list = [str(Path(p)) for p in yaml_paths]
+    init_kwargs: dict[str, Any] = overrides or {}
+
+    class _ConfigWithSources(ExperimentConfig):
+        """Dynamic subclass with customised settings sources.
+
+        Uses the public ``settings_customise_sources`` hook to inject
+        YAML file paths and CLI args at runtime.
+        """
+
+        @classmethod
+        def settings_customise_sources(
+            cls,
+            settings_cls: type[BaseSettings],
+            init_settings: Any,
+            env_settings: Any,
+            dotenv_settings: Any,
+            file_secret_settings: Any,
+            **kwargs: Any,
+        ) -> tuple[Any, ...]:
+            sources: list[Any] = []
+
+            if cli_parse_args:
+                sources.append(
+                    CliSettingsSource(
+                        settings_cls, cli_parse_args=cli_parse_args,
+                    ),
+                )
+
+            sources.append(init_settings)
+            sources.append(env_settings)
+
+            if yaml_file_list:
+                sources.append(
+                    YamlConfigSettingsSource(
+                        settings_cls,
+                        yaml_file=yaml_file_list,
+                        deep_merge=True,
+                    ),
+                )
+
+            return tuple(sources)
+
+    return _ConfigWithSources(**init_kwargs)
+
+
+def load_session_config(
+    *,
+    rig: str | Path,
+    subject: str | Path,
+    task: str | Path,
+    extra: Sequence[str | Path] = (),
+    overrides: dict[str, Any] | None = None,
+    cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
+) -> ExperimentConfig:
+    """Load a complete session config with all required layers.
+
+    This is the primary entry point for real experiment sessions.
+    All parameters are keyword-only to prevent accidentally omitting or
+    mis-ordering a config file.
+
+    For flexible or testing use, use ``load_config(*yaml_paths)`` directly.
+
+    Args:
+        rig: Path to rig config YAML (haptic, display, sync, ZMQ settings).
+        subject: Path to subject config YAML (subject_id, species, implant_info).
+        task: Path to task config YAML (task_class, params, conditions).
+        extra: Additional YAML files merged on top (later files win). Pass as a
+            list or tuple, e.g. ``extra=["configs/example_experiment.yaml"]``.
+        overrides: Dict of keyword overrides (highest priority after CLI).
+        cli_parse_args: If truthy, parse CLI arguments via pydantic-settings.
+    """
+    return load_config(
+        rig, subject, task, *extra,
+        overrides=overrides, cli_parse_args=cli_parse_args,
+    )

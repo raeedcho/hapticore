@@ -1,0 +1,13 @@
+# Example experiment configuration
+# Minimal top-level file — compose with rig and subject layers:
+#
+#   config = load_config(
+#       "configs/rig/default.yaml",
+#       "configs/subject/example_subject.yaml",
+#       "configs/task/center_out.yaml",
+#       "configs/example_experiment.yaml",
+#   )
+#
+# Or use a single file with all sections for simple setups.
+
+experiment_name: "center_out_reaching"

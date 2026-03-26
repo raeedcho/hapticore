@@ -203,3 +203,248 @@ class TestTrialManager:
     def test_empty_conditions_raises(self) -> None:
         with pytest.raises(ValueError):
             TrialManager(conditions=[], block_size=1, num_blocks=1)
+
+    def test_zero_num_blocks_raises(self) -> None:
+        with pytest.raises(ValueError):
+            TrialManager(conditions=self._make_conditions(2), block_size=2, num_blocks=0)
+
+
+class TestTrialManagerInfiniteSession:
+    """Tests for open-ended sessions (num_blocks=None)."""
+
+    def _make_conditions(self, n: int = 4) -> list[dict]:
+        return [{"target_id": i} for i in range(n)]
+
+    def test_construction_with_none_num_blocks(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(4),
+            block_size=4,
+            num_blocks=None,
+        )
+        # Only first block generated eagerly
+        assert tm.total_trials == 4
+
+    def test_advance_generates_new_blocks(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2),
+            block_size=2,
+            num_blocks=None,
+            randomization="sequential",
+        )
+        # Exhaust first block
+        assert tm.advance() is not None
+        assert tm.advance() is not None
+        # Should auto-generate a second block
+        c = tm.advance()
+        assert c is not None
+        assert tm.total_trials == 4  # two blocks generated
+
+    def test_is_complete_never_without_stop(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2),
+            block_size=2,
+            num_blocks=None,
+            randomization="sequential",
+        )
+        tm.advance()
+        tm.log_trial("success")
+        tm.advance()
+        tm.log_trial("success")
+        # Even after completing one full block, not complete — needs explicit stop
+        assert tm.is_complete is False
+
+    def test_request_stop_invalid_raises(self) -> None:
+        tm = TrialManager(conditions=self._make_conditions(2), block_size=2, num_blocks=None)
+        with pytest.raises(ValueError, match="after must be"):
+            tm.request_stop(after="immediately")
+
+
+class TestTrialManagerRequestStop:
+    """Tests for graceful-stop behaviour."""
+
+    def _make_conditions(self, n: int = 4) -> list[dict]:
+        return [{"target_id": i} for i in range(n)]
+
+    def _make_tm(self, num_blocks: int | None = 4) -> TrialManager:
+        return TrialManager(
+            conditions=self._make_conditions(2),
+            block_size=2,
+            num_blocks=num_blocks,
+            randomization="sequential",
+        )
+
+    # ---- stop after trial ----
+
+    def test_stop_after_trial_advance_returns_none(self) -> None:
+        tm = self._make_tm()
+        tm.advance()  # trial 0
+        tm.request_stop(after="trial")
+        # Next advance should return None immediately
+        assert tm.advance() is None
+
+    def test_stop_after_trial_is_complete_after_log(self) -> None:
+        tm = self._make_tm()
+        tm.advance()  # trial 0
+        assert tm.is_complete is False
+        tm.request_stop(after="trial")
+        assert tm.is_complete is False  # not logged yet
+        tm.log_trial("success")
+        assert tm.is_complete is True
+
+    def test_stop_after_trial_mid_block(self) -> None:
+        """Stop after the last trial of block 0 (block-boundary stop with more blocks remaining)."""
+        tm = self._make_tm()
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.advance()  # trial 1 (last trial of block 0)
+        tm.request_stop(after="trial")
+        assert tm.advance() is None
+
+    # ---- stop after block ----
+
+    def test_stop_after_block_finishes_current_block(self) -> None:
+        tm = self._make_tm()  # block_size=2, num_blocks=4
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        # Still in block 0, should continue
+        assert tm.advance() is not None  # trial 1
+        # Now at block boundary (next would be trial 2, start of block 1)
+        assert tm.advance() is None
+
+    def test_stop_after_block_is_complete_at_boundary(self) -> None:
+        tm = self._make_tm()  # block_size=2
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        tm.advance()  # trial 1 (last in block 0)
+        assert tm.is_complete is False  # not logged yet
+        tm.log_trial("success")
+        assert tm.is_complete is True  # block boundary + logged
+
+    def test_stop_after_block_not_complete_mid_block(self) -> None:
+        """Request stop mid-block: is_complete must be False until block ends."""
+        tm = TrialManager(
+            conditions=self._make_conditions(3),
+            block_size=3,
+            num_blocks=4,
+            randomization="sequential",
+        )
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        # Trial 1 of block 0 — mid-block, not complete
+        tm.advance()
+        tm.log_trial("success")
+        assert tm.is_complete is False
+
+    def test_stop_after_block_works_for_infinite_session(self) -> None:
+        tm = self._make_tm(num_blocks=None)  # infinite
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        tm.advance()  # trial 1 (last in block 0)
+        tm.log_trial("success")
+        assert tm.is_complete is True
+        assert tm.advance() is None
+
+    # ---- stop type in summary ----
+
+    def test_summary_stop_type_completed(self) -> None:
+        tm = self._make_tm(num_blocks=1)
+        tm.advance()
+        tm.log_trial("success")
+        tm.advance()
+        tm.log_trial("success")
+        assert tm.get_summary()["stop_type"] == "completed"
+
+    def test_summary_stop_type_stopped_at_block(self) -> None:
+        tm = self._make_tm()
+        tm.advance()
+        tm.log_trial("success")
+        tm.request_stop(after="block")
+        tm.advance()
+        tm.log_trial("success")
+        assert tm.get_summary()["stop_type"] == "stopped_at_block"
+
+    def test_summary_stop_type_stopped_mid_block(self) -> None:
+        tm = self._make_tm()
+        tm.advance()
+        tm.log_trial("success")
+        tm.request_stop(after="trial")
+        assert tm.get_summary()["stop_type"] == "stopped_mid_block"
+
+    def test_summary_stop_type_trial_at_block_boundary(self) -> None:
+        """request_stop(after='trial') at a block boundary reports 'stopped_at_block'."""
+        tm = self._make_tm()  # block_size=2
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.advance()  # trial 1 (last in block 0)
+        tm.log_trial("success")
+        tm.request_stop(after="trial")
+        # Last logged trial is at index 1 → (1+1) % 2 == 0 → block boundary
+        assert tm.get_summary()["stop_type"] == "stopped_at_block"
+
+    def test_summary_stop_type_hard_stopped(self) -> None:
+        """A session aborted via controller.stop() reports 'hard_stopped'."""
+        tm = self._make_tm(num_blocks=4)  # finite, expects 8 trials
+        tm.advance()
+        tm.log_trial("success")
+        # Only 1 trial completed out of 8 — no stop flags set
+        assert tm.get_summary()["stop_type"] == "hard_stopped"
+
+    def test_summary_completed_finite_all_done(self) -> None:
+        """A finite session that runs all trials reports 'completed'."""
+        tm = self._make_tm(num_blocks=1)  # 2 trials
+        tm.advance()
+        tm.log_trial("success")
+        tm.advance()
+        tm.log_trial("success")
+        assert tm.get_summary()["stop_type"] == "completed"
+
+    def test_summary_completed_despite_late_request_stop_block(self) -> None:
+        """Finite session reports 'completed' even if request_stop(after='block') was called late."""
+        tm = self._make_tm(num_blocks=1)  # 2 trials total
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.request_stop(after="block")  # called during last block
+        tm.advance()  # trial 1
+        tm.log_trial("success")
+        # All planned trials ran — stop_type should be "completed" not "stopped_at_block"
+        assert tm.get_summary()["stop_type"] == "completed"
+
+    def test_summary_completed_despite_late_request_stop_trial(self) -> None:
+        """Finite session reports 'completed' even if request_stop(after='trial') was called late."""
+        tm = self._make_tm(num_blocks=1)  # 2 trials total
+        tm.advance()  # trial 0
+        tm.log_trial("success")
+        tm.advance()  # trial 1
+        tm.request_stop(after="trial")  # called during last trial
+        tm.log_trial("success")
+        # All planned trials ran — stop_type should be "completed" not "stopped_mid_block"
+        assert tm.get_summary()["stop_type"] == "completed"
+
+
+class TestTrialManagerProperties:
+    """Tests for read-only properties."""
+
+    def _make_conditions(self, n: int = 4) -> list[dict]:
+        return [{"target_id": i} for i in range(n)]
+
+    def test_is_open_ended_true(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2), block_size=2, num_blocks=None,
+        )
+        assert tm.is_open_ended is True
+
+    def test_is_open_ended_false(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2), block_size=2, num_blocks=3,
+        )
+        assert tm.is_open_ended is False
+
+    def test_block_size_property(self) -> None:
+        tm = TrialManager(
+            conditions=self._make_conditions(2), block_size=5, num_blocks=1,
+        )
+        assert tm.block_size == 5

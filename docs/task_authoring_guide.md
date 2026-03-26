@@ -235,10 +235,12 @@ self.haptic.send_command(Command(
     method="set_force_field",
     params={
         "type": "cart_pendulum",
-        "pendulum_length": 0.6,
-        "ball_mass": 0.6,
-        "cup_mass": 2.4,
-        "damping": 0.05,
+        "params": {
+            "pendulum_length": 0.6,
+            "ball_mass": 0.6,
+            "cup_mass": 2.4,
+            "damping": 0.05,
+        }
     }
 ))
 ```

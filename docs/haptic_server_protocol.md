@@ -86,7 +86,7 @@ Switch the active force field. Atomically swaps the field pointer seen by the ha
 {
     "type": "<field_type_name>",  // e.g. "null", "spring_damper", "constant",
                                   //       "workspace_limit", "cart_pendulum",
-                                  //       "composite"
+                                  //       "channel", "composite"
     "params": { ... }             // field-specific parameters (see below)
 }
 ```
@@ -193,6 +193,23 @@ Dynamics: 2D cart-pendulum. Cup position = `pos[0]` (x-axis). RK4 integration pe
 | `ball_x` | float | Ball world x position: `cup_x + L*sin(phi)` |
 | `ball_y` | float | Ball y position relative to cup: `-L*cos(phi)` |
 | `filtered_accel` | float | Low-pass-filtered cup acceleration estimate (m/s²) |
+
+### `channel`
+
+A per-axis spring-damper that constrains motion to a plane or line. Axes listed in `axes` are constrained (spring-damper restoring force); unlisted axes are completely free (zero force). Useful for confining the hand to a horizontal plane (free X/Y, constrain Z) or a line (free X, constrain Y/Z).
+
+| Parameter | Type | Default | Constraints | Description |
+|-----------|------|---------|-------------|-------------|
+| `axes` | array of int | `[2]` | values in {0, 1, 2} | Axes to constrain (0=X, 1=Y, 2=Z) |
+| `stiffness` | float | 500.0 | 0 ≤ K ≤ 3000 | Spring constant in N/m |
+| `damping` | float | 10.0 | 0 ≤ B ≤ 100 | Damping coefficient in N·s/m |
+| `center` | array[3] float | `[0,0,0]` | — | Equilibrium position (only constrained axes matter) |
+
+Force: for each axis `i`: if `i` in `axes`, `F[i] = -K * (pos[i] - center[i]) - B * vel[i]`; otherwise `F[i] = 0`.
+
+Stiffness hard limit: 3000 N/m at 4 kHz (stability boundary). Reject params with stiffness above this.
+
+**field_state:** `{}` (empty map)
 
 ### `composite`
 

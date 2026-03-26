@@ -878,12 +878,12 @@ packages:
 - pypi: ./
   name: hapticore
   version: 0.1.0
-  sha256: 475d70df4ecf201e74c6cd445bbd35efa749d44f051c15c8e413f375accdde20
+  sha256: 7c27b6fa794bd0056f9c3618497110aa53c217fabbf43fcbab76f3a8377a9152
   requires_dist:
   - pyzmq>=26.0
   - msgpack>=1.0
   - pydantic>=2.0
-  - pydantic-settings>=2.0
+  - pydantic-settings[yaml]>=2.3
   - pyyaml>=6.0
   - numpy>=1.24
   - transitions>=0.9

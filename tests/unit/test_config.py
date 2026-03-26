@@ -32,7 +32,7 @@ class TestLoadConfig:
         config = load_config(CONFIGS_DIR / "example_config.yaml")
         dumped = config.model_dump()
         restored = ExperimentConfig.model_validate(dumped)
-        assert restored == config
+        assert restored.model_dump() == config.model_dump()
 
 
 class TestRequiredFields:
@@ -224,7 +224,7 @@ class TestSerializationCompatibility:
         config = load_config(CONFIGS_DIR / "example_config.yaml")
         json_str = config.model_dump_json()
         restored = ExperimentConfig.model_validate_json(json_str)
-        assert restored == config
+        assert restored.model_dump() == config.model_dump()
 
     def test_layered_model_dump_json_round_trip(self) -> None:
         """Layered config round-trips through JSON correctly."""
@@ -236,7 +236,7 @@ class TestSerializationCompatibility:
         )
         json_str = config.model_dump_json()
         restored = ExperimentConfig.model_validate_json(json_str)
-        assert restored == config
+        assert restored.model_dump() == config.model_dump()
 
     def test_model_dump_contains_all_sections(self) -> None:
         """model_dump() output contains all expected top-level keys."""
@@ -247,3 +247,24 @@ class TestSerializationCompatibility:
             "recording", "task", "sync", "zmq",
         }
         assert set(dumped.keys()) == expected_keys
+
+
+class TestCliOverride:
+    """Tests for CLI argument overrides."""
+
+    def test_cli_overrides_yaml(self) -> None:
+        """CLI arguments override YAML values."""
+        config = load_config(
+            CONFIGS_DIR / "example_config.yaml",
+            cli_parse_args=["--haptic.force_limit_n=30.0"],
+        )
+        assert config.haptic.force_limit_n == 30.0
+
+    def test_cli_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """CLI arguments take precedence over environment variables."""
+        monkeypatch.setenv("HAPTICORE_HAPTIC__FORCE_LIMIT_N", "10.0")
+        config = load_config(
+            CONFIGS_DIR / "example_config.yaml",
+            cli_parse_args=["--haptic.force_limit_n=30.0"],
+        )
+        assert config.haptic.force_limit_n == 30.0

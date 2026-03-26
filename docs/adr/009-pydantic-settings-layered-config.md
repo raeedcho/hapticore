@@ -10,10 +10,11 @@ Switch `ExperimentConfig` from `BaseModel` to `BaseSettings` (from `pydantic-set
 
 Source priority (highest wins):
 
-1. Constructor kwargs (`overrides` dict)
-2. Environment variables (`HAPTICORE_` prefix, `__` double-underscore delimiter)
-3. YAML files (layered, later files override earlier ones)
-4. Field defaults in the Pydantic models
+1. CLI arguments (via `cli_parse_args` parameter to `load_config()`)
+2. Constructor kwargs (`overrides` dict)
+3. Environment variables (`HAPTICORE_` prefix, `__` double-underscore delimiter)
+4. YAML files (layered, later files override earlier ones)
+5. Field defaults in the Pydantic models
 
 The `configs/` directory is organized into layers:
 

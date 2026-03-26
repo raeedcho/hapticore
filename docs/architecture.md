@@ -146,10 +146,11 @@ The configuration system uses `pydantic-settings` for layered composition from m
 
 **Source priority** (highest wins):
 
-1. Constructor kwargs (`overrides` dict passed to `load_config()`)
-2. Environment variables (`HAPTICORE_` prefix, `__` double-underscore delimiter)
-3. YAML files (layered with deep merge — later files override earlier ones)
-4. Field defaults in the Pydantic models
+1. CLI arguments (via `cli_parse_args` parameter to `load_config()`)
+2. Constructor kwargs (`overrides` dict passed to `load_config()`)
+3. Environment variables (`HAPTICORE_` prefix, `__` double-underscore delimiter)
+4. YAML files (layered with deep merge — later files override earlier ones)
+5. Field defaults in the Pydantic models
 
 **Layered YAML structure**:
 
@@ -177,4 +178,4 @@ config = load_config(
 
 A single flat YAML still works for simple setups: `load_config("configs/my_experiment.yaml")`.
 
-See ADR-008 for the rationale behind this design.
+See ADR-009 for the rationale behind this design.

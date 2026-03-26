@@ -348,13 +348,9 @@ Use **PhysicsField** when the task involves:
 
 ## Step 5: Test without hardware
 
-Run your task in simulation mode using a single flat config or layered configs:
+Run your task in simulation mode:
 
 ```bash
-# Single flat YAML
-hapticore simulate --config configs/my_experiment.yaml
-
-# Or use a flat YAML that includes all sections
 hapticore simulate --config configs/example_config.yaml
 ```
 

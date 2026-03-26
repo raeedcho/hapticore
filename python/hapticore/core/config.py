@@ -121,54 +121,6 @@ class ExperimentConfig(BaseSettings):
     zmq: ZMQConfig = Field(default_factory=ZMQConfig)
 
 
-def _build_sources(
-    yaml_paths: list[str],
-    cli_parse_args: bool | list[str] | tuple[str, ...] | None,
-    init_kwargs: dict[str, Any],
-) -> tuple[tuple[Any, ...], dict[str, Any]]:
-    """Build the settings source chain for ExperimentConfig.
-
-    Priority order (highest wins first):
-    1. CLI arguments (if cli_parse_args is set)
-    2. Constructor kwargs (init_kwargs / overrides)
-    3. Environment variables (HAPTICORE_ prefix, __ delimiter)
-    4. YAML files (layered with deep merge, later files win)
-    5. Field defaults in the Pydantic models
-    """
-    from pydantic_settings.sources import (
-        DefaultSettingsSource,
-        EnvSettingsSource,
-        InitSettingsSource,
-    )
-
-    settings_cls = ExperimentConfig
-
-    init_source = InitSettingsSource(settings_cls, init_kwargs=init_kwargs)
-    env_source = EnvSettingsSource(
-        settings_cls,
-        env_prefix=settings_cls.model_config.get("env_prefix", ""),
-        env_nested_delimiter=settings_cls.model_config.get("env_nested_delimiter"),
-        env_prefix_target=settings_cls.model_config.get("env_prefix_target"),
-    )
-
-    sources: list[Any] = [init_source, env_source]
-
-    if yaml_paths:
-        sources.append(
-            YamlConfigSettingsSource(
-                settings_cls, yaml_file=yaml_paths, deep_merge=True,
-            ),
-        )
-
-    if cli_parse_args:
-        sources.append(
-            CliSettingsSource(settings_cls, cli_parse_args=cli_parse_args),
-        )
-
-    sources.append(DefaultSettingsSource(settings_cls))
-    return tuple(sources), init_kwargs
-
-
 def load_config(
     *yaml_paths: str | Path,
     overrides: dict[str, Any] | None = None,
@@ -179,6 +131,14 @@ def load_config(
     Files are merged left-to-right (later files override earlier ones).
     Environment variables (HAPTICORE_ prefix, __ delimiter) override YAML values.
     CLI arguments override everything when ``cli_parse_args`` is set.
+
+    Priority order (highest wins first):
+
+    1. CLI arguments (if cli_parse_args is set)
+    2. Constructor kwargs (overrides dict)
+    3. Environment variables (HAPTICORE_ prefix, __ delimiter)
+    4. YAML files (layered with deep merge, later files win)
+    5. Field defaults in the Pydantic models
 
     Typical usage::
 
@@ -199,6 +159,46 @@ def load_config(
         cli_parse_args: If truthy, parse CLI arguments via pydantic-settings.
     """
     yaml_file_list = [str(Path(p)) for p in yaml_paths]
-    kwargs = overrides or {}
-    sources = _build_sources(yaml_file_list, cli_parse_args, kwargs)
-    return ExperimentConfig(_build_sources=sources)
+    init_kwargs: dict[str, Any] = overrides or {}
+
+    class _ConfigWithSources(ExperimentConfig):
+        """Dynamic subclass with customised settings sources.
+
+        Uses the public ``settings_customise_sources`` hook to inject
+        YAML file paths and CLI args at runtime.
+        """
+
+        @classmethod
+        def settings_customise_sources(
+            cls,
+            settings_cls: type[BaseSettings],
+            init_settings: Any,
+            env_settings: Any,
+            dotenv_settings: Any,
+            file_secret_settings: Any,
+            **kwargs: Any,
+        ) -> tuple[Any, ...]:
+            sources: list[Any] = []
+
+            if cli_parse_args:
+                sources.append(
+                    CliSettingsSource(
+                        settings_cls, cli_parse_args=cli_parse_args,
+                    ),
+                )
+
+            sources.append(init_settings)
+            sources.append(env_settings)
+
+            if yaml_file_list:
+                sources.append(
+                    YamlConfigSettingsSource(
+                        settings_cls,
+                        yaml_file=yaml_file_list,
+                        deep_merge=True,
+                    ),
+                )
+
+            return tuple(sources)
+
+    return _ConfigWithSources(**init_kwargs)

@@ -15,23 +15,25 @@ Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
     cup_x_ = pos[0];
     double vel_x = vel[0];
 
-    // Estimate cup acceleration via finite difference
-    double x_accel = (vel_x - vel_x_prev_) / dt;
+    // Estimate cup acceleration via finite difference + EMA low-pass filter
+    double raw_accel = (vel_x - vel_x_prev_) / dt;
     vel_x_prev_ = vel_x;
+    double alpha = compute_alpha(accel_filter_hz_, dt);
+    filtered_accel_ = alpha * raw_accel + (1.0 - alpha) * filtered_accel_;
 
     // RK4 integration of [phi, phi_dot]
     State s0{phi_, phi_dot_};
 
-    State k1 = derivatives(s0, x_accel);
+    State k1 = derivatives(s0, filtered_accel_);
     State s1{s0.phi + 0.5 * dt * k1.phi, s0.phi_dot + 0.5 * dt * k1.phi_dot};
 
-    State k2 = derivatives(s1, x_accel);
+    State k2 = derivatives(s1, filtered_accel_);
     State s2{s0.phi + 0.5 * dt * k2.phi, s0.phi_dot + 0.5 * dt * k2.phi_dot};
 
-    State k3 = derivatives(s2, x_accel);
+    State k3 = derivatives(s2, filtered_accel_);
     State s3{s0.phi + dt * k3.phi, s0.phi_dot + dt * k3.phi_dot};
 
-    State k4 = derivatives(s3, x_accel);
+    State k4 = derivatives(s3, filtered_accel_);
 
     phi_ = s0.phi + (dt / 6.0) * (k1.phi + 2.0 * k2.phi + 2.0 * k3.phi + k4.phi);
     phi_dot_ = s0.phi_dot + (dt / 6.0) * (k1.phi_dot + 2.0 * k2.phi_dot
@@ -43,7 +45,7 @@ Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
     }
 
     // Compute φ̈ at the updated state for reaction force
-    double phi_ddot = (-gravity_ * std::sin(phi_) - x_accel * std::cos(phi_)
+    double phi_ddot = (-gravity_ * std::sin(phi_) - filtered_accel_ * std::cos(phi_)
                        - angular_damping_ * phi_dot_) / pendulum_length_;
 
     // Reaction force on cup: F_reaction = m_b * L * (φ̈·cos(φ) - φ̇²·sin(φ))
@@ -52,7 +54,7 @@ Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
 
     double force_x = f_reaction;
     if (cup_inertia_enabled_) {
-        force_x += cup_mass_ * x_accel;
+        force_x += cup_mass_ * filtered_accel_;
     }
 
     return {force_x, 0.0, 0.0};
@@ -73,6 +75,7 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     double new_damping = angular_damping_;
     double new_threshold = spill_threshold_;
     bool new_inertia = cup_inertia_enabled_;
+    double new_filter_hz = accel_filter_hz_;
     bool has_any = false;
 
     for (uint32_t i = 0; i < map.size; ++i) {
@@ -103,6 +106,9 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
         } else if (key_str == "cup_inertia_enabled") {
             if (!haptic::try_get_bool(val, new_inertia)) return false;
             has_any = true;
+        } else if (key_str == "accel_filter_hz") {
+            if (!haptic::try_get_double(val, new_filter_hz)) return false;
+            has_any = true;
         }
     }
 
@@ -115,6 +121,7 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     if (new_gravity <= 0.0) return false;
     if (new_damping < 0.0) return false;
     if (new_threshold <= 0.0) return false;
+    if (new_filter_hz < 5.0 || new_filter_hz > 200.0) return false;
 
     ball_mass_ = new_ball_mass;
     cup_mass_ = new_cup_mass;
@@ -123,6 +130,8 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     angular_damping_ = new_damping;
     spill_threshold_ = new_threshold;
     cup_inertia_enabled_ = new_inertia;
+    accel_filter_hz_ = new_filter_hz;
+    accel_filter_alpha_ = compute_alpha(accel_filter_hz_, 0.00025);
     return true;
 }
 
@@ -141,4 +150,5 @@ void CartPendulumField::reset() {
     phi_dot_ = 0.0;
     spilled_ = false;
     vel_x_prev_ = 0.0;
+    filtered_accel_ = 0.0;
 }

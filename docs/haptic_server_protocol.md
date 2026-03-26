@@ -178,6 +178,7 @@ Force: for each axis, if `pos[i] < min[i]`, apply `K * (min[i] - pos[i]) - B * v
 | `angular_damping` | float | 0.1 | ≥ 0 | Angular damping in N·m·s/rad |
 | `spill_threshold` | float | 1.5708 | > 0 | Ball spill angle in radians (π/2) |
 | `cup_inertia_enabled` | bool | true | — | Include cup inertial resistance |
+| `accel_filter_hz` | float | 30.0 | 5 ≤ f ≤ 200 | Low-pass cutoff for cup acceleration estimate (Hz) |
 
 Dynamics: 2D cart-pendulum. Cup position = `pos[0]` (x-axis). RK4 integration per tick.
 

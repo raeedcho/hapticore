@@ -258,9 +258,9 @@ class TestConstantFieldFeel:
             dealer, cmd_address, zmq_context,
             field_params={
                 "type": "constant",
-                "params": {"force": [0, 0, -3.0]},
+                "params": {"force": [0, -3.0, 0]},
             },
-            description="Constant field (F=[0, 0, -3N])",
+            description="Constant field (F=[0, -3N, 0])",
             feel_instructions=(
                 "You should feel a steady downward push on the handle. "
                 "The force should be constant regardless of position."

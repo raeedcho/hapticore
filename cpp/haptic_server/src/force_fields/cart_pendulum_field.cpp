@@ -15,11 +15,21 @@ Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
     cup_x_ = pos[0];
     double vel_x = vel[0];
 
+    // On the first tick after reset/construction, vel_x_prev_ is zero
+    // (from initialization), so (vel_x - 0) / dt would produce a spurious
+    // acceleration spike. Initialize vel_x_prev_ from the current velocity
+    // to avoid this.
+    if (first_tick_) {
+        vel_x_prev_ = vel_x;
+        first_tick_ = false;
+    }
+
     // Estimate cup acceleration via finite difference + EMA low-pass filter.
-    // Use kNominalDt here to match the sample period used to precompute accel_filter_alpha_.
-    double raw_accel = (vel_x - vel_x_prev_) / kNominalDt;
+    // Alpha is recomputed from the actual dt so the field is rate-agnostic.
+    double raw_accel = (vel_x - vel_x_prev_) / dt;
     vel_x_prev_ = vel_x;
-    filtered_accel_ = accel_filter_alpha_ * raw_accel + (1.0 - accel_filter_alpha_) * filtered_accel_;
+    double alpha = compute_alpha(accel_filter_hz_, dt);
+    filtered_accel_ = alpha * raw_accel + (1.0 - alpha) * filtered_accel_;
 
     // RK4 integration of [phi, phi_dot]
     State s0{phi_, phi_dot_};
@@ -131,18 +141,18 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     spill_threshold_ = new_threshold;
     cup_inertia_enabled_ = new_inertia;
     accel_filter_hz_ = new_filter_hz;
-    accel_filter_alpha_ = compute_alpha(accel_filter_hz_, kNominalDt);
     return true;
 }
 
 void CartPendulumField::pack_state(msgpack::packer<msgpack::sbuffer>& pk) const {
-    pk.pack_map(6);
-    pk.pack("phi");       pk.pack(phi_);
-    pk.pack("phi_dot");   pk.pack(phi_dot_);
-    pk.pack("spilled");   pk.pack(spilled_);
-    pk.pack("cup_x");     pk.pack(cup_x_);
-    pk.pack("ball_x");    pk.pack(cup_x_ + pendulum_length_ * std::sin(phi_));
-    pk.pack("ball_y");    pk.pack(-pendulum_length_ * std::cos(phi_));
+    pk.pack_map(7);
+    pk.pack("phi");             pk.pack(phi_);
+    pk.pack("phi_dot");         pk.pack(phi_dot_);
+    pk.pack("spilled");         pk.pack(spilled_);
+    pk.pack("cup_x");           pk.pack(cup_x_);
+    pk.pack("ball_x");          pk.pack(cup_x_ + pendulum_length_ * std::sin(phi_));
+    pk.pack("ball_y");          pk.pack(-pendulum_length_ * std::cos(phi_));
+    pk.pack("filtered_accel");  pk.pack(filtered_accel_);
 }
 
 void CartPendulumField::reset() {
@@ -151,4 +161,5 @@ void CartPendulumField::reset() {
     spilled_ = false;
     vel_x_prev_ = 0.0;
     filtered_accel_ = 0.0;
+    first_tick_ = true;
 }

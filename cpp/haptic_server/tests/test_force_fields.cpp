@@ -515,9 +515,9 @@ TEST(CartPendulumFieldTest, PackStateHasExpectedKeys) {
 
     auto result = msgpack::unpack(sbuf.data(), sbuf.size());
     auto map = result.get().via.map;
-    EXPECT_EQ(map.size, 6u);
+    EXPECT_EQ(map.size, 7u);
 
-    std::set<std::string> expected_keys = {"phi", "phi_dot", "spilled", "cup_x", "ball_x", "ball_y"};
+    std::set<std::string> expected_keys = {"phi", "phi_dot", "spilled", "cup_x", "ball_x", "ball_y", "filtered_accel"};
     std::set<std::string> actual_keys;
     for (uint32_t i = 0; i < map.size; ++i) {
         std::string key(map.ptr[i].key.via.str.ptr, map.ptr[i].key.via.str.size);
@@ -687,6 +687,34 @@ TEST(CartPendulumFieldTest, ResetClearsFilterState) {
 
     field.reset();
     EXPECT_DOUBLE_EQ(field.filtered_accel(), 0.0);
+}
+
+TEST(CartPendulumFieldTest, FirstTickNoTransient) {
+    // If the cup is already moving when the field activates, the first tick
+    // should not produce a large force spike from (vel_x - 0) / dt.
+    CartPendulumField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("cup_inertia_enabled"); pk.pack(true);
+    });
+    ASSERT_TRUE(field.update_params(oh.get()));
+
+    // First call with a substantial velocity (0.1 m/s)
+    Vec3 force = field.compute({0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, 0.00025);
+
+    // Without the first-tick guard, raw_accel = 0.1 / 0.00025 = 400 m/s²,
+    // producing a large force spike proportional to cup_mass (default 2.4 kg
+    // → ~960 N, far beyond the 20 N clamp). With the guard, the first tick
+    // initializes vel_x_prev_ = vel_x and produces zero acceleration.
+    EXPECT_DOUBLE_EQ(field.filtered_accel(), 0.0);
+    EXPECT_NEAR(force[0], 0.0, 0.01);
+
+    // Also verify the guard re-arms after reset
+    field.compute({0.0, 0.0, 0.0}, {0.2, 0.0, 0.0}, 0.00025);
+    field.reset();
+    Vec3 force2 = field.compute({0.0, 0.0, 0.0}, {0.3, 0.0, 0.0}, 0.00025);
+    EXPECT_DOUBLE_EQ(field.filtered_accel(), 0.0);
+    EXPECT_NEAR(force2[0], 0.0, 0.01);
 }
 
 // ==================== CompositeField Tests ====================

@@ -1,4 +1,4 @@
-# ADR-008: pydantic-settings with layered YAML composition
+# ADR-009: pydantic-settings with layered YAML composition
 
 **Status:** Accepted  
 **Date:** 2026-03-25  

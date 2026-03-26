@@ -18,8 +18,7 @@ Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
     // Estimate cup acceleration via finite difference + EMA low-pass filter
     double raw_accel = (vel_x - vel_x_prev_) / dt;
     vel_x_prev_ = vel_x;
-    double alpha = compute_alpha(accel_filter_hz_, dt);
-    filtered_accel_ = alpha * raw_accel + (1.0 - alpha) * filtered_accel_;
+    filtered_accel_ = accel_filter_alpha_ * raw_accel + (1.0 - accel_filter_alpha_) * filtered_accel_;
 
     // RK4 integration of [phi, phi_dot]
     State s0{phi_, phi_dot_};
@@ -131,7 +130,7 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     spill_threshold_ = new_threshold;
     cup_inertia_enabled_ = new_inertia;
     accel_filter_hz_ = new_filter_hz;
-    accel_filter_alpha_ = compute_alpha(accel_filter_hz_, 0.00025);
+    accel_filter_alpha_ = compute_alpha(accel_filter_hz_, kNominalDt);
     return true;
 }
 

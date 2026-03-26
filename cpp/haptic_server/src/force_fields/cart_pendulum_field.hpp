@@ -32,7 +32,8 @@ private:
 
     // Acceleration filter state
     double filtered_accel_ = 0.0;
-    double accel_filter_alpha_ = 1.0 - std::exp(-2.0 * M_PI * 30.0 * 0.00025); // ~30 Hz at 4 kHz
+    static constexpr double kNominalDt = 0.00025; // 4 kHz sampling interval
+    double accel_filter_alpha_ = 1.0 - std::exp(-2.0 * M_PI * 30.0 * kNominalDt); // ~30 Hz at 4 kHz
 
     // Parameters
     double ball_mass_ = 0.6;

@@ -570,7 +570,7 @@ TEST(CartPendulumFieldTest, NoiseRejection) {
     ASSERT_TRUE(field.update_params(oh.get()));
 
     constexpr double dt = 0.00025;
-    constexpr double noise_sigma = 0.001; // 1 mm/s velocity noise
+    constexpr double noise_sigma = 0.001; // 0.001 m/s (1 mm/s) velocity noise
 
     // Simple deterministic pseudo-noise using a linear congruential generator
     // (avoids <random> header in the test for determinism)

@@ -575,7 +575,7 @@ TEST(CartPendulumFieldTest, NoiseRejection) {
     // Simple deterministic pseudo-noise using a linear congruential generator
     // (avoids <random> header in the test for determinism)
     uint32_t seed = 12345;
-    auto next_noise = [&seed, noise_sigma]() -> double {
+    auto next_noise = [&seed]() -> double {
         seed = seed * 1664525u + 1013904223u;
         // Map to [-1, 1] range then scale by sigma
         double u = static_cast<double>(seed) / 4294967295.0 * 2.0 - 1.0;

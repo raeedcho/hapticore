@@ -484,9 +484,11 @@ TEST(CartPendulumFieldTest, EnergyConservationCoupledSystem) {
     Vec3 pos = {0.0, 0.0, 0.0};
     Vec3 vel = {0.0, 0.0, 0.0};
 
-    // Full Lagrangian energy: T + V
+    // Full Lagrangian energy of the coupled cart-pendulum system (T + V).
+    // Ball position = (x + L·sinφ, -L·cosφ), so ball velocity has a
+    // cross-term between cart translation and pendulum rotation:
     // T = 0.5*(M+m)*v^2 + m*L*v*pd*cos(p) + 0.5*m*L^2*pd^2
-    // V = m*g*L*(1 - cos(p)) + 0.5*K*x^2
+    // V = m*g*L*(1 - cos(p)) + 0.5*K*x^2   (coupling spring PE)
     auto total_energy = [&](double p, double pd, double x, double v) {
         return 0.5 * (M + m_b) * v * v
              + m_b * L * v * pd * std::cos(p)

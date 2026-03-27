@@ -30,8 +30,11 @@ Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
                     + coupling_damping_ * (v_dev - v_sim_);
 
     // 2. Integrate the full 4D state [x, v, phi, phi_dot] with RK4.
-    //    Cart acceleration is derived from the Euler-Lagrange equation for x:
+    //    Cart acceleration is derived from the Euler-Lagrange equation for x,
+    //    with φ̈ substituted and collected:
     //    a·(M + m·sin²φ) = F_couple + m·(g·sinφ·cosφ + b·φ̇·cosφ + L·φ̇²·sinφ)
+    //    Note: g term has no L factor because L in m·L·φ̈·cosφ cancels with
+    //    the /L in φ̈ = (-g·sinφ - a·cosφ - b·φ̇)/L.
     //    This resolves the cart-pendulum circularity algebraically.
     struct FullState { double x; double v; double phi; double phi_dot; };
 

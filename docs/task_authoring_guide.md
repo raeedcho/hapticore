@@ -225,7 +225,7 @@ Hapticore provides two approaches to haptic feedback, depending on the complexit
 
 For tasks where forces can be expressed as mathematical functions of position and velocity — springs, dampers, constant forces, viscous curls, or ODE-based dynamics like the cup-and-ball — use the built-in force field types directly. No C++ modification needed.
 
-Built-in field types: `null`, `spring_damper`, `constant`, `workspace_limit`, `cart_pendulum`, `composite`.
+Built-in field types: `null`, `spring_damper`, `constant`, `workspace_limit`, `cart_pendulum`, `channel`, `composite`.
 
 Example — cup-and-ball task:
 
@@ -235,15 +235,62 @@ self.haptic.send_command(Command(
     method="set_force_field",
     params={
         "type": "cart_pendulum",
-        "pendulum_length": 0.6,
-        "ball_mass": 0.6,
-        "cup_mass": 2.4,
-        "damping": 0.05,
+        "params": {
+            "pendulum_length": 0.6,
+            "ball_mass": 0.6,
+            "cup_mass": 2.4,
+            "damping": 0.05,
+        }
     }
 ))
 ```
 
-To add a *new* analytical force field (e.g., a velocity-dependent curl field), create a C++ `ForceField` subclass in `cpp/haptic_server/include/fields/`, implement `compute(pos, vel, dt)`, and register the type name in the command dispatcher. See `CartPendulumField` as a reference.
+Example — constrain to a horizontal plane (free in X and Y, held at Z=0):
+
+```python
+self.haptic.send_command(Command(
+    command_id=self.new_command_id(),
+    method="set_force_field",
+    params={
+        "type": "channel",
+        "params": {
+            "axes": [2],            # constrain Z only
+            "stiffness": 800,
+            "damping": 15,
+            "center": [0, 0, 0],   # hold Z at zero
+        }
+    }
+))
+```
+
+Example — constrain cup-and-ball to a horizontal line using `composite`:
+
+```python
+self.haptic.send_command(Command(
+    command_id=self.new_command_id(),
+    method="set_force_field",
+    params={
+        "type": "composite",
+        "params": {
+            "fields": [
+                {"type": "cart_pendulum", "params": {
+                    "pendulum_length": 0.6,
+                    "ball_mass": 0.6,
+                    "cup_mass": 2.4,
+                }},
+                {"type": "channel", "params": {
+                    "axes": [1, 2],       # constrain Y and Z (free in X)
+                    "stiffness": 800,
+                    "damping": 15,
+                    "center": [0, 0, 0],
+                }},
+            ]
+        }
+    }
+))
+```
+
+To add a *new* analytical force field (e.g., a velocity-dependent curl field), create a C++ `ForceField` subclass in `cpp/haptic_server/src/force_fields/`, implement `compute(pos, vel, dt)`, and register the type name in the command dispatcher. See `CartPendulumField` as a reference.
 
 ### Approach B: Physics world (tasks with collisions and rigid bodies)
 

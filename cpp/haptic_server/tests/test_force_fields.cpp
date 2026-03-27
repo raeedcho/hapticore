@@ -10,6 +10,7 @@
 #include "force_fields/spring_damper_field.hpp"
 #include "force_fields/workspace_limit_field.hpp"
 #include "force_fields/cart_pendulum_field.hpp"
+#include "force_fields/channel_field.hpp"
 #include "force_fields/composite_field.hpp"
 #include "force_fields/field_factory.hpp"
 
@@ -717,6 +718,284 @@ TEST(CartPendulumFieldTest, FirstTickNoTransient) {
     EXPECT_NEAR(force2[0], 0.0, 0.01);
 }
 
+// ==================== ChannelField Tests ====================
+
+TEST(ChannelFieldTest, DefaultConstraintsZAxis) {
+    // Default axes = [2] (constrain Z only), so X and Y should be free
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("stiffness"); pk.pack(500.0);
+    });
+    ASSERT_TRUE(field.update_params(oh.get()));
+
+    Vec3 pos = {0.1, 0.2, 0.05};
+    Vec3 vel = {1.0, -0.5, 0.3};
+    Vec3 force = field.compute(pos, vel, 0.00025);
+    // X and Y should be exactly zero (unconstrained)
+    EXPECT_DOUBLE_EQ(force[0], 0.0);
+    EXPECT_DOUBLE_EQ(force[1], 0.0);
+    // Z: F = -500 * (0.05 - 0) - 10 * 0.3 = -25 - 3 = -28
+    EXPECT_NEAR(force[2], -28.0, 1e-10);
+}
+
+TEST(ChannelFieldTest, UnconstrainedAxesZeroForce) {
+    // With axes=[2], forces on X and Y must be exactly 0 regardless of position/velocity
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(2);
+        pk.pack("axes");
+        pk.pack_array(1); pk.pack(2);
+        pk.pack("stiffness"); pk.pack(800.0);
+    });
+    ASSERT_TRUE(field.update_params(oh.get()));
+
+    Vec3 pos = {10.0, -20.0, 0.0};
+    Vec3 vel = {5.0, -3.0, 0.0};
+    Vec3 force = field.compute(pos, vel, 0.00025);
+    EXPECT_DOUBLE_EQ(force[0], 0.0);
+    EXPECT_DOUBLE_EQ(force[1], 0.0);
+}
+
+TEST(ChannelFieldTest, ConstrainedAxisRestoringForce) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(4);
+        pk.pack("axes");
+        pk.pack_array(1); pk.pack(2);
+        pk.pack("stiffness"); pk.pack(800.0);
+        pk.pack("damping");   pk.pack(0.0);
+        pk.pack("center");
+        pk.pack_array(3); pk.pack(0.0); pk.pack(0.0); pk.pack(0.0);
+    });
+    ASSERT_TRUE(field.update_params(oh.get()));
+
+    Vec3 pos = {0.1, 0.2, 0.05};
+    Vec3 vel = {0.0, 0.0, 0.0};
+    Vec3 force = field.compute(pos, vel, 0.00025);
+    // Only Z is constrained: F[2] = -800 * 0.05 = -40
+    EXPECT_DOUBLE_EQ(force[0], 0.0);
+    EXPECT_DOUBLE_EQ(force[1], 0.0);
+    EXPECT_NEAR(force[2], -40.0, 1e-10);
+}
+
+TEST(ChannelFieldTest, ConstrainToLine) {
+    // Constrain Y and Z (free in X only) — horizontal line constraint
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(4);
+        pk.pack("axes");
+        pk.pack_array(2); pk.pack(1); pk.pack(2);
+        pk.pack("stiffness"); pk.pack(800.0);
+        pk.pack("damping");   pk.pack(15.0);
+        pk.pack("center");
+        pk.pack_array(3); pk.pack(0.0); pk.pack(0.0); pk.pack(0.0);
+    });
+    ASSERT_TRUE(field.update_params(oh.get()));
+
+    Vec3 pos = {0.1, 0.02, 0.03};
+    Vec3 vel = {1.0, 0.5, -0.2};
+    Vec3 force = field.compute(pos, vel, 0.00025);
+    // X is free
+    EXPECT_DOUBLE_EQ(force[0], 0.0);
+    // Y: F = -800 * 0.02 - 15 * 0.5 = -16 - 7.5 = -23.5
+    EXPECT_NEAR(force[1], -23.5, 1e-10);
+    // Z: F = -800 * 0.03 - 15 * (-0.2) = -24 + 3 = -21
+    EXPECT_NEAR(force[2], -21.0, 1e-10);
+}
+
+TEST(ChannelFieldTest, AllAxesMatchesSpringDamper) {
+    // With axes=[0,1,2], behavior should match SpringDamperField
+    ChannelField channel;
+    auto oh_ch = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(4);
+        pk.pack("axes");
+        pk.pack_array(3); pk.pack(0); pk.pack(1); pk.pack(2);
+        pk.pack("stiffness"); pk.pack(200.0);
+        pk.pack("damping");   pk.pack(5.0);
+        pk.pack("center");
+        pk.pack_array(3); pk.pack(0.1); pk.pack(-0.05); pk.pack(0.0);
+    });
+    ASSERT_TRUE(channel.update_params(oh_ch.get()));
+
+    SpringDamperField spring;
+    auto oh_sd = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("stiffness"); pk.pack(200.0);
+        pk.pack("damping");   pk.pack(5.0);
+        pk.pack("center");
+        pk.pack_array(3); pk.pack(0.1); pk.pack(-0.05); pk.pack(0.0);
+    });
+    ASSERT_TRUE(spring.update_params(oh_sd.get()));
+
+    Vec3 pos = {0.05, 0.1, -0.03};
+    Vec3 vel = {0.2, -0.1, 0.5};
+    Vec3 f_ch = channel.compute(pos, vel, 0.00025);
+    Vec3 f_sd = spring.compute(pos, vel, 0.00025);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_NEAR(f_ch[static_cast<size_t>(i)], f_sd[static_cast<size_t>(i)], 1e-10);
+    }
+}
+
+TEST(ChannelFieldTest, RejectsHighStiffness) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("stiffness"); pk.pack(3001.0);
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, AcceptsMaxStiffness) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("stiffness"); pk.pack(3000.0);
+    });
+    EXPECT_TRUE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, RejectsNegativeStiffness) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("stiffness"); pk.pack(-1.0);
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, RejectsNegativeDamping) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("damping"); pk.pack(-1.0);
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, RejectsHighDamping) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("damping"); pk.pack(101.0);
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, RejectsInvalidAxisValue) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("axes");
+        pk.pack_array(1); pk.pack(3);  // axis 3 is invalid
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, RejectsNonIntegerAxis) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("axes");
+        pk.pack_array(1); pk.pack("x");
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, RejectsNegativeAxisValue) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("axes");
+        pk.pack_array(1); pk.pack(-1);
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, RejectsNonArrayAxes) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("axes"); pk.pack(2);
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, MissingKeysReturnsFalse) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(0);
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+}
+
+TEST(ChannelFieldTest, NameIsChannel) {
+    ChannelField field;
+    EXPECT_EQ(field.name(), "channel");
+}
+
+TEST(ChannelFieldTest, CenterShiftsEquilibrium) {
+    ChannelField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(4);
+        pk.pack("axes");
+        pk.pack_array(1); pk.pack(2);
+        pk.pack("stiffness"); pk.pack(500.0);
+        pk.pack("damping");   pk.pack(0.0);
+        pk.pack("center");
+        pk.pack_array(3); pk.pack(0.0); pk.pack(0.0); pk.pack(0.1);
+    });
+    ASSERT_TRUE(field.update_params(oh.get()));
+
+    // At center, force should be zero
+    Vec3 pos_at_center = {0.5, 0.3, 0.1};
+    Vec3 vel = {0.0, 0.0, 0.0};
+    Vec3 force = field.compute(pos_at_center, vel, 0.00025);
+    EXPECT_DOUBLE_EQ(force[0], 0.0);
+    EXPECT_DOUBLE_EQ(force[1], 0.0);
+    EXPECT_NEAR(force[2], 0.0, 1e-10);
+
+    // Displaced from center
+    Vec3 pos_displaced = {0.5, 0.3, 0.15};
+    Vec3 force2 = field.compute(pos_displaced, vel, 0.00025);
+    // F[2] = -500 * (0.15 - 0.1) = -25
+    EXPECT_NEAR(force2[2], -25.0, 1e-10);
+}
+
+TEST(ChannelFieldTest, ComposesWithOtherFields) {
+    CompositeField composite;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("fields");
+        pk.pack_array(2);
+        // Child 1: constant force in X
+        pk.pack_map(2);
+        pk.pack("type"); pk.pack("constant");
+        pk.pack("params");
+        pk.pack_map(1);
+        pk.pack("force"); pk.pack_array(3); pk.pack(5.0); pk.pack(0.0); pk.pack(0.0);
+        // Child 2: channel constraining Y and Z
+        pk.pack_map(2);
+        pk.pack("type"); pk.pack("channel");
+        pk.pack("params");
+        pk.pack_map(3);
+        pk.pack("axes"); pk.pack_array(2); pk.pack(1); pk.pack(2);
+        pk.pack("stiffness"); pk.pack(800.0);
+        pk.pack("damping");   pk.pack(0.0);
+    });
+    ASSERT_TRUE(composite.update_params(oh.get()));
+
+    Vec3 pos = {0.0, 0.02, 0.03};
+    Vec3 vel = {0.0, 0.0, 0.0};
+    Vec3 force = composite.compute(pos, vel, 0.00025);
+    // X: constant 5.0 + channel 0.0 = 5.0
+    EXPECT_NEAR(force[0], 5.0, 1e-10);
+    // Y: constant 0.0 + channel(-800 * 0.02) = -16.0
+    EXPECT_NEAR(force[1], -16.0, 1e-10);
+    // Z: constant 0.0 + channel(-800 * 0.03) = -24.0
+    EXPECT_NEAR(force[2], -24.0, 1e-10);
+}
+
 // ==================== CompositeField Tests ====================
 
 TEST(CompositeFieldTest, SumOfChildForces) {
@@ -824,6 +1103,12 @@ TEST(FieldFactoryTest, CreatesCompositeField) {
     EXPECT_EQ(field->name(), "composite");
 }
 
+TEST(FieldFactoryTest, CreatesChannelField) {
+    auto field = create_field("channel");
+    ASSERT_NE(field, nullptr);
+    EXPECT_EQ(field->name(), "channel");
+}
+
 TEST(FieldFactoryTest, ReturnsNullptrForUnknown) {
     auto field = create_field("unknown");
     EXPECT_EQ(field, nullptr);
@@ -856,4 +1141,7 @@ TEST(ForceFieldTest, NonMapParamsReturnsFalse) {
 
     CompositeField comp;
     EXPECT_FALSE(comp.update_params(oh.get()));
+
+    ChannelField ch;
+    EXPECT_FALSE(ch.update_params(oh.get()));
 }

@@ -361,3 +361,75 @@ class TestCompositeFieldFeel:
             countdown=countdown,
             duration=duration,
         ), "Operator rejected composite field feel"
+
+
+@pytest.mark.hardware
+@pytest.mark.interactive
+class TestChannelFeelPlane:
+    """Feel-test: constrain to a horizontal plane (free X/Y, hold Z=0)."""
+
+    def test_constrained_to_plane(
+        self,
+        dealer: zmq.Socket,  # type: ignore[type-arg]
+        cmd_address: str,
+        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        countdown: int,
+        duration: int,
+    ) -> None:
+        assert run_timed_evaluation(
+            dealer, cmd_address, zmq_context,
+            field_params={
+                "type": "channel",
+                "params": {
+                    "axes": [2],
+                    "stiffness": 800,
+                    "damping": 15,
+                    "center": [0, 0, 0],
+                },
+            },
+            description="Channel: horizontal plane constraint (Z=0)",
+            feel_instructions=(
+                "Move the handle freely in X and Y — there should be no "
+                "resistance. Pushing up or down (Z axis) should feel a "
+                "smooth spring-damper restoring force pulling back toward Z=0."
+            ),
+            prompt="Does the handle feel free in X/Y but constrained in Z?",
+            countdown=countdown,
+            duration=duration,
+        ), "Operator rejected channel plane feel"
+
+
+@pytest.mark.hardware
+@pytest.mark.interactive
+class TestChannelFeelLine:
+    """Feel-test: constrain to a horizontal line (free X, hold Y=0 and Z=0)."""
+
+    def test_constrained_to_line(
+        self,
+        dealer: zmq.Socket,  # type: ignore[type-arg]
+        cmd_address: str,
+        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        countdown: int,
+        duration: int,
+    ) -> None:
+        assert run_timed_evaluation(
+            dealer, cmd_address, zmq_context,
+            field_params={
+                "type": "channel",
+                "params": {
+                    "axes": [1, 2],
+                    "stiffness": 800,
+                    "damping": 15,
+                    "center": [0, 0, 0],
+                },
+            },
+            description="Channel: horizontal line constraint (X-axis only)",
+            feel_instructions=(
+                "The handle should slide freely left/right (X axis). "
+                "Pushing up/down (Y) or forward/back (Z) should feel a "
+                "restoring force pulling back toward the X-axis line."
+            ),
+            prompt="Does the handle slide freely along X but resist Y/Z motion?",
+            countdown=countdown,
+            duration=duration,
+        ), "Operator rejected channel line feel"

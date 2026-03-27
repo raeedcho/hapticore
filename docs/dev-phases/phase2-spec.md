@@ -268,25 +268,25 @@ Returns the appropriate `ForceField` subclass for `"null"`, `"constant"`, `"spri
 
 Implement the cart-pendulum ODE integration. This is the most compute-intensive force field and the key physics validation for the cup-and-ball task.
 
-**Physics model** (2D cart-pendulum, Bazzi et al. 2018):
-- Cup = cart. Its position `x` comes from the robot handle: `cup_x = pos[0]`.
+**Physics model** (2D cart-pendulum with virtual coupling):
+- The device connects to a simulated cart through a spring-damper coupler (K_vc, B_vc).
 - Ball = pendulum bob. State: angle `φ` (0 = hanging down), angular velocity `φ̇`.
-- ODE: `φ̈ = (-g·sin(φ) - ẍ·cos(φ) - b·φ̇) / L`
-  where `g` = gravity, `ẍ` = cup acceleration (finite difference of velocity), `L` = pendulum length, `b` = angular damping coefficient
-- Cup acceleration estimate: `ẍ = (vel_x_current - vel_x_previous) / dt`. Simple first-order difference. Store `vel_x_previous` as member state.
-- Reaction force on cup: `F_reaction = m_b * L * (φ̈·cos(φ) - φ̇²·sin(φ))`
-- If `cup_inertia_enabled`: total force x-component = `F_reaction + m_cup * ẍ`. Otherwise just `F_reaction`.
+- Cart acceleration derived from the Euler-Lagrange equation for x:
+  `a·(M + m·sin²φ) = F_couple + m·(g·sinφ·cosφ + b·φ̇·cosφ + L·φ̇²·sinφ)`
+- Pendulum ODE: `φ̈ = (-g·sin(φ) - a·cos(φ) - b·φ̇) / L`
+- Device force = coupling force (Newton's 3rd law): `F = -K_vc·(x_dev - x_sim) - B_vc·(v_dev - v_sim)`
+- Virtual mass lives entirely in the simulation; the device only feels the coupling spring-damper.
 - Force is 1D (x-axis only). Y and Z components are zero.
 - Spill detection: set `spilled_ = true` when `|φ| > spill_threshold`.
 
-**Integration:** RK4 on the `[φ, φ̇]` state per haptic tick (dt = 0.00025 s).
+**Integration:** Full 4D RK4 on `[x, v, φ, φ̇]` state per haptic tick (dt = 0.00025 s).
 
 **Parameters** (via `update_params`, see `docs/haptic_server_protocol.md` § `cart_pendulum`):
-`ball_mass`, `cup_mass`, `pendulum_length`, `gravity`, `angular_damping`, `spill_threshold`, `cup_inertia_enabled`.
+`ball_mass`, `cup_mass`, `pendulum_length`, `gravity`, `angular_damping`, `spill_threshold`, `coupling_stiffness`, `coupling_damping`.
 
-**`pack_state()`** publishes: `phi`, `phi_dot`, `spilled`, `cup_x`, `ball_x`, `ball_y` (see protocol doc).
+**`pack_state()`** publishes: `phi`, `phi_dot`, `spilled`, `cup_x`, `ball_x`, `ball_y`, `coupling_stretch` (see protocol doc).
 
-**`reset()`**: Set `φ = 0`, `φ̇ = 0`, `spilled_ = false`, `vel_x_previous_ = 0`.
+**`reset()`**: Set `φ = 0`, `φ̇ = 0`, `spilled_ = false`, `x_sim_ = 0`, `v_sim_ = 0`, `first_tick_ = true`.
 
 **Tests for Step 5** (`tests/test_force_fields.cpp`, continued):
 - **Small-angle period:** Stationary cup, `φ₀ = 0.01 rad`, `φ̇₀ = 0`, L=1.0, g=9.81. Run for `T_expected = 2π√(L/g) ≈ 2.006 s` worth of ticks (8024 ticks at 4 kHz). Measure the time for φ to return to near 0.01 rad. Verify period matches analytical value within 2%.

@@ -14,7 +14,8 @@ public:
     double phi() const { return phi_; }
     double phi_dot() const { return phi_dot_; }
     bool spilled() const { return spilled_; }
-    double filtered_accel() const { return filtered_accel_; }
+    double x_sim() const { return x_sim_; }
+    double v_sim() const { return v_sim_; }
 
     // Test-only setters for initial conditions
     void set_initial_state(double phi, double phi_dot) {
@@ -27,13 +28,13 @@ private:
     double phi_ = 0.0;        // angle (0 = hanging straight down)
     double phi_dot_ = 0.0;    // angular velocity
     bool spilled_ = false;
-    double vel_x_prev_ = 0.0; // previous x velocity for acceleration estimate
-    double cup_x_ = 0.0;      // last cup position
+    double cup_x_ = 0.0;      // simulated cart position (for pack_state)
 
-    // Acceleration filter state
-    double filtered_accel_ = 0.0;
-    bool first_tick_ = true; // suppress first-tick transient after reset/construction
-    static constexpr double k2Pi = 6.283185307179586; // 2*pi, avoids non-standard M_PI
+    // Virtual coupling simulation state
+    double x_sim_ = 0.0;      // simulated cart position
+    double v_sim_ = 0.0;      // simulated cart velocity
+    double cup_x_dev_ = 0.0;  // last device x position (for coupling_stretch)
+    bool first_tick_ = true;   // sync simulation to device on first tick
 
     // Parameters
     double ball_mass_ = 0.6;
@@ -42,14 +43,10 @@ private:
     double gravity_ = 9.81;
     double angular_damping_ = 0.1;
     double spill_threshold_ = 1.5708; // π/2
-    bool cup_inertia_enabled_ = true;
-    double accel_filter_hz_ = 30.0;
+    double coupling_stiffness_ = 800.0;
+    double coupling_damping_ = 2.0;
 
     // RK4 helper: returns [phi_dot, phi_ddot]
     struct State { double phi; double phi_dot; };
     State derivatives(const State& s, double x_accel) const;
-
-    static double compute_alpha(double cutoff_hz, double dt) {
-        return 1.0 - std::exp(-k2Pi * cutoff_hz * dt);
-    }
 };

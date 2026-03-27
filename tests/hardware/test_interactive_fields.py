@@ -293,15 +293,18 @@ class TestCartPendulumFeel:
                     "ball_mass": 0.6,
                     "cup_mass": 2.4,
                     "angular_damping": 0.05,
+                    "coupling_stiffness": 800.0,
+                    "coupling_damping": 2.0,
                 },
             },
-            description="Cart-pendulum (L=0.6, m_ball=0.6, m_cup=2.4, b=0.05)",
+            description="Cart-pendulum virtual coupling (L=0.6, m_ball=0.6, m_cup=2.4, K_vc=800, B_vc=2)",
             feel_instructions=(
-                "Move the handle side to side. You should feel an inertial "
-                "resistance followed by a swinging weight that lags behind "
-                "your hand motion. Quick reversals should feel like the "
-                "'ball' swings to the opposite side. "
-                "Try holding still — oscillations should slowly decay."
+                "Move the handle side to side. You should feel inertial resistance "
+                "when accelerating (the simulated cup lags behind your hand). "
+                "A swinging weight should lag behind your hand motion. Quick reversals "
+                "should feel like the 'ball' swings to the opposite side. "
+                "Try holding still — oscillations should slowly decay. "
+                "The handle should NOT buzz or oscillate on its own."
             ),
             prompt="Does the handle feel like it has a pendulum weight attached?",
             countdown=countdown,

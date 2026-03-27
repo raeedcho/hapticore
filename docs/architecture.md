@@ -61,7 +61,7 @@ The haptic server is a standalone C++ executable with three threads.
 - `SpringDamperField`: F = −K(pos − center) − B·vel
 - `ConstantField`: F = constant vector
 - `WorkspaceLimitField`: spring forces at boundaries
-- `CartPendulumField`: RK4 integration of cup-and-ball dynamics, returns reaction force
+- `CartPendulumField`: virtual-coupling simulation of cup-and-ball dynamics. The device connects to a simulated cart through a spring-damper coupler; the cart-pendulum ODE is integrated internally with RK4. Virtual mass lives entirely in the simulation, avoiding the instability of direct F=M·a rendering. Returns coupling force to the device.
 - `PhysicsField`: wraps a Box2D world for rigid-body dynamics and collision (see ADR-007). Supports polygons, circles, revolute/prismatic joints, and static obstacles. Used for tasks involving collisions (e.g., Tetris-like block placement, air hockey) and underactuated dynamics (e.g., pivoted rod navigation). The monkey controls a kinematic body; Box2D computes reaction forces from contacts and constraints.
 - `CompositeField`: sum of multiple fields
 

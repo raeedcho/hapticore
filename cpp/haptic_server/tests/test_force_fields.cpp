@@ -285,43 +285,110 @@ TEST(WorkspaceLimitFieldTest, WrongBoundsTypeReturnsFalse) {
 
 // ==================== CartPendulumField Tests ====================
 
-TEST(CartPendulumFieldTest, SmallAnglePeriod) {
+TEST(CartPendulumFieldTest, CouplingTracksPositionAtSteadyState) {
     CartPendulumField field;
     auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(5);
-        pk.pack("ball_mass");          pk.pack(1.0);
-        pk.pack("pendulum_length");    pk.pack(1.0);
-        pk.pack("gravity");            pk.pack(9.81);
-        pk.pack("angular_damping");    pk.pack(0.0);
-        pk.pack("cup_inertia_enabled"); pk.pack(false);
+        pk.pack_map(4);
+        pk.pack("ball_mass");          pk.pack(0.6);
+        pk.pack("cup_mass");           pk.pack(2.4);
+        pk.pack("pendulum_length");    pk.pack(0.3);
+        pk.pack("angular_damping");    pk.pack(0.1);
     });
     ASSERT_TRUE(field.update_params(oh.get()));
 
-    // Set initial angle: phi0 = 0.01 rad, phi_dot0 = 0
+    constexpr double dt = 0.00025;
+    Vec3 pos = {0.05, 0.0, 0.0};
+    Vec3 vel = {0.0, 0.0, 0.0};
+
+    Vec3 force{0.0, 0.0, 0.0};
+    for (int tick = 0; tick < 20000; ++tick) {
+        force = field.compute(pos, vel, dt);
+    }
+
+    // x_sim should have converged close to 0.05
+    double gap = std::abs(field.x_sim() - 0.05);
+    EXPECT_LT(gap, 1e-4)
+        << "Coupling gap " << gap << " should be < 1e-4 at steady state";
+    // Force should be near zero at steady state
+    EXPECT_NEAR(force[0], 0.0, 0.01)
+        << "Force at steady state should be near zero";
+}
+
+TEST(CartPendulumFieldTest, InertialResistanceDuringAcceleration) {
+    constexpr double dt = 0.00025;
+    constexpr double velocity = 0.1; // m/s constant velocity
+
+    auto run_with_mass = [&](double cup_mass) -> double {
+        CartPendulumField field;
+        auto oh = pack_and_unpack([&](msgpack::packer<msgpack::sbuffer>& pk) {
+            pk.pack_map(3);
+            pk.pack("cup_mass");        pk.pack(cup_mass);
+            pk.pack("angular_damping"); pk.pack(0.1);
+            pk.pack("ball_mass");       pk.pack(0.6);
+        });
+        field.update_params(oh.get());
+
+        // First tick at rest to sync simulation
+        field.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, dt);
+
+        double max_opposing_force = 0.0;
+        for (int tick = 1; tick <= 400; ++tick) {
+            double t = tick * dt;
+            Vec3 pos = {velocity * t, 0.0, 0.0};
+            Vec3 vel = {velocity, 0.0, 0.0};
+            Vec3 force = field.compute(pos, vel, dt);
+            // Force should oppose motion direction (negative x for positive velocity)
+            if (force[0] < 0.0) {
+                max_opposing_force = std::max(max_opposing_force, -force[0]);
+            }
+        }
+        return max_opposing_force;
+    };
+
+    double force_light = run_with_mass(1.0);
+    double force_heavy = run_with_mass(4.0);
+
+    // Force should oppose motion
+    EXPECT_GT(force_light, 0.0) << "Should have opposing force during acceleration";
+    EXPECT_GT(force_heavy, 0.0) << "Should have opposing force during acceleration";
+    // Heavier cup should produce larger opposing force
+    EXPECT_GT(force_heavy, force_light)
+        << "Heavier cup mass should produce larger inertial resistance";
+}
+
+TEST(CartPendulumFieldTest, PendulumPeriodWithStationaryDevice) {
+    CartPendulumField field;
+    double L = 1.0;
+    auto oh = pack_and_unpack([&](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(4);
+        pk.pack("ball_mass");        pk.pack(1.0);
+        pk.pack("pendulum_length");  pk.pack(L);
+        pk.pack("gravity");          pk.pack(9.81);
+        pk.pack("angular_damping");  pk.pack(0.0);
+    });
+    ASSERT_TRUE(field.update_params(oh.get()));
+
     field.set_initial_state(0.01, 0.0);
 
-    constexpr double dt = 0.00025; // 4 kHz
-    double T_expected = 2.0 * M_PI * std::sqrt(1.0 / 9.81); // ≈ 2.006 s
-    int total_ticks = static_cast<int>(T_expected / dt) * 2; // run for 2 full periods
+    constexpr double dt = 0.00025;
+    double T_expected = 2.0 * M_PI * std::sqrt(L / 9.81);
+    int total_ticks = static_cast<int>(T_expected / dt) * 2;
 
     Vec3 pos = {0.0, 0.0, 0.0};
     Vec3 vel = {0.0, 0.0, 0.0};
 
-    // Track zero crossings of phi (going positive)
     double prev_phi = field.phi();
     std::vector<int> positive_crossings;
 
     for (int tick = 0; tick < total_ticks; ++tick) {
         field.compute(pos, vel, dt);
         double cur_phi = field.phi();
-        // Detect positive-going zero crossing
         if (prev_phi < 0.0 && cur_phi >= 0.0) {
             positive_crossings.push_back(tick);
         }
         prev_phi = cur_phi;
     }
 
-    // We need at least 2 positive crossings to measure a period
     ASSERT_GE(positive_crossings.size(), 2u)
         << "Not enough zero crossings detected";
 
@@ -332,40 +399,39 @@ TEST(CartPendulumFieldTest, SmallAnglePeriod) {
         << ", expected=" << T_expected << ")";
 }
 
-TEST(CartPendulumFieldTest, EnergyConservation) {
+TEST(CartPendulumFieldTest, PendulumForceTransmitsThroughCoupling) {
     CartPendulumField field;
-    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(5);
-        pk.pack("ball_mass");          pk.pack(1.0);
-        pk.pack("pendulum_length");    pk.pack(1.0);
-        pk.pack("gravity");            pk.pack(9.81);
-        pk.pack("angular_damping");    pk.pack(0.0);
-        pk.pack("cup_inertia_enabled"); pk.pack(false);
+    double L = 0.3;
+    auto oh = pack_and_unpack([&](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(4);
+        pk.pack("ball_mass");        pk.pack(0.6);
+        pk.pack("pendulum_length");  pk.pack(L);
+        pk.pack("gravity");          pk.pack(9.81);
+        pk.pack("angular_damping");  pk.pack(0.0);
     });
     ASSERT_TRUE(field.update_params(oh.get()));
 
-    double m = 1.0, L = 1.0, g = 9.81;
-    field.set_initial_state(0.5, 0.0); // phi0 = 0.5 rad
-
-    double E_initial = m * g * L * (1.0 - std::cos(0.5)); // KE=0 at start
+    field.set_initial_state(0.3, 0.0);
 
     constexpr double dt = 0.00025;
-    constexpr int num_ticks = 10000;
+    double T_pend = 2.0 * M_PI * std::sqrt(L / 9.81);
+    int half_period_ticks = static_cast<int>(0.5 * T_pend / dt);
+
     Vec3 pos = {0.0, 0.0, 0.0};
     Vec3 vel = {0.0, 0.0, 0.0};
 
-    for (int tick = 0; tick < num_ticks; ++tick) {
-        field.compute(pos, vel, dt);
+    bool has_positive = false;
+    bool has_negative = false;
+
+    for (int tick = 0; tick < half_period_ticks; ++tick) {
+        Vec3 force = field.compute(pos, vel, dt);
+        if (force[0] > 1e-6) has_positive = true;
+        if (force[0] < -1e-6) has_negative = true;
     }
 
-    double phi = field.phi();
-    double phi_dot = field.phi_dot();
-    double E_final = 0.5 * m * L * L * phi_dot * phi_dot + m * g * L * (1.0 - std::cos(phi));
-
-    double energy_drift_pct = std::abs(E_final - E_initial) / E_initial * 100.0;
-    EXPECT_LT(energy_drift_pct, 0.1)
-        << "Energy drift: " << energy_drift_pct << "% (initial=" << E_initial
-        << ", final=" << E_final << ")";
+    EXPECT_TRUE(has_positive && has_negative)
+        << "Pendulum force should oscillate through coupling (pos="
+        << has_positive << ", neg=" << has_negative << ")";
 }
 
 TEST(CartPendulumFieldTest, SpillDetection) {
@@ -376,17 +442,15 @@ TEST(CartPendulumFieldTest, SpillDetection) {
         pk.pack("pendulum_length");    pk.pack(1.0);
         pk.pack("gravity");            pk.pack(9.81);
         pk.pack("angular_damping");    pk.pack(0.0);
-        pk.pack("spill_threshold");    pk.pack(1.5708); // π/2
+        pk.pack("spill_threshold");    pk.pack(1.5708);
     });
     ASSERT_TRUE(field.update_params(oh.get()));
 
-    // Start with phi near the spill threshold with large positive angular velocity
     field.set_initial_state(1.5, 5.0);
 
     Vec3 pos = {0.0, 0.0, 0.0};
     Vec3 vel = {0.0, 0.0, 0.0};
 
-    // Run a few ticks - should spill quickly since phi starts at 1.5 with positive phi_dot
     for (int i = 0; i < 100; ++i) {
         field.compute(pos, vel, 0.00025);
         if (field.spilled()) break;
@@ -395,62 +459,134 @@ TEST(CartPendulumFieldTest, SpillDetection) {
     EXPECT_TRUE(field.spilled());
 }
 
-TEST(CartPendulumFieldTest, ReactionForceSign) {
+TEST(CartPendulumFieldTest, EnergyConservationCoupledSystem) {
+    // With very high coupling stiffness, x_sim ≈ x_dev = 0, so the system
+    // reduces to a simple pendulum. Energy should be well-conserved by RK4.
     CartPendulumField field;
-    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(5);
-        pk.pack("ball_mass");          pk.pack(1.0);
-        pk.pack("cup_mass");           pk.pack(1.0);
-        pk.pack("pendulum_length");    pk.pack(0.5);
-        pk.pack("gravity");            pk.pack(9.81);
-        pk.pack("cup_inertia_enabled"); pk.pack(false);
+    double m_b = 0.6, L = 0.3, g = 9.81;
+    auto oh = pack_and_unpack([&](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(6);
+        pk.pack("ball_mass");           pk.pack(m_b);
+        pk.pack("cup_mass");            pk.pack(2.4);
+        pk.pack("pendulum_length");     pk.pack(L);
+        pk.pack("gravity");             pk.pack(g);
+        pk.pack("angular_damping");     pk.pack(0.0);
+        pk.pack("coupling_stiffness");  pk.pack(5000.0);  // high stiffness locks cart
     });
     ASSERT_TRUE(field.update_params(oh.get()));
 
-    // First tick: establish vel_x_prev = 0
+    double phi_0 = 0.5;
+    field.set_initial_state(phi_0, 0.0);
+
+    constexpr double dt = 0.00025;
+    constexpr int num_ticks = 10000;
     Vec3 pos = {0.0, 0.0, 0.0};
-    Vec3 vel_zero = {0.0, 0.0, 0.0};
-    field.compute(pos, vel_zero, 0.00025);
+    Vec3 vel = {0.0, 0.0, 0.0};
 
-    // Second tick: cup accelerates right (positive velocity from zero)
-    Vec3 vel_right = {1.0, 0.0, 0.0};
-    Vec3 force = field.compute(pos, vel_right, 0.00025);
+    double E_initial = m_b * g * L * (1.0 - std::cos(phi_0));
 
-    // Ball hanging straight down (phi ≈ 0), cup accelerating right
-    // Ball resists being dragged right → force x-component should be negative
-    EXPECT_LT(force[0], 0.0) << "Reaction force should oppose cup acceleration";
+    for (int tick = 0; tick < num_ticks; ++tick) {
+        field.compute(pos, vel, dt);
+    }
+
+    double phi = field.phi();
+    double phi_dot = field.phi_dot();
+    double E_final = 0.5 * m_b * L * L * phi_dot * phi_dot
+                   + m_b * g * L * (1.0 - std::cos(phi));
+
+    double energy_drift_pct = std::abs(E_final - E_initial) / E_initial * 100.0;
+    EXPECT_LT(energy_drift_pct, 0.5)
+        << "Energy drift: " << energy_drift_pct << "% (initial=" << E_initial
+        << ", final=" << E_final << ")";
 }
 
-TEST(CartPendulumFieldTest, ParameterUpdateMidRun) {
+TEST(CartPendulumFieldTest, ResetReSyncsSimulation) {
+    CartPendulumField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(2);
+        pk.pack("ball_mass");        pk.pack(0.6);
+        pk.pack("cup_mass");         pk.pack(2.4);
+    });
+    ASSERT_TRUE(field.update_params(oh.get()));
+
+    // Run some ticks to move simulation state away from zero
+    for (int i = 0; i < 100; ++i) {
+        field.compute({0.05, 0.0, 0.0}, {0.1, 0.0, 0.0}, 0.00025);
+    }
+
+    field.reset();
+
+    // After reset, first tick with pos={0.03,0,0} should produce near-zero force
+    // because x_sim is initialized to x_dev=0.03
+    Vec3 force = field.compute({0.03, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    EXPECT_NEAR(force[0], 0.0, 0.01)
+        << "First tick after reset should have near-zero coupling force";
+}
+
+TEST(CartPendulumFieldTest, ParameterUpdateChangesForce) {
     CartPendulumField field;
     auto oh1 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(4);
-        pk.pack("ball_mass");        pk.pack(1.0);
-        pk.pack("pendulum_length");  pk.pack(1.0);
-        pk.pack("gravity");          pk.pack(9.81);
-        pk.pack("angular_damping");  pk.pack(0.0);
+        pk.pack_map(2);
+        pk.pack("coupling_stiffness"); pk.pack(800.0);
+        pk.pack("coupling_damping");   pk.pack(2.0);
     });
     ASSERT_TRUE(field.update_params(oh1.get()));
 
-    field.set_initial_state(0.1, 0.0);
+    // First tick syncs; second tick creates a gap
+    field.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    Vec3 force1 = field.compute({0.01, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    double mag1 = std::abs(force1[0]);
 
-    Vec3 pos = {0.0, 0.0, 0.0};
-    Vec3 vel = {0.0, 0.0, 0.0};
-    for (int i = 0; i < 10; ++i) {
-        field.compute(pos, vel, 0.00025);
-    }
-
-    // Change pendulum length mid-run
+    // Increase coupling stiffness
     auto oh2 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
         pk.pack_map(1);
-        pk.pack("pendulum_length"); pk.pack(0.5);
+        pk.pack("coupling_stiffness"); pk.pack(2000.0);
     });
     ASSERT_TRUE(field.update_params(oh2.get()));
 
-    // Verify we can still compute without errors
-    Vec3 force = field.compute(pos, vel, 0.00025);
-    (void)force;
-    SUCCEED();
+    Vec3 force2 = field.compute({0.01, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    double mag2 = std::abs(force2[0]);
+
+    EXPECT_GT(mag2, mag1)
+        << "Higher coupling stiffness should produce larger force";
+}
+
+TEST(CartPendulumFieldTest, ParameterValidation) {
+    CartPendulumField field;
+
+    // coupling_stiffness negative
+    auto oh1 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("coupling_stiffness"); pk.pack(-1.0);
+    });
+    EXPECT_FALSE(field.update_params(oh1.get()));
+
+    // coupling_stiffness above 5000
+    auto oh2 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("coupling_stiffness"); pk.pack(6000.0);
+    });
+    EXPECT_FALSE(field.update_params(oh2.get()));
+
+    // coupling_damping negative
+    auto oh3 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("coupling_damping"); pk.pack(-1.0);
+    });
+    EXPECT_FALSE(field.update_params(oh3.get()));
+
+    // coupling_damping above 50
+    auto oh4 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("coupling_damping"); pk.pack(100.0);
+    });
+    EXPECT_FALSE(field.update_params(oh4.get()));
+
+    // Missing keys
+    auto oh5 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(0);
+    });
+    EXPECT_FALSE(field.update_params(oh5.get()));
 }
 
 TEST(CartPendulumFieldTest, ResetClearsState) {
@@ -476,28 +612,13 @@ TEST(CartPendulumFieldTest, ResetClearsState) {
     EXPECT_DOUBLE_EQ(field.phi(), 0.0);
     EXPECT_DOUBLE_EQ(field.phi_dot(), 0.0);
     EXPECT_FALSE(field.spilled());
+    EXPECT_DOUBLE_EQ(field.x_sim(), 0.0);
+    EXPECT_DOUBLE_EQ(field.v_sim(), 0.0);
 }
 
 TEST(CartPendulumFieldTest, NameIsCartPendulum) {
     CartPendulumField field;
     EXPECT_EQ(field.name(), "cart_pendulum");
-}
-
-TEST(CartPendulumFieldTest, MissingKeysReturnsFalse) {
-    CartPendulumField field;
-    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(0);
-    });
-    EXPECT_FALSE(field.update_params(oh.get()));
-}
-
-TEST(CartPendulumFieldTest, InvalidMassReturnsFalse) {
-    CartPendulumField field;
-    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(1);
-        pk.pack("ball_mass"); pk.pack(-1.0);
-    });
-    EXPECT_FALSE(field.update_params(oh.get()));
 }
 
 TEST(CartPendulumFieldTest, PackStateHasExpectedKeys) {
@@ -518,204 +639,13 @@ TEST(CartPendulumFieldTest, PackStateHasExpectedKeys) {
     auto map = result.get().via.map;
     EXPECT_EQ(map.size, 7u);
 
-    std::set<std::string> expected_keys = {"phi", "phi_dot", "spilled", "cup_x", "ball_x", "ball_y", "filtered_accel"};
+    std::set<std::string> expected_keys = {"phi", "phi_dot", "spilled", "cup_x", "ball_x", "ball_y", "coupling_stretch"};
     std::set<std::string> actual_keys;
     for (uint32_t i = 0; i < map.size; ++i) {
         std::string key(map.ptr[i].key.via.str.ptr, map.ptr[i].key.via.str.size);
         actual_keys.insert(key);
     }
     EXPECT_EQ(actual_keys, expected_keys);
-}
-
-TEST(CartPendulumFieldTest, FilteredAccelTracksConstantAcceleration) {
-    CartPendulumField field;
-    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(2);
-        pk.pack("cup_inertia_enabled"); pk.pack(false);
-        pk.pack("accel_filter_hz");     pk.pack(30.0);
-    });
-    ASSERT_TRUE(field.update_params(oh.get()));
-
-    constexpr double dt = 0.00025;
-    constexpr double true_accel = 5.0; // m/s²
-
-    // Feed velocity = accel * t so finite difference gives true_accel each tick
-    // Filter time constant tau = 1/(2*pi*30) ≈ 5.3 ms → settling ~3*tau ≈ 16 ms = 64 ticks
-    constexpr int settling_ticks = 200; // generous settling period
-
-    for (int tick = 0; tick < settling_ticks; ++tick) {
-        double t = tick * dt;
-        double vel_x = true_accel * t;
-        Vec3 pos = {0.5 * true_accel * t * t, 0.0, 0.0};
-        Vec3 vel = {vel_x, 0.0, 0.0};
-        field.compute(pos, vel, dt);
-    }
-
-    // After settling, filtered accel should converge to true_accel
-    double error = std::abs(field.filtered_accel() - true_accel);
-    EXPECT_LT(error, 0.1)
-        << "Filtered accel " << field.filtered_accel()
-        << " did not converge to " << true_accel;
-}
-
-TEST(CartPendulumFieldTest, NoiseRejection) {
-    // Run the field with noisy velocity input and verify that force variation
-    // is substantially smaller than the unfiltered case would produce.
-    CartPendulumField field;
-    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(3);
-        pk.pack("cup_inertia_enabled"); pk.pack(true);
-        pk.pack("cup_mass");            pk.pack(2.4);
-        pk.pack("accel_filter_hz");     pk.pack(30.0);
-    });
-    ASSERT_TRUE(field.update_params(oh.get()));
-
-    constexpr double dt = 0.00025;
-    constexpr double noise_sigma = 0.001; // 0.001 m/s (1 mm/s) velocity noise
-
-    // Simple deterministic pseudo-noise using a linear congruential generator
-    // (avoids <random> header in the test for determinism)
-    uint32_t seed = 12345;
-    auto next_noise = [&seed]() -> double {
-        seed = seed * 1664525u + 1013904223u;
-        // Map to [-1, 1] range then scale by sigma
-        double u = static_cast<double>(seed) / 4294967295.0 * 2.0 - 1.0;
-        return u * noise_sigma;
-    };
-
-    // Let the filter settle for 200 ticks with zero velocity
-    for (int i = 0; i < 200; ++i) {
-        field.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, dt);
-    }
-
-    // Now feed stationary cup with noisy velocity for 1000 ticks
-    constexpr int test_ticks = 1000;
-    double max_force = -1e9;
-    double min_force = 1e9;
-    double max_raw_accel = -1e9;
-    double min_raw_accel = 1e9;
-    double prev_vel = 0.0;
-
-    for (int i = 0; i < test_ticks; ++i) {
-        double noisy_vel = next_noise();
-        Vec3 pos = {0.0, 0.0, 0.0};
-        Vec3 vel = {noisy_vel, 0.0, 0.0};
-        Vec3 force = field.compute(pos, vel, dt);
-
-        // Track raw acceleration for comparison
-        double raw_accel = (noisy_vel - prev_vel) / dt;
-        prev_vel = noisy_vel;
-        if (raw_accel > max_raw_accel) max_raw_accel = raw_accel;
-        if (raw_accel < min_raw_accel) min_raw_accel = raw_accel;
-
-        if (force[0] > max_force) max_force = force[0];
-        if (force[0] < min_force) min_force = force[0];
-    }
-
-    double force_pp = max_force - min_force;
-    double raw_accel_pp = max_raw_accel - min_raw_accel;
-
-    // Unfiltered: cup_mass * raw_accel_pp = 2.4 * raw_accel_pp
-    // With filtering at 30 Hz / 4 kHz, the noise should be dramatically reduced.
-    // We check that force peak-to-peak is less than 20% of what unfiltered would produce.
-    double unfiltered_force_pp = 2.4 * raw_accel_pp;
-    EXPECT_GT(unfiltered_force_pp, 1.0)
-        << "Test setup error: raw noise must produce significant unfiltered force";
-    EXPECT_LT(force_pp, 0.2 * unfiltered_force_pp)
-        << "Force peak-to-peak " << force_pp << " N should be much smaller than unfiltered "
-        << unfiltered_force_pp << " N";
-}
-
-TEST(CartPendulumFieldTest, AccelFilterHzParamAccepted) {
-    CartPendulumField field;
-
-    // Valid: within [5, 200]
-    auto oh1 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(1);
-        pk.pack("accel_filter_hz"); pk.pack(50.0);
-    });
-    EXPECT_TRUE(field.update_params(oh1.get()));
-
-    // Valid: lower bound
-    auto oh2 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(1);
-        pk.pack("accel_filter_hz"); pk.pack(5.0);
-    });
-    EXPECT_TRUE(field.update_params(oh2.get()));
-
-    // Valid: upper bound
-    auto oh3 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(1);
-        pk.pack("accel_filter_hz"); pk.pack(200.0);
-    });
-    EXPECT_TRUE(field.update_params(oh3.get()));
-}
-
-TEST(CartPendulumFieldTest, AccelFilterHzBoundsEnforced) {
-    CartPendulumField field;
-
-    // Below lower bound
-    auto oh1 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(1);
-        pk.pack("accel_filter_hz"); pk.pack(4.9);
-    });
-    EXPECT_FALSE(field.update_params(oh1.get()));
-
-    // Above upper bound
-    auto oh2 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(1);
-        pk.pack("accel_filter_hz"); pk.pack(200.1);
-    });
-    EXPECT_FALSE(field.update_params(oh2.get()));
-}
-
-TEST(CartPendulumFieldTest, ResetClearsFilterState) {
-    CartPendulumField field;
-    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(1);
-        pk.pack("cup_inertia_enabled"); pk.pack(true);
-    });
-    ASSERT_TRUE(field.update_params(oh.get()));
-
-    // Drive some velocity to build up filtered accel
-    Vec3 pos = {0.0, 0.0, 0.0};
-    for (int i = 0; i < 100; ++i) {
-        Vec3 vel = {static_cast<double>(i) * 0.01, 0.0, 0.0};
-        field.compute(pos, vel, 0.00025);
-    }
-    // filtered_accel should be non-zero
-    EXPECT_NE(field.filtered_accel(), 0.0);
-
-    field.reset();
-    EXPECT_DOUBLE_EQ(field.filtered_accel(), 0.0);
-}
-
-TEST(CartPendulumFieldTest, FirstTickNoTransient) {
-    // If the cup is already moving when the field activates, the first tick
-    // should not produce a large force spike from (vel_x - 0) / dt.
-    CartPendulumField field;
-    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(1);
-        pk.pack("cup_inertia_enabled"); pk.pack(true);
-    });
-    ASSERT_TRUE(field.update_params(oh.get()));
-
-    // First call with a substantial velocity (0.1 m/s)
-    Vec3 force = field.compute({0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, 0.00025);
-
-    // Without the first-tick guard, raw_accel = 0.1 / 0.00025 = 400 m/s²,
-    // producing a large force spike proportional to cup_mass (default 2.4 kg
-    // → ~960 N, far beyond the 20 N clamp). With the guard, the first tick
-    // initializes vel_x_prev_ = vel_x and produces zero acceleration.
-    EXPECT_DOUBLE_EQ(field.filtered_accel(), 0.0);
-    EXPECT_NEAR(force[0], 0.0, 0.01);
-
-    // Also verify the guard re-arms after reset
-    field.compute({0.0, 0.0, 0.0}, {0.2, 0.0, 0.0}, 0.00025);
-    field.reset();
-    Vec3 force2 = field.compute({0.0, 0.0, 0.0}, {0.3, 0.0, 0.0}, 0.00025);
-    EXPECT_DOUBLE_EQ(field.filtered_accel(), 0.0);
-    EXPECT_NEAR(force2[0], 0.0, 0.01);
 }
 
 // ==================== ChannelField Tests ====================

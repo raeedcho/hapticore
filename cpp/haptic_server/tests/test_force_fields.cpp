@@ -460,18 +460,19 @@ TEST(CartPendulumFieldTest, SpillDetection) {
 }
 
 TEST(CartPendulumFieldTest, EnergyConservationCoupledSystem) {
-    // With very high coupling stiffness, x_sim ≈ x_dev = 0, so the system
-    // reduces to a simple pendulum. Energy should be well-conserved by RK4.
+    // Stationary device at origin with zero damping. Total Lagrangian energy
+    // of the coupled cart-pendulum system should be well-conserved by RK4.
     CartPendulumField field;
-    double m_b = 0.6, L = 0.3, g = 9.81;
+    double m_b = 0.6, M = 2.4, L = 0.3, g = 9.81, K = 800.0;
     auto oh = pack_and_unpack([&](msgpack::packer<msgpack::sbuffer>& pk) {
-        pk.pack_map(6);
+        pk.pack_map(7);
         pk.pack("ball_mass");           pk.pack(m_b);
-        pk.pack("cup_mass");            pk.pack(2.4);
+        pk.pack("cup_mass");            pk.pack(M);
         pk.pack("pendulum_length");     pk.pack(L);
         pk.pack("gravity");             pk.pack(g);
         pk.pack("angular_damping");     pk.pack(0.0);
-        pk.pack("coupling_stiffness");  pk.pack(5000.0);  // high stiffness locks cart
+        pk.pack("coupling_stiffness");  pk.pack(K);
+        pk.pack("coupling_damping");    pk.pack(0.0);
     });
     ASSERT_TRUE(field.update_params(oh.get()));
 
@@ -483,16 +484,25 @@ TEST(CartPendulumFieldTest, EnergyConservationCoupledSystem) {
     Vec3 pos = {0.0, 0.0, 0.0};
     Vec3 vel = {0.0, 0.0, 0.0};
 
-    double E_initial = m_b * g * L * (1.0 - std::cos(phi_0));
+    // Full Lagrangian energy: T + V
+    // T = 0.5*(M+m)*v^2 + m*L*v*pd*cos(p) + 0.5*m*L^2*pd^2
+    // V = m*g*L*(1 - cos(p)) + 0.5*K*x^2
+    auto total_energy = [&](double p, double pd, double x, double v) {
+        return 0.5 * (M + m_b) * v * v
+             + m_b * L * v * pd * std::cos(p)
+             + 0.5 * m_b * L * L * pd * pd
+             + m_b * g * L * (1.0 - std::cos(p))
+             + 0.5 * K * x * x;
+    };
+
+    double E_initial = total_energy(phi_0, 0.0, 0.0, 0.0);
 
     for (int tick = 0; tick < num_ticks; ++tick) {
         field.compute(pos, vel, dt);
     }
 
-    double phi = field.phi();
-    double phi_dot = field.phi_dot();
-    double E_final = 0.5 * m_b * L * L * phi_dot * phi_dot
-                   + m_b * g * L * (1.0 - std::cos(phi));
+    double E_final = total_energy(field.phi(), field.phi_dot(),
+                                  field.x_sim(), field.v_sim());
 
     double energy_drift_pct = std::abs(E_final - E_initial) / E_initial * 100.0;
     EXPECT_LT(energy_drift_pct, 0.5)

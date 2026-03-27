@@ -30,8 +30,9 @@ Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
                     + coupling_damping_ * (v_dev - v_sim_);
 
     // 2. Integrate the full 4D state [x, v, phi, phi_dot] with RK4.
-    //    Cart acceleration is computed algebraically to avoid circularity:
-    //    a = (F_couple + m*(-g*sin*cos - b*pd*cos - L*pd^2*sin)) / (M + m*cos^2)
+    //    Cart acceleration is derived from the Euler-Lagrange equation for x:
+    //    a·(M + m·sin²φ) = F_couple + m·(g·sinφ·cosφ + b·φ̇·cosφ + L·φ̇²·sinφ)
+    //    This resolves the cart-pendulum circularity algebraically.
     struct FullState { double x; double v; double phi; double phi_dot; };
 
     auto full_derivs = [&](const FullState& s) -> FullState {
@@ -41,10 +42,10 @@ Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
         double fc = coupling_stiffness_ * (x_dev - s.x)
                   + coupling_damping_ * (v_dev - s.v);
         double pend_terms = ball_mass_
-            * (-gravity_ * sp * cp
-               - angular_damping_ * s.phi_dot * cp
-               - pendulum_length_ * s.phi_dot * s.phi_dot * sp);
-        double eff_mass = cup_mass_ + ball_mass_ * cp * cp;
+            * (gravity_ * sp * cp
+               + angular_damping_ * s.phi_dot * cp
+               + pendulum_length_ * s.phi_dot * s.phi_dot * sp);
+        double eff_mass = cup_mass_ + ball_mass_ * sp * sp;
         double a = (fc + pend_terms) / eff_mass;
         double phi_ddot = (-gravity_ * sp - a * cp
                            - angular_damping_ * s.phi_dot) / pendulum_length_;

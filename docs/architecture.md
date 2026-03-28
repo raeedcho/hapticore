@@ -75,7 +75,7 @@ The haptic server is a standalone C++ executable with three threads.
  
 The Force Dimension delta.3 is an **impedance-type** haptic device: it measures position/velocity (via encoders) and commands force (via back-drivable actuators). This contrasts with **admittance-type** devices (e.g., the FCS HapticMaster used for the original cart-pendulum task), which measure force and command position. Impedance devices excel at rendering springs, dampers, and free-space motion but cannot stably render large virtual masses through direct `F = M·a` feedback — double-differentiating sampled position data to estimate acceleration amplifies noise catastrophically at 4 kHz, and the passivity-guaranteed renderable mass is orders of magnitude below what tasks like the cart-pendulum require.
  
-This constraint is why force fields that involve virtual inertia (e.g., `CartPendulumField`) use a **virtual coupling** architecture: the dynamics are simulated internally and connected to the physical device through a spring-damper coupler. The device only ever renders spring and damper forces, which are well within its stability envelope. See ADR-009 for the full rationale and literature references.
+This constraint is why force fields that involve virtual inertia (e.g., `CartPendulumField`) use a **virtual coupling** architecture: the dynamics are simulated internally and connected to the physical device through a spring-damper coupler. The device only ever renders spring and damper forces, which are well within its stability envelope. See ADR-010 for the full rationale and literature references.
 
 ## Tier 2: Python task control
 

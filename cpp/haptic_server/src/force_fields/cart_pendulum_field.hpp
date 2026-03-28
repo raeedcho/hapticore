@@ -45,8 +45,4 @@ private:
     double spill_threshold_ = 1.5708; // π/2
     double coupling_stiffness_ = 800.0;
     double coupling_damping_ = 2.0;
-
-    // RK4 helper: returns [phi_dot, phi_ddot]
-    struct State { double phi; double phi_dot; };
-    State derivatives(const State& s, double x_accel) const;
 };

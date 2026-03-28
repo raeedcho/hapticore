@@ -2,13 +2,6 @@
 #include "msgpack_helpers.hpp"
 #include <cmath>
 
-CartPendulumField::State CartPendulumField::derivatives(const State& s, double x_accel) const {
-    // φ̈ = (-g·sin(φ) - ẍ·cos(φ) - b·φ̇) / L
-    double phi_ddot = (-gravity_ * std::sin(s.phi) - x_accel * std::cos(s.phi)
-                       - angular_damping_ * s.phi_dot) / pendulum_length_;
-    return {s.phi_dot, phi_ddot};
-}
-
 Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
     if (dt <= 0.0) return {0.0, 0.0, 0.0};
 

@@ -108,7 +108,7 @@ After any change to `pixi.toml` or `pyproject.toml`, always run `pixi install` a
 - Compile with `-Wall -Wextra -Wpedantic -Werror` in all builds. Fix all warnings. Make sure to build in both a Linux and macOS environment to catch platform-specific warnings.
 - Keep `ForceField::compute()` under 50 µs. Profile with a simple `clock_gettime` diff if in doubt. The full tick budget is 250 µs and includes DHD USB round-trip.
 - Spring stiffness above 3000 N/m causes instability at 4 kHz. Reject such values in `update_params()`.
-- **Virtual mass rendering:** Never compute `F = M * a_estimated` and apply it directly to the device. Discrete acceleration estimation amplifies sensor noise by `M/T`, causing instability for virtual masses above roughly 2× the device's physical mass. Use a virtual coupling approach instead: simulate the mass in software, connect to the device through a spring-damper coupler. The device only feels the coupler; the mass lives in the simulation. See the `CartPendulumField` implementation for the canonical pattern.
+- **Virtual mass rendering:** Never compute `F = M * a_estimated` and apply it directly to the device. Discrete acceleration estimation amplifies sensor noise by `M/T`, causing instability for virtual masses above roughly 2× the device's physical mass. Use a virtual coupling approach instead: simulate the mass in software, connect to the device through a spring-damper coupler. The device only feels the coupler; the mass lives in the simulation. See the `CartPendulumField` implementation for the canonical pattern and ADR-010 for rationale.
 - **Wall-clock timing assertions**: Guard with `#ifdef __linux__` or split into separate tests. macOS GitHub Actions runners (virtualized Apple Silicon) have unreliable sleep granularity — `sleep_for(5ms)` can sleep 50ms+. This mirrors the Python-side lesson learned from timer coalescing. Timing-sensitive tests retain full value on Linux (the deployment target) while macOS CI still validates correctness without contributing flaky failures.
 
 ### Force Dimension SDK pitfalls
@@ -173,3 +173,4 @@ Before proposing alternatives to a settled decision, check `docs/adr/` for conte
 - `007`: Box2D for 2D physics
 - `008`: Lab coordinate convention (DHD SDK remap in `DhdReal`)
 - `009`: pydantic-settings with layered YAML composition
+- `010`: Virtual coupling for stable mass rendering on impedance-type device

@@ -326,7 +326,7 @@ TEST(CartPendulumFieldTest, InertialResistanceDuringAcceleration) {
             pk.pack("angular_damping"); pk.pack(0.1);
             pk.pack("ball_mass");       pk.pack(0.6);
         });
-        field.update_params(oh.get());
+        ASSERT_TRUE(field.update_params(oh.get()));
 
         // First tick at rest to sync simulation
         field.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, dt);

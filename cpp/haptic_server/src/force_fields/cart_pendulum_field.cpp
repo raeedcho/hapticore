@@ -138,7 +138,7 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     if (new_gravity <= 0.0) return false;
     if (new_damping < 0.0) return false;
     if (new_threshold <= 0.0) return false;
-    if (new_coupling_stiffness <= 0.0 || new_coupling_stiffness > 5000.0) return false;
+    if (new_coupling_stiffness <= 0.0 || new_coupling_stiffness > 3000.0) return false;
     if (new_coupling_damping < 0.0 || new_coupling_damping > 50.0) return false;
 
     ball_mass_ = new_ball_mass;

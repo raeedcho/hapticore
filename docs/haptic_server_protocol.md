@@ -177,7 +177,7 @@ Force: for each axis, if `pos[i] < min[i]`, apply `K * (min[i] - pos[i]) - B * v
 | `gravity` | float | 9.81 | > 0 | Gravitational acceleration in m/s² |
 | `angular_damping` | float | 0.1 | ≥ 0 | Angular damping in N·m·s/rad |
 | `spill_threshold` | float | 1.5708 | > 0 | Ball spill angle in radians (π/2) |
-| `coupling_stiffness` | float | 800.0 | > 0, ≤ 5000 | Virtual coupler stiffness in N/m |
+| `coupling_stiffness` | float | 800.0 | > 0, ≤ 3000 | Virtual coupler stiffness in N/m |
 | `coupling_damping` | float | 2.0 | ≥ 0, ≤ 50 | Virtual coupler damping in N·s/m |
 
 Dynamics: 2D cart-pendulum with virtual coupling. The device connects to a simulated cart through a spring-damper coupler (K_vc, B_vc). The cart-pendulum ODE is integrated internally with RK4. Virtual mass lives entirely in the simulation; the device only feels the coupling spring-damper.

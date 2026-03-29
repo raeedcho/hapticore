@@ -36,7 +36,7 @@ def user_confirms(prompt: str) -> bool:
     Accepts:
     - y / yes  -> return True
     - n / no   -> return False
-    - q / quit / abort / exit -> skip the current test
+    - s / skip / q / quit -> skip the current test
     Any other input will cause the prompt to be shown again.
 
     Skips automatically when stdin is not a TTY (e.g. CI or missing ``-s``).
@@ -52,19 +52,26 @@ def user_confirms(prompt: str) -> bool:
             return True
         if response in ("n", "no"):
             return False
-        if response in ("q", "quit", "abort", "exit"):
-            pytest.skip("Operator aborted interactive feel-test from prompt")
-        print("Please respond with 'y' or 'n' (or 'q' to abort).")
+        if response in ("s", "skip", "q", "quit"):
+            pytest.skip("Operator skipped test before evaluation")
+        print("Please respond with 'y' or 'n' (or 's/q' to skip).")
 
 
-def _wait_for_enter(msg: str) -> None:
-    """Prompt and wait for Enter, handling non-TTY and EOF gracefully."""
+def _wait_for_enter_or_skip(msg: str) -> None:
+    """Prompt the operator, waiting for Enter, or allow skipping the test.
+
+    - Normal use: operator presses Enter to continue.
+    - Skip inputs: ``s``, ``skip``, ``q``, or ``quit`` cause the test to be skipped.
+    - Non-interactive stdin (non-TTY) or EOF also result in the test being skipped.
+    """
     if not sys.stdin.isatty():
         pytest.skip("Interactive test requires a TTY (run with -s)")
     try:
-        input(msg)
+        response = input(msg).strip().lower()
     except EOFError:
         pytest.skip("stdin closed — cannot prompt operator (run with -s)")
+    if response in ("s", "skip", "q", "quit"):
+        pytest.skip("Operator skipped test before evaluation")
 
 
 def run_timed_evaluation(
@@ -84,12 +91,12 @@ def run_timed_evaluation(
     2. Countdown so the operator can walk to the device and grab the handle.
     3. Activate the field with a heartbeat for *duration* seconds.
     4. Revert to NullField while heartbeat is still active (handle goes free).
-    5. Ask the operator to confirm or reject the feel.
+    _wait_for_enter_or_skip("\nPress Enter to start countdown (or 's'/'q' to skip)... ")
     """
     print(f"\n--- {description} ---")
     print("What to feel for:")
     print(f"  {feel_instructions}")
-    _wait_for_enter("\nPress Enter when ready to start the countdown...")
+    _wait_for_enter_or_skip("\nPress Enter to start countdown (or 's/q' to skip)... ")
 
     # Countdown
     for i in range(countdown, 0, -1):

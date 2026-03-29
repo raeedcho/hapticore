@@ -91,12 +91,12 @@ def run_timed_evaluation(
     2. Countdown so the operator can walk to the device and grab the handle.
     3. Activate the field with a heartbeat for *duration* seconds.
     4. Revert to NullField while heartbeat is still active (handle goes free).
-    5. Ask the operator to confirm or reject the feel.
+    _wait_for_enter_or_skip("\nPress Enter to start countdown (or 's'/'q' to skip)... ")
     """
     print(f"\n--- {description} ---")
     print("What to feel for:")
     print(f"  {feel_instructions}")
-    _wait_for_enter_or_skip("\nPress Enter to start countdown (or 's' to skip)... ")
+    _wait_for_enter_or_skip("\nPress Enter to start countdown (or 's/q' to skip)... ")
 
     # Countdown
     for i in range(countdown, 0, -1):

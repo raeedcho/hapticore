@@ -36,7 +36,7 @@ def user_confirms(prompt: str) -> bool:
     Accepts:
     - y / yes  -> return True
     - n / no   -> return False
-    - q / quit / abort / exit -> skip the current test
+    - s / skip / q / quit -> skip the current test
     Any other input will cause the prompt to be shown again.
 
     Skips automatically when stdin is not a TTY (e.g. CI or missing ``-s``).
@@ -52,9 +52,9 @@ def user_confirms(prompt: str) -> bool:
             return True
         if response in ("n", "no"):
             return False
-        if response in ("q", "quit", "abort", "exit"):
-            pytest.skip("Operator aborted interactive feel-test from prompt")
-        print("Please respond with 'y' or 'n' (or 'q' to abort).")
+        if response in ("s", "skip", "q", "quit"):
+            pytest.skip("Operator skipped test before evaluation")
+        print("Please respond with 'y' or 'n' (or 's/q' to skip).")
 
 
 def _wait_for_enter_or_skip(msg: str) -> None:

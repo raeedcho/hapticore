@@ -57,14 +57,16 @@ def user_confirms(prompt: str) -> bool:
         print("Please respond with 'y' or 'n' (or 'q' to abort).")
 
 
-def _wait_for_enter(msg: str) -> None:
+def _wait_for_enter_or_skip(msg: str) -> None:
     """Prompt and wait for Enter, handling non-TTY and EOF gracefully."""
     if not sys.stdin.isatty():
         pytest.skip("Interactive test requires a TTY (run with -s)")
     try:
-        input(msg)
+        response = input(msg).strip().lower()
     except EOFError:
         pytest.skip("stdin closed — cannot prompt operator (run with -s)")
+    if response in ("s", "skip", "q", "quit"):
+        pytest.skip("Operator skipped test before evaluation")
 
 
 def run_timed_evaluation(
@@ -89,7 +91,7 @@ def run_timed_evaluation(
     print(f"\n--- {description} ---")
     print("What to feel for:")
     print(f"  {feel_instructions}")
-    _wait_for_enter("\nPress Enter when ready to start the countdown...")
+    _wait_for_enter_or_skip("\nPress Enter to start countdown (or 's' to skip)... ")
 
     # Countdown
     for i in range(countdown, 0, -1):

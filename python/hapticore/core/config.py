@@ -61,15 +61,22 @@ class DisplayConfig(BaseModel):
     fullscreen: bool = True
     monitor_distance_cm: float = Field(default=50.0, gt=0)
     background_color: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
-    photodiode_enabled: bool = True
+    photodiode_enabled: bool = Field(
+        default=True, description="Enable photodiode timing patch"
+    )
     photodiode_corner: str = Field(
         default="bottom_left",
         pattern=r"^(bottom_left|bottom_right|top_left|top_right)$",
+        description="Screen corner for photodiode patch",
     )
     cursor_radius: float = Field(default=0.005, gt=0, description="Cursor radius in meters")
-    cursor_color: list[float] = Field(default_factory=lambda: [1.0, 1.0, 1.0])
-    cursor_visible: bool = True
-    cursor_interpolation: bool = False
+    cursor_color: list[float] = Field(
+        default_factory=lambda: [1.0, 1.0, 1.0], description="Cursor RGB color"
+    )
+    cursor_visible: bool = Field(default=True, description="Whether cursor is drawn")
+    cursor_interpolation: bool = Field(
+        default=False, description="Interpolate cursor position between haptic state updates"
+    )
 
 
 class RecordingConfig(BaseModel):

@@ -58,7 +58,12 @@ def user_confirms(prompt: str) -> bool:
 
 
 def _wait_for_enter_or_skip(msg: str) -> None:
-    """Prompt and wait for Enter, handling non-TTY and EOF gracefully."""
+    """Prompt the operator, waiting for Enter, or allow skipping the test.
+
+    - Normal use: operator presses Enter to continue.
+    - Skip inputs: ``s``, ``skip``, ``q``, or ``quit`` cause the test to be skipped.
+    - Non-interactive stdin (non-TTY) or EOF also result in the test being skipped.
+    """
     if not sys.stdin.isatty():
         pytest.skip("Interactive test requires a TTY (run with -s)")
     try:

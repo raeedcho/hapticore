@@ -439,8 +439,7 @@ class TestCartPendulumFeel:
             prompt="Does the handle feel like it has weight to it?",
             countdown=countdown,
             duration=duration,
-        ), "Operator rejected cart-pendulum feel"
-    
+        ), "Operator rejected inertial-only cart-pendulum feel"
     def test_pendulum_swing(
         self,
         dealer: zmq.Socket,  # type: ignore[type-arg]
@@ -474,7 +473,7 @@ class TestCartPendulumFeel:
             prompt="Does the handle feel like it has a pendulum weight attached?",
             countdown=countdown,
             duration=duration,
-        ), "Operator rejected cart-pendulum feel"
+        ), "Operator rejected cart-pendulum pendulum-swing feel"
 
     def test_composite_pendulum_field(
         self,
@@ -529,7 +528,7 @@ class TestCartPendulumFeel:
             feel_instructions=(
                 "Move the handle around. You should feel stiff resistance outside of horizontal movement "
                 "and near the edges of the workspace. Within the free horizontal channel, you should feel inertial resistance."
-                "A swinging weight should lag behind your hand motion. Quick reversals "
+                " A swinging weight should lag behind your hand motion. Quick reversals "
                 "should feel like the 'ball' swings to the opposite side. "
                 "Try holding still — oscillations should slowly decay. "
                 "The handle should NOT buzz or oscillate on its own."
@@ -537,4 +536,4 @@ class TestCartPendulumFeel:
             prompt="Does the handle feel like the above description?",
             countdown=countdown,
             duration=duration,
-        ), "Operator rejected cart-pendulum feel"
+        ), "Operator rejected composite cart-pendulum + constraints feel"

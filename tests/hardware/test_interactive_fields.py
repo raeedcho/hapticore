@@ -280,47 +280,6 @@ class TestConstantFieldFeel:
 
 @pytest.mark.hardware
 @pytest.mark.interactive
-class TestCartPendulumFeel:
-    """Verify that the cart-pendulum field feels like a swinging weight."""
-
-    def test_pendulum_swing(
-        self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
-        countdown: int,
-        duration: int,
-    ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
-            field_params={
-                "type": "cart_pendulum",
-                "params": {
-                    "pendulum_length": 0.6,
-                    "ball_mass": 0.6,
-                    "cup_mass": 2.4,
-                    "angular_damping": 0.05,
-                    "coupling_stiffness": 800.0,
-                    "coupling_damping": 2.0,
-                },
-            },
-            description="Cart-pendulum virtual coupling (L=0.6, m_ball=0.6, m_cup=2.4, K_vc=800, B_vc=2)",
-            feel_instructions=(
-                "Move the handle side to side. You should feel inertial resistance "
-                "when accelerating (the simulated cup lags behind your hand). "
-                "A swinging weight should lag behind your hand motion. Quick reversals "
-                "should feel like the 'ball' swings to the opposite side. "
-                "Try holding still — oscillations should slowly decay. "
-                "The handle should NOT buzz or oscillate on its own."
-            ),
-            prompt="Does the handle feel like it has a pendulum weight attached?",
-            countdown=countdown,
-            duration=duration,
-        ), "Operator rejected cart-pendulum feel"
-
-
-@pytest.mark.hardware
-@pytest.mark.interactive
 class TestCompositeFieldFeel:
     """Verify that composite fields combine correctly."""
 
@@ -443,3 +402,139 @@ class TestChannelFeelLine:
             countdown=countdown,
             duration=duration,
         ), "Operator rejected channel line feel"
+
+
+@pytest.mark.hardware
+@pytest.mark.interactive
+class TestCartPendulumFeel:
+    """Verify that the cart-pendulum field feels like a swinging weight."""
+
+    def test_inertial_field(
+        self,
+        dealer: zmq.Socket,  # type: ignore[type-arg]
+        cmd_address: str,
+        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        countdown: int,
+        duration: int,
+    ) -> None:
+        assert run_timed_evaluation(
+            dealer, cmd_address, zmq_context,
+            field_params={
+                "type": "cart_pendulum",
+                "params": {
+                    "pendulum_length": 0.6,
+                    "ball_mass": 0.0001,
+                    "cup_mass": 2.4,
+                    "angular_damping": 0.05,
+                    "coupling_stiffness": 2000.0,
+                    "coupling_damping": 2.0,
+                },
+            },
+            description="Cart-pendulum with little ball mass (L=0.6, m_ball=0.0001, m_cup=2.4, K_vc=2000, B_vc=2)",
+            feel_instructions=(
+                "Move the handle side to side. You should feel inertial resistance "
+                "when accelerating (the simulated cup lags behind your hand). "
+                "The handle should NOT buzz or oscillate on its own."
+            ),
+            prompt="Does the handle feel like it has weight to it?",
+            countdown=countdown,
+            duration=duration,
+        ), "Operator rejected cart-pendulum feel"
+    
+    def test_pendulum_swing(
+        self,
+        dealer: zmq.Socket,  # type: ignore[type-arg]
+        cmd_address: str,
+        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        countdown: int,
+        duration: int,
+    ) -> None:
+        assert run_timed_evaluation(
+            dealer, cmd_address, zmq_context,
+            field_params={
+                "type": "cart_pendulum",
+                "params": {
+                    "pendulum_length": 0.6,
+                    "ball_mass": 0.6,
+                    "cup_mass": 1.4,
+                    "angular_damping": 0.05,
+                    "coupling_stiffness": 2000.0,
+                    "coupling_damping": 2.0,
+                },
+            },
+            description="Cart-pendulum virtual coupling (L=0.6, m_ball=0.6, m_cup=1.4, K_vc=2000, B_vc=2)",
+            feel_instructions=(
+                "Move the handle side to side. You should feel inertial resistance "
+                "when accelerating (the simulated cup lags behind your hand). "
+                "A swinging weight should lag behind your hand motion. Quick reversals "
+                "should feel like the 'ball' swings to the opposite side. "
+                "Try holding still — oscillations should slowly decay. "
+                "The handle should NOT buzz or oscillate on its own."
+            ),
+            prompt="Does the handle feel like it has a pendulum weight attached?",
+            countdown=countdown,
+            duration=duration,
+        ), "Operator rejected cart-pendulum feel"
+
+    def test_composite_pendulum_field(
+        self,
+        dealer: zmq.Socket,  # type: ignore[type-arg]
+        cmd_address: str,
+        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        countdown: int,
+        duration: int,
+    ) -> None:
+        assert run_timed_evaluation(
+            dealer, cmd_address, zmq_context,
+            field_params={
+                "type": "composite",
+                "params": {
+                    "fields": [
+                        {
+                            "type": "cart_pendulum",
+                            "params": {
+                                "pendulum_length": 0.6,
+                                "ball_mass": 0.6,
+                                "cup_mass": 2.4,
+                                "angular_damping": 0.05,
+                                "coupling_stiffness": 2000.0,
+                                "coupling_damping": 2.0,
+                            },
+                        },
+                        {
+                            "type": "workspace_limit",
+                            "params": {
+                                "bounds": {
+                                    "x": [-0.1, 0.1],
+                                    "y": [-0.1, 0.1],
+                                    "z": [-0.1, 0.1],
+                                },
+                                "stiffness": 2000,
+                                "damping": 20,
+                            },
+                        },
+                        {
+                            "type": "channel",
+                            "params": {
+                                "axes": [1, 2],
+                                "stiffness": 2000,
+                                "damping": 15,
+                                "center": [0, 0, 0],
+                            },
+                        },
+                    ],
+                },
+            },
+            description="Composite: cart-pendulum + workspace limits + channel constraint",
+            feel_instructions=(
+                "Move the handle around. You should feel stiff resistance outside of horizontal movement "
+                "and near the edges of the workspace. Within the free horizontal channel, you should feel inertial resistance."
+                "A swinging weight should lag behind your hand motion. Quick reversals "
+                "should feel like the 'ball' swings to the opposite side. "
+                "Try holding still — oscillations should slowly decay. "
+                "The handle should NOT buzz or oscillate on its own."
+            ),
+            prompt="Does the handle feel like the above description?",
+            countdown=countdown,
+            duration=duration,
+        ), "Operator rejected cart-pendulum feel"

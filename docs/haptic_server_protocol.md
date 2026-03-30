@@ -177,22 +177,22 @@ Force: for each axis, if `pos[i] < min[i]`, apply `K * (min[i] - pos[i]) - B * v
 | `gravity` | float | 9.81 | > 0 | Gravitational acceleration in m/s² |
 | `angular_damping` | float | 0.1 | ≥ 0 | Angular damping in N·m·s/rad |
 | `spill_threshold` | float | 1.5708 | > 0 | Ball spill angle in radians (π/2) |
-| `cup_inertia_enabled` | bool | true | — | Include cup inertial resistance |
-| `accel_filter_hz` | float | 30.0 | 5 ≤ f ≤ 200 | Low-pass cutoff for cup acceleration estimate (Hz) |
+| `coupling_stiffness` | float | 800.0 | > 0, ≤ 3000 | Virtual coupler stiffness in N/m |
+| `coupling_damping` | float | 2.0 | ≥ 0, ≤ 50 | Virtual coupler damping in N·s/m |
 
-Dynamics: 2D cart-pendulum. Cup position = `pos[0]` (x-axis). RK4 integration per tick.
+Dynamics: 2D cart-pendulum with virtual coupling. The device connects to a simulated cart through a spring-damper coupler (K_vc, B_vc). The cart-pendulum ODE is integrated internally with RK4. Virtual mass lives entirely in the simulation; the device only feels the coupling spring-damper.
 
 **field_state:**
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `phi` | float | Current ball angle (radians, 0 = hanging straight down) |
-| `phi_dot` | float | Ball angular velocity (rad/s) |
-| `spilled` | bool | Whether `|phi| > spill_threshold` |
-| `cup_x` | float | Cup position (meters) |
-| `ball_x` | float | Ball world x position: `cup_x + L*sin(phi)` |
+| `phi` | float | Pendulum angle (rad, 0 = hanging down) |
+| `phi_dot` | float | Pendulum angular velocity (rad/s) |
+| `spilled` | bool | Whether `|phi|` > spill_threshold |
+| `cup_x` | float | Simulated cart position in meters (`x_sim`, not device position) |
+| `ball_x` | float | Ball world x position: `x_sim + L*sin(phi)` |
 | `ball_y` | float | Ball y position relative to cup: `-L*cos(phi)` |
-| `filtered_accel` | float | Low-pass-filtered cup acceleration estimate (m/s²) |
+| `coupling_stretch` | float | `x_dev - x_sim` in meters (for debugging) |
 
 ### `channel`
 

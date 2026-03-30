@@ -2,72 +2,79 @@
 #include "msgpack_helpers.hpp"
 #include <cmath>
 
-CartPendulumField::State CartPendulumField::derivatives(const State& s, double x_accel) const {
-    // φ̈ = (-g·sin(φ) - ẍ·cos(φ) - b·φ̇) / L
-    double phi_ddot = (-gravity_ * std::sin(s.phi) - x_accel * std::cos(s.phi)
-                       - angular_damping_ * s.phi_dot) / pendulum_length_;
-    return {s.phi_dot, phi_ddot};
-}
-
 Vec3 CartPendulumField::compute(const Vec3& pos, const Vec3& vel, double dt) {
     if (dt <= 0.0) return {0.0, 0.0, 0.0};
 
-    cup_x_ = pos[0];
-    double vel_x = vel[0];
+    double x_dev = pos[0];
+    double v_dev = vel[0];
+    cup_x_dev_ = x_dev;  // store for pack_state coupling_stretch
 
-    // On the first tick after reset/construction, vel_x_prev_ is zero
-    // (from initialization), so (vel_x - 0) / dt would produce a spurious
-    // acceleration spike. Initialize vel_x_prev_ from the current velocity
-    // to avoid this.
+    // On first tick after reset, sync simulation to device position
     if (first_tick_) {
-        vel_x_prev_ = vel_x;
+        x_sim_ = x_dev;
+        v_sim_ = v_dev;
         first_tick_ = false;
     }
 
-    // Estimate cup acceleration via finite difference + EMA low-pass filter.
-    // Alpha is recomputed from the actual dt so the field is rate-agnostic.
-    double raw_accel = (vel_x - vel_x_prev_) / dt;
-    vel_x_prev_ = vel_x;
-    double alpha = compute_alpha(accel_filter_hz_, dt);
-    filtered_accel_ = alpha * raw_accel + (1.0 - alpha) * filtered_accel_;
+    // 1. Coupling force on the simulated cart from the device.
+    //    Computed once from the state at the start of the tick; held constant
+    //    during the RK4 sub-steps (the device state doesn't change within a tick).
+    double f_couple = coupling_stiffness_ * (x_dev - x_sim_)
+                    + coupling_damping_ * (v_dev - v_sim_);
 
-    // RK4 integration of [phi, phi_dot]
-    State s0{phi_, phi_dot_};
+    // 2. Integrate the full 4D state [x, v, phi, phi_dot] with RK4.
+    //    Cart acceleration is derived from the Euler-Lagrange equation for x,
+    //    with φ̈ substituted and collected:
+    //    a·(M + m·sin²φ) = F_couple + m·(g·sinφ·cosφ + b·φ̇·cosφ + L·φ̇²·sinφ)
+    //    Note: g term has no L factor because L in m·L·φ̈·cosφ cancels with
+    //    the /L in φ̈ = (-g·sinφ - a·cosφ - b·φ̇)/L.
+    //    This resolves the cart-pendulum circularity algebraically.
+    struct FullState { double x; double v; double phi; double phi_dot; };
 
-    State k1 = derivatives(s0, filtered_accel_);
-    State s1{s0.phi + 0.5 * dt * k1.phi, s0.phi_dot + 0.5 * dt * k1.phi_dot};
+    auto full_derivs = [&](const FullState& s) -> FullState {
+        double cp = std::cos(s.phi);
+        double sp = std::sin(s.phi);
+        // Coupling force uses start-of-tick device state (constant over sub-steps)
+        double fc = coupling_stiffness_ * (x_dev - s.x)
+                  + coupling_damping_ * (v_dev - s.v);
+        double pend_terms = ball_mass_
+            * (gravity_ * sp * cp
+               + angular_damping_ * s.phi_dot * cp
+               + pendulum_length_ * s.phi_dot * s.phi_dot * sp);
+        double eff_mass = cup_mass_ + ball_mass_ * sp * sp;
+        double a = (fc + pend_terms) / eff_mass;
+        double phi_ddot = (-gravity_ * sp - a * cp
+                           - angular_damping_ * s.phi_dot) / pendulum_length_;
+        return {s.v, a, s.phi_dot, phi_ddot};
+    };
 
-    State k2 = derivatives(s1, filtered_accel_);
-    State s2{s0.phi + 0.5 * dt * k2.phi, s0.phi_dot + 0.5 * dt * k2.phi_dot};
+    FullState s0{x_sim_, v_sim_, phi_, phi_dot_};
+    FullState k1 = full_derivs(s0);
+    FullState s1{s0.x + 0.5*dt*k1.x, s0.v + 0.5*dt*k1.v,
+                 s0.phi + 0.5*dt*k1.phi, s0.phi_dot + 0.5*dt*k1.phi_dot};
+    FullState k2 = full_derivs(s1);
+    FullState s2{s0.x + 0.5*dt*k2.x, s0.v + 0.5*dt*k2.v,
+                 s0.phi + 0.5*dt*k2.phi, s0.phi_dot + 0.5*dt*k2.phi_dot};
+    FullState k3 = full_derivs(s2);
+    FullState s3{s0.x + dt*k3.x, s0.v + dt*k3.v,
+                 s0.phi + dt*k3.phi, s0.phi_dot + dt*k3.phi_dot};
+    FullState k4 = full_derivs(s3);
 
-    State k3 = derivatives(s2, filtered_accel_);
-    State s3{s0.phi + dt * k3.phi, s0.phi_dot + dt * k3.phi_dot};
+    x_sim_   = s0.x       + (dt/6.0)*(k1.x       + 2*k2.x       + 2*k3.x       + k4.x);
+    v_sim_   = s0.v       + (dt/6.0)*(k1.v       + 2*k2.v       + 2*k3.v       + k4.v);
+    phi_     = s0.phi     + (dt/6.0)*(k1.phi     + 2*k2.phi     + 2*k3.phi     + k4.phi);
+    phi_dot_ = s0.phi_dot + (dt/6.0)*(k1.phi_dot + 2*k2.phi_dot + 2*k3.phi_dot + k4.phi_dot);
 
-    State k4 = derivatives(s3, filtered_accel_);
-
-    phi_ = s0.phi + (dt / 6.0) * (k1.phi + 2.0 * k2.phi + 2.0 * k3.phi + k4.phi);
-    phi_dot_ = s0.phi_dot + (dt / 6.0) * (k1.phi_dot + 2.0 * k2.phi_dot
-                                           + 2.0 * k3.phi_dot + k4.phi_dot);
-
-    // Spill detection
+    // 3. Spill detection
     if (std::abs(phi_) > spill_threshold_) {
         spilled_ = true;
     }
 
-    // Compute φ̈ at the updated state for reaction force
-    double phi_ddot = (-gravity_ * std::sin(phi_) - filtered_accel_ * std::cos(phi_)
-                       - angular_damping_ * phi_dot_) / pendulum_length_;
+    // 4. Store simulated cup position for state packing
+    cup_x_ = x_sim_;
 
-    // Reaction force on cup: F_reaction = m_b * L * (φ̈·cos(φ) - φ̇²·sin(φ))
-    double f_reaction = ball_mass_ * pendulum_length_
-                        * (phi_ddot * std::cos(phi_) - phi_dot_ * phi_dot_ * std::sin(phi_));
-
-    double force_x = f_reaction;
-    if (cup_inertia_enabled_) {
-        force_x += cup_mass_ * filtered_accel_;
-    }
-
-    return {force_x, 0.0, 0.0};
+    // 5. Return coupling force on device (Newton's 3rd law)
+    return {-f_couple, 0.0, 0.0};
 }
 
 std::string CartPendulumField::name() const {
@@ -84,8 +91,8 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     double new_gravity = gravity_;
     double new_damping = angular_damping_;
     double new_threshold = spill_threshold_;
-    bool new_inertia = cup_inertia_enabled_;
-    double new_filter_hz = accel_filter_hz_;
+    double new_coupling_stiffness = coupling_stiffness_;
+    double new_coupling_damping = coupling_damping_;
     bool has_any = false;
 
     for (uint32_t i = 0; i < map.size; ++i) {
@@ -113,11 +120,11 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
         } else if (key_str == "spill_threshold") {
             if (!haptic::try_get_double(val, new_threshold)) return false;
             has_any = true;
-        } else if (key_str == "cup_inertia_enabled") {
-            if (!haptic::try_get_bool(val, new_inertia)) return false;
+        } else if (key_str == "coupling_stiffness") {
+            if (!haptic::try_get_double(val, new_coupling_stiffness)) return false;
             has_any = true;
-        } else if (key_str == "accel_filter_hz") {
-            if (!haptic::try_get_double(val, new_filter_hz)) return false;
+        } else if (key_str == "coupling_damping") {
+            if (!haptic::try_get_double(val, new_coupling_damping)) return false;
             has_any = true;
         }
     }
@@ -131,7 +138,8 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     if (new_gravity <= 0.0) return false;
     if (new_damping < 0.0) return false;
     if (new_threshold <= 0.0) return false;
-    if (new_filter_hz < 5.0 || new_filter_hz > 200.0) return false;
+    if (new_coupling_stiffness <= 0.0 || new_coupling_stiffness > 3000.0) return false;
+    if (new_coupling_damping < 0.0 || new_coupling_damping > 50.0) return false;
 
     ball_mass_ = new_ball_mass;
     cup_mass_ = new_cup_mass;
@@ -139,27 +147,29 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     gravity_ = new_gravity;
     angular_damping_ = new_damping;
     spill_threshold_ = new_threshold;
-    cup_inertia_enabled_ = new_inertia;
-    accel_filter_hz_ = new_filter_hz;
+    coupling_stiffness_ = new_coupling_stiffness;
+    coupling_damping_ = new_coupling_damping;
     return true;
 }
 
 void CartPendulumField::pack_state(msgpack::packer<msgpack::sbuffer>& pk) const {
     pk.pack_map(7);
-    pk.pack("phi");             pk.pack(phi_);
-    pk.pack("phi_dot");         pk.pack(phi_dot_);
-    pk.pack("spilled");         pk.pack(spilled_);
-    pk.pack("cup_x");           pk.pack(cup_x_);
-    pk.pack("ball_x");          pk.pack(cup_x_ + pendulum_length_ * std::sin(phi_));
-    pk.pack("ball_y");          pk.pack(-pendulum_length_ * std::cos(phi_));
-    pk.pack("filtered_accel");  pk.pack(filtered_accel_);
+    pk.pack("phi");              pk.pack(phi_);
+    pk.pack("phi_dot");          pk.pack(phi_dot_);
+    pk.pack("spilled");          pk.pack(spilled_);
+    pk.pack("cup_x");            pk.pack(cup_x_);
+    pk.pack("ball_x");           pk.pack(x_sim_ + pendulum_length_ * std::sin(phi_));
+    pk.pack("ball_y");           pk.pack(-pendulum_length_ * std::cos(phi_));
+    pk.pack("coupling_stretch"); pk.pack(cup_x_dev_ - x_sim_);
 }
 
 void CartPendulumField::reset() {
     phi_ = 0.0;
     phi_dot_ = 0.0;
     spilled_ = false;
-    vel_x_prev_ = 0.0;
-    filtered_accel_ = 0.0;
-    first_tick_ = true;
+    x_sim_ = 0.0;
+    v_sim_ = 0.0;
+    cup_x_ = 0.0;
+    cup_x_dev_ = 0.0;
+    first_tick_ = true;  // will re-sync to device on next compute()
 }

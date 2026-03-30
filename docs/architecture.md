@@ -61,7 +61,7 @@ The haptic server is a standalone C++ executable with three threads.
 - `SpringDamperField`: F = −K(pos − center) − B·vel
 - `ConstantField`: F = constant vector
 - `WorkspaceLimitField`: spring forces at boundaries
-- `CartPendulumField`: RK4 integration of cup-and-ball dynamics, returns reaction force
+- `CartPendulumField`: virtual-coupling simulation of cup-and-ball dynamics. The device connects to a simulated cart through a spring-damper coupler; the cart-pendulum ODE is integrated internally with RK4. Virtual mass lives entirely in the simulation, avoiding the instability of direct F=M·a rendering. Returns coupling force to the device.
 - `PhysicsField`: wraps a Box2D world for rigid-body dynamics and collision (see ADR-007). Supports polygons, circles, revolute/prismatic joints, and static obstacles. Used for tasks involving collisions (e.g., Tetris-like block placement, air hockey) and underactuated dynamics (e.g., pivoted rod navigation). The monkey controls a kinematic body; Box2D computes reaction forces from contacts and constraints.
 - `CompositeField`: sum of multiple fields
 
@@ -70,6 +70,12 @@ The haptic server is a standalone C++ executable with three threads.
 **Key design principle**: Python never sends raw force values. Python sends *field parameters* (spring constant, target position, pendulum length, or a full physics world specification). The C++ thread evaluates forces at 4 kHz using these parameters. This decouples the 4 kHz control rate from the ~100 Hz Python rate. See ADR-002 for rationale.
 
 **Dependencies**: Force Dimension SDK (DHD for haptic control, DRD for startup calibration), Box2D v3.0 (via CPM.cmake), cppzmq, msgpack-cxx, pthreads/rt.
+
+### Device type and mass rendering constraint
+ 
+The Force Dimension delta.3 is an **impedance-type** haptic device: it measures position/velocity (via encoders) and commands force (via back-drivable actuators). This contrasts with **admittance-type** devices (e.g., the FCS HapticMaster used for the original cart-pendulum task), which measure force and command position. Impedance devices excel at rendering springs, dampers, and free-space motion but cannot stably render large virtual masses through direct `F = M·a` feedback — double-differentiating sampled position data to estimate acceleration amplifies noise catastrophically at 4 kHz, and the passivity-guaranteed renderable mass is orders of magnitude below what tasks like the cart-pendulum require.
+ 
+This constraint is why force fields that involve virtual inertia (e.g., `CartPendulumField`) use a **virtual coupling** architecture: the dynamics are simulated internally and connected to the physical device through a spring-damper coupler. The device only ever renders spring and damper forces, which are well within its stability envelope. See ADR-010 for the full rationale and literature references.
 
 ## Tier 2: Python task control
 

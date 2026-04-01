@@ -54,11 +54,13 @@ class DisplayProcess(multiprocessing.Process):
 
         ctx = zmq.Context()
         display_sub = ctx.socket(zmq.SUB)
+        display_sub.setsockopt(zmq.LINGER, 0)
         display_sub.connect(self._zmq_config.event_pub_address)
         display_sub.subscribe(TOPIC_DISPLAY)
         display_sub.setsockopt(zmq.RCVHWM, 100)
 
         state_sub = ctx.socket(zmq.SUB)
+        state_sub.setsockopt(zmq.LINGER, 0)
         state_sub.connect(self._zmq_config.haptic_state_address)
         state_sub.subscribe(TOPIC_STATE)
         state_sub.setsockopt(zmq.RCVHWM, 10)
@@ -67,7 +69,9 @@ class DisplayProcess(multiprocessing.Process):
             # Placeholder frame loop — drain messages and flip.
             # Full rendering added in Phase 4B.
             while not self._shutdown.is_set():
+                # TODO(4B): capture and dispatch drained display commands
                 self._drain_messages(display_sub)
+                # TODO(4B): capture and dispatch drained haptic state
                 self._drain_messages(state_sub)
                 win.flip()
         finally:
@@ -79,12 +83,13 @@ class DisplayProcess(multiprocessing.Process):
     def _create_window(self, visual_module: Any) -> Any:
         """Create a PsychoPy Window from the display configuration."""
         cfg = self._display_config
+        effective_fullscr = cfg.fullscreen and not self._headless
         return visual_module.Window(
             size=list(cfg.resolution),
-            fullscr=cfg.fullscreen and not self._headless,
+            fullscr=effective_fullscr,
             color=cfg.background_color,
             units="m",
-            allowGUI=not cfg.fullscreen,
+            allowGUI=not effective_fullscr,
             winType="pyglet",
             checkTiming=False,
         )
@@ -100,7 +105,10 @@ class DisplayProcess(multiprocessing.Process):
         while True:
             try:
                 _topic, payload = socket.recv_multipart(zmq.NOBLOCK)
-                messages.append(msgpack.unpackb(payload, raw=False))
             except zmq.Again:
                 break
+            try:
+                messages.append(msgpack.unpackb(payload, raw=False))
+            except (msgpack.UnpackException, ValueError):
+                logger.warning("Skipping malformed display message")
         return messages

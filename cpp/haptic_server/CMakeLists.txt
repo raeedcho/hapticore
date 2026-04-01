@@ -35,6 +35,13 @@ CPMAddPackage(
   OPTIONS "CPPZMQ_BUILD_TESTS OFF"
 )
 
+CPMAddPackage(
+  NAME box2d
+  GITHUB_REPOSITORY erincatto/box2d
+  VERSION 3.0.0
+  OPTIONS "BOX2D_SAMPLES OFF" "BOX2D_UNIT_TESTS OFF" "BOX2D_DOCS OFF"
+)
+
 # ---------- Hardware mock option ----------
 option(MOCK_HARDWARE "Use mock DHD instead of real Force Dimension SDK" ON)
 
@@ -47,6 +54,7 @@ set(LIB_SOURCES
   src/force_fields/cart_pendulum_field.cpp
   src/force_fields/channel_field.cpp
   src/force_fields/composite_field.cpp
+  src/force_fields/physics_field.cpp
   src/force_fields/field_factory.cpp
   src/publisher_thread.cpp
   src/command_thread.cpp
@@ -68,6 +76,7 @@ target_include_directories(haptic_server_lib PUBLIC
 target_link_libraries(haptic_server_lib PUBLIC
   msgpack-cxx
   cppzmq
+  box2d
 )
 
 if(MOCK_HARDWARE)

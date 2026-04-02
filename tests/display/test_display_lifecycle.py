@@ -6,13 +6,12 @@ directory so ``pixi run test-unit`` never collects them.
 
 from __future__ import annotations
 
-pytest_importorskip = __import__("pytest").importorskip
-pytest_importorskip("psychopy")
+import pytest
+pytest.importorskip("psychopy")
 
 import time
 
 import msgpack
-import pytest
 import zmq
 
 from hapticore.core.config import DisplayConfig, ZMQConfig

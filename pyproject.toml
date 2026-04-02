@@ -53,6 +53,14 @@ mypy_path = "python"
 module = "msgpack.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "psychopy"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "psychopy.*"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
@@ -60,4 +68,5 @@ markers = [
     "interactive: tests requiring a human operator at the device (implies hardware)",
     "benchmark: benchmark tests",
     "slow: performance tests with strict thresholds (run on lab machine)",
+    "display: tests requiring PsychoPy and a display (or xvfb)",
 ]

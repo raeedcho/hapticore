@@ -86,7 +86,7 @@ Switch the active force field. Atomically swaps the field pointer seen by the ha
 {
     "type": "<field_type_name>",  // e.g. "null", "spring_damper", "constant",
                                   //       "workspace_limit", "cart_pendulum",
-                                  //       "channel", "composite"
+                                  //       "channel", "composite", "physics_world"
     "params": { ... }             // field-specific parameters (see below)
 }
 ```
@@ -226,6 +226,63 @@ A sum-of-fields. Its `compute()` returns the element-wise sum of all child field
 ```
 
 **field_state:** `{"children": [<child_0_field_state>, <child_1_field_state>, ...]}`
+
+### `physics_world`
+
+A Box2D v3.0 physics world with rigid bodies, collisions, and joints. The hand controls a kinematic body; Box2D simulates all other bodies and returns the reaction forces felt through the robot.
+
+**params:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `gravity` | array[2] float | `[0,0]` | World gravity `[gx, gy]` in m/s² |
+| `bodies` | array of body defs | (required) | List of body definitions (see below) |
+| `hand_body` | string | (required) | ID of the kinematic body controlled by the device |
+| `force_scale` | float | 1.0 | Multiplier applied to the output force |
+| `sub_steps` | int | 4 | Number of Box2D sub-steps per tick |
+
+**Body definition:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | string | (required) | Unique identifier for this body |
+| `type` | string | (required) | `"static"`, `"kinematic"`, or `"dynamic"` |
+| `shape` | map | (required) | Shape definition (see below) |
+| `position` | array[2] float | `[0,0]` | Initial position `[x, y]` in meters |
+| `mass` | float | 1.0 | Body mass in kg (dynamic bodies only) |
+| `restitution` | float | 0.0 | Bounce coefficient [0, 1] |
+| `friction` | float | 0.6 | Coulomb friction coefficient |
+| `linear_damping` | float | 0.0 | Linear velocity damping |
+| `angular_damping` | float | 0.0 | Angular velocity damping |
+| `joint` | map | — | Optional inline joint definition |
+
+**Shape definition:**
+
+Circle: `{"type": "circle", "radius": <float>}`
+Box: `{"type": "box", "width": <float>, "height": <float>}`
+
+**Joint definition (inline on a body):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `"revolute"` or `"prismatic"` |
+| `anchor` | string | Body ID to anchor to, or `"hand"` for the hand body |
+| `offset` | array[2] float | Local anchor offset `[ox, oy]` on the owner body |
+
+**Dynamics:** The hand body is driven kinematically to match the device XY position each tick. `b2World_Step` advances the simulation. Contact impulses and joint constraint forces acting on the hand body are summed and divided by `dt` to produce the output force. The Z component is always 0 (Box2D is 2D).
+
+**field_state:**
+
+```
+{
+    "bodies": {
+        "<body_id>": {"position": [x, y], "angle": <float>},
+        ...
+    }
+}
+```
+
+Only non-static bodies (dynamic and kinematic) are included in the output.
 
 ## Safety invariants
 

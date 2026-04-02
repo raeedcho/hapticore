@@ -6,9 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ---------- Compiler warnings ----------
-add_compile_options(-Wall -Wextra -Wpedantic -Werror)
-
 # ---------- CPM dependency manager ----------
 include(cmake/CPM.cmake)
 
@@ -69,6 +66,9 @@ endif()
 
 add_library(haptic_server_lib STATIC ${LIB_SOURCES})
 
+# ---------- Compiler warnings (target-specific, not applied to third-party deps) ----------
+target_compile_options(haptic_server_lib PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
 target_include_directories(haptic_server_lib PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -110,6 +110,7 @@ endif()
 
 # ---------- Main executable ----------
 add_executable(haptic_server src/main.cpp)
+target_compile_options(haptic_server PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(haptic_server PRIVATE haptic_server_lib)
 
 # On Linux, set CAP_SYS_NICE to allow real-time scheduling without sudo. Ignore failures since this is a best-effort optimization.

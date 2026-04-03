@@ -1598,14 +1598,15 @@ TEST(PhysicsFieldTest, GravityFall) {
 
 TEST(PhysicsFieldTest, ForceScaleMultiplier) {
     // With force_scale=2.0, forces should double compared to force_scale=1.0.
-    // We test by overlapping the hand with a static wall and comparing forces.
+    // We test by pushing the hand into a dynamic puck against a static wall.
+    // (Box2D needs at least one dynamic body to generate contact impulses.)
     auto make_world = [](double scale) {
         return pack_and_unpack([scale](msgpack::packer<msgpack::sbuffer>& pk) {
             pk.pack_map(4);
             pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
             pk.pack("hand_body"); pk.pack("hand");
             pk.pack("force_scale"); pk.pack(scale);
-            pk.pack("bodies"); pk.pack_array(2);
+            pk.pack("bodies"); pk.pack_array(3);
             // kinematic hand
             pk.pack_map(3);
             pk.pack("id"); pk.pack("hand");
@@ -1613,14 +1614,23 @@ TEST(PhysicsFieldTest, ForceScaleMultiplier) {
             pk.pack("shape"); pk.pack_map(2);
                 pk.pack("type"); pk.pack("circle");
                 pk.pack("radius"); pk.pack(0.02);
-            // static wall at x=0.05
+            // dynamic puck between hand and wall
+            pk.pack_map(5);
+            pk.pack("id"); pk.pack("puck");
+            pk.pack("type"); pk.pack("dynamic");
+            pk.pack("mass"); pk.pack(0.5);
+            pk.pack("position"); pk.pack_array(2); pk.pack(0.06); pk.pack(0.0);
+            pk.pack("shape"); pk.pack_map(2);
+                pk.pack("type"); pk.pack("circle");
+                pk.pack("radius"); pk.pack(0.02);
+            // static wall
             pk.pack_map(4);
             pk.pack("id"); pk.pack("wall");
             pk.pack("type"); pk.pack("static");
-            pk.pack("position"); pk.pack_array(2); pk.pack(0.05); pk.pack(0.0);
+            pk.pack("position"); pk.pack_array(2); pk.pack(0.10); pk.pack(0.0);
             pk.pack("shape"); pk.pack_map(3);
                 pk.pack("type"); pk.pack("box");
-                pk.pack("width"); pk.pack(0.01);
+                pk.pack("width"); pk.pack(0.02);
                 pk.pack("height"); pk.pack(0.2);
         });
     };
@@ -1629,10 +1639,10 @@ TEST(PhysicsFieldTest, ForceScaleMultiplier) {
     PhysicsField pf1;
     auto oh1 = make_world(1.0);
     ASSERT_TRUE(pf1.update_params(oh1.get()));
-    // Drive hand into the wall
+    // Drive hand into the puck
     Vec3 f1{};
-    for (int i = 0; i < 40; ++i) {
-        f1 = pf1.compute({0.04, 0.0, 0.0}, {0.5, 0.0, 0.0}, 0.00025);
+    for (int i = 0; i < 100; ++i) {
+        f1 = pf1.compute({0.05, 0.0, 0.0}, {1.0, 0.0, 0.0}, 0.00025);
     }
 
     // Force with scale=2.0
@@ -1640,56 +1650,69 @@ TEST(PhysicsFieldTest, ForceScaleMultiplier) {
     auto oh2 = make_world(2.0);
     ASSERT_TRUE(pf2.update_params(oh2.get()));
     Vec3 f2{};
-    for (int i = 0; i < 40; ++i) {
-        f2 = pf2.compute({0.04, 0.0, 0.0}, {0.5, 0.0, 0.0}, 0.00025);
+    for (int i = 0; i < 100; ++i) {
+        f2 = pf2.compute({0.05, 0.0, 0.0}, {1.0, 0.0, 0.0}, 0.00025);
     }
 
     // Both should have nonzero force, and scale=2 should be ~2x scale=1.
-    // Allow some tolerance for solver variation.
-    if (std::abs(f1[0]) > 1e-6) {
-        double ratio = f2[0] / f1[0];
-        EXPECT_NEAR(ratio, 2.0, 0.1);
-    }
+    ASSERT_LT(f1[0], -1e-6) << "Baseline force should be nonzero negative";
+    double ratio = f2[0] / f1[0];
+    EXPECT_NEAR(ratio, 2.0, 0.1);
 }
 
 TEST(PhysicsFieldTest, StaticWallCollisionForceDirection) {
-    // SAFETY-CRITICAL TEST: Hand pushed into a wall to the right should
-    // experience force in the negative-X direction (push back).
+    // SAFETY-CRITICAL TEST: Hand pushed into a dynamic puck pinned against a
+    // static wall should experience force in the negative-X direction (pushback).
+    //
+    // Box2D only generates contact impulses for contacts involving at least one
+    // dynamic body.  Kinematic-static contacts produce zero impulse.  So we use
+    // a dynamic puck sandwiched between the kinematic hand and the static wall.
     PhysicsField pf;
     auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
         pk.pack_map(3);
         pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
         pk.pack("hand_body"); pk.pack("hand");
-        pk.pack("bodies"); pk.pack_array(2);
-        // kinematic hand at origin
+        pk.pack("bodies"); pk.pack_array(3);
+        // kinematic hand — circle at the origin
         pk.pack_map(3);
         pk.pack("id"); pk.pack("hand");
         pk.pack("type"); pk.pack("kinematic");
         pk.pack("shape"); pk.pack_map(2);
             pk.pack("type"); pk.pack("circle");
             pk.pack("radius"); pk.pack(0.02);
-        // static wall at x=0.05 (to the right)
+        // dynamic puck — between hand and wall
+        pk.pack_map(5);
+        pk.pack("id"); pk.pack("puck");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(0.5);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.06); pk.pack(0.0);
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+        // static wall far right
         pk.pack_map(4);
         pk.pack("id"); pk.pack("wall");
         pk.pack("type"); pk.pack("static");
-        pk.pack("position"); pk.pack_array(2); pk.pack(0.05); pk.pack(0.0);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.10); pk.pack(0.0);
         pk.pack("shape"); pk.pack_map(3);
             pk.pack("type"); pk.pack("box");
-            pk.pack("width"); pk.pack(0.01);
+            pk.pack("width"); pk.pack(0.02);
             pk.pack("height"); pk.pack(0.2);
     });
     ASSERT_TRUE(pf.update_params(oh.get()));
 
-    // Move hand to the right, overlapping or nearly overlapping the wall.
-    // First settle with several steps.
+    // Drive the hand to the right so it pushes the puck against the wall.
+    // Hand edge at 0.05+0.02=0.07, puck center at 0.06, puck edge at 0.08,
+    // wall edge at 0.10-0.01=0.09.  Position the hand to compress the puck
+    // into the wall.
     Vec3 f{};
-    for (int i = 0; i < 40; ++i) {
-        f = pf.compute({0.04, 0.0, 0.0}, {0.5, 0.0, 0.0}, 0.00025);
+    for (int i = 0; i < 100; ++i) {
+        f = pf.compute({0.05, 0.0, 0.0}, {1.0, 0.0, 0.0}, 0.00025);
     }
-    // The wall is to the right of the hand — the reaction force on the hand
+    // The puck is to the right of the hand — the reaction force on the hand
     // must push it back to the left (negative X).
     EXPECT_LT(f[0], 0.0) << "Wall collision force should push hand left (negative X)";
-    // Y and Z should be near zero (no vertical wall surface interaction expected).
+    // Y and Z should be near zero.
     EXPECT_NEAR(f[1], 0.0, std::abs(f[0]) * 0.1 + 1e-6);
     EXPECT_DOUBLE_EQ(f[2], 0.0);
 }

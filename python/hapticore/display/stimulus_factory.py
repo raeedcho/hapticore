@@ -58,6 +58,17 @@ def update_stimulus(stim: BaseVisualStim, params: dict[str, Any]) -> None:
 
     Only updates keys that are present in *params*. Silently skips
     keys that don't apply to the stimulus type.
+
+    Supported keys:
+        position : list[float]
+            ``[x, y]`` in meters (lab frame).
+        color : list[float]
+            RGB triplet applied to ``fillColor``, ``lineColor``, and
+            ``color`` attributes when present on the stimulus.
+        opacity : float
+            Opacity (0.0–1.0).
+        orientation : float
+            Orientation in degrees (skipped for stimuli without ``ori``).
     """
     if "position" in params:
         stim.pos = params["position"]

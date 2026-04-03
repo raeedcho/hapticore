@@ -74,15 +74,11 @@ class TestCreateStimulus:
             create_stimulus(win, "unknown_type", {})
 
     def test_stimulus_types_constant(self) -> None:
-        assert len(STIMULUS_TYPES) == 8
-        assert "circle" in STIMULUS_TYPES
-        assert "rectangle" in STIMULUS_TYPES
-        assert "line" in STIMULUS_TYPES
-        assert "polygon" in STIMULUS_TYPES
-        assert "text" in STIMULUS_TYPES
-        assert "image" in STIMULUS_TYPES
-        assert "grating" in STIMULUS_TYPES
-        assert "dot_field" in STIMULUS_TYPES
+        expected = {
+            "circle", "rectangle", "line", "polygon",
+            "text", "image", "grating", "dot_field",
+        }
+        assert STIMULUS_TYPES == expected
 
 
 @pytest.mark.display

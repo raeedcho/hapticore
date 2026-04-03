@@ -47,10 +47,15 @@ class TestShowHideClear:
     def test_hide_removes_from_active(self) -> None:
         scene = self._make_scene()
         with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
-            mock_create.return_value = MagicMock()
+            stim = MagicMock()
+            mock_create.return_value = stim
             scene.show("target", {"type": "circle"})  # type: ignore[union-attr]
             scene.hide("target")  # type: ignore[union-attr]
             assert "target" not in scene.active_stimuli  # type: ignore[union-attr]
+            # draw_all should not attempt to draw the hidden stimulus
+            stim.draw.reset_mock()
+            scene.draw_all()  # type: ignore[union-attr]
+            stim.draw.assert_not_called()
 
     def test_hide_nonexistent_is_noop(self) -> None:
         scene = self._make_scene()

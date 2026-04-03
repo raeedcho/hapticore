@@ -6,9 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ---------- Compiler warnings ----------
-add_compile_options(-Wall -Wextra -Wpedantic -Werror)
-
 # ---------- CPM dependency manager ----------
 include(cmake/CPM.cmake)
 
@@ -35,6 +32,13 @@ CPMAddPackage(
   OPTIONS "CPPZMQ_BUILD_TESTS OFF"
 )
 
+CPMAddPackage(
+  NAME box2d
+  GITHUB_REPOSITORY erincatto/box2d
+  VERSION 3.0.0
+  OPTIONS "BOX2D_SAMPLES OFF" "BOX2D_UNIT_TESTS OFF" "BOX2D_DOCS OFF"
+)
+
 # ---------- Hardware mock option ----------
 option(MOCK_HARDWARE "Use mock DHD instead of real Force Dimension SDK" ON)
 
@@ -47,6 +51,7 @@ set(LIB_SOURCES
   src/force_fields/cart_pendulum_field.cpp
   src/force_fields/channel_field.cpp
   src/force_fields/composite_field.cpp
+  src/force_fields/physics_field.cpp
   src/force_fields/field_factory.cpp
   src/publisher_thread.cpp
   src/command_thread.cpp
@@ -61,6 +66,9 @@ endif()
 
 add_library(haptic_server_lib STATIC ${LIB_SOURCES})
 
+# ---------- Compiler warnings (target-specific, not applied to third-party deps) ----------
+target_compile_options(haptic_server_lib PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
 target_include_directories(haptic_server_lib PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -68,6 +76,7 @@ target_include_directories(haptic_server_lib PUBLIC
 target_link_libraries(haptic_server_lib PUBLIC
   msgpack-cxx
   cppzmq
+  box2d
 )
 
 if(MOCK_HARDWARE)
@@ -101,6 +110,7 @@ endif()
 
 # ---------- Main executable ----------
 add_executable(haptic_server src/main.cpp)
+target_compile_options(haptic_server PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(haptic_server PRIVATE haptic_server_lib)
 
 # On Linux, set CAP_SYS_NICE to allow real-time scheduling without sudo. Ignore failures since this is a best-effort optimization.

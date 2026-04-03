@@ -6,6 +6,7 @@
 #include "cart_pendulum_field.hpp"
 #include "channel_field.hpp"
 #include "composite_field.hpp"
+#include "physics_field.hpp"
 
 std::unique_ptr<ForceField> create_field(const std::string& type_name) {
     if (type_name == "null") return std::make_unique<NullField>();
@@ -15,5 +16,6 @@ std::unique_ptr<ForceField> create_field(const std::string& type_name) {
     if (type_name == "cart_pendulum") return std::make_unique<CartPendulumField>();
     if (type_name == "channel") return std::make_unique<ChannelField>();
     if (type_name == "composite") return std::make_unique<CompositeField>();
+    if (type_name == "physics_world") return std::make_unique<PhysicsField>();
     return nullptr;
 }

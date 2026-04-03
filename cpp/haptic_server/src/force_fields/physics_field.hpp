@@ -2,6 +2,7 @@
 #include "force_field.hpp"
 
 #include <array>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -18,13 +19,29 @@ struct BodyInfo {
     float shape_radius = 0.0f;
     float shape_width = 0.0f;
     float shape_height = 0.0f;
+    // Initial pose for reset()
+    float init_x = 0.0f;
+    float init_y = 0.0f;
+    float init_angle = 0.0f;
+};
+
+/// Deferred joint definition — stored during body parsing, resolved after
+/// all bodies are created so that body ordering in the array doesn't matter.
+struct PendingJoint {
+    std::string owner_body_id;
+    std::string anchor_str;      // body ID or "hand"
+    std::string type;            // "revolute" or "prismatic"
+    float offset_x = 0.0f;
+    float offset_y = 0.0f;
 };
 
 /// Per-joint bookkeeping for force extraction.
 struct JointInfo {
     b2JointId joint_id{};
-    std::string owner_body_id;  // the body that defined this joint
-    std::string type;           // "revolute" or "prismatic"
+    b2BodyId body_id_a{};        // for determining hand-side sign
+    b2BodyId body_id_b{};
+    std::string owner_body_id;   // the body that defined this joint
+    std::string type;            // "revolute" or "prismatic"
 };
 
 /// PhysicsField wraps a Box2D v3.0 world for 2D rigid-body dynamics.
@@ -57,15 +74,15 @@ public:
 private:
     void destroy_world();
     bool build_world(const msgpack::object& params);
-    bool parse_body(const msgpack::object& body_obj);
-    bool parse_joint(const msgpack::object& joint_obj,
-                     const std::string& owner_body_id,
-                     b2BodyId owner_b2_id);
+    bool parse_body(const msgpack::object& body_obj,
+                    std::set<std::string>& seen_ids);
+    bool resolve_pending_joints();
 
     b2WorldId world_id_{};
     bool world_valid_ = false;
 
     std::vector<BodyInfo> bodies_;
+    std::vector<PendingJoint> pending_joints_;
     std::vector<JointInfo> joints_;
     std::string hand_body_id_;
     int hand_body_idx_ = -1;       // index into bodies_

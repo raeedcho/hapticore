@@ -269,17 +269,23 @@ Box: `{"type": "box", "width": <float>, "height": <float>}`
 | `anchor` | string | Body ID to anchor to, or `"hand"` for the hand body |
 | `offset` | array[2] float | Local anchor offset `[ox, oy]` on the owner body |
 
-**Dynamics:** The hand body is driven kinematically to match the device XY position each tick. `b2World_Step` advances the simulation. Contact impulses and joint constraint forces acting on the hand body are summed and divided by `dt` to produce the output force. The Z component is always 0 (Box2D is 2D).
+**Dynamics:** The hand body is driven kinematically to match the device XY position each tick. `b2World_Step` advances the simulation. Contact impulses (normal and tangent, in N·s) acting on the hand body are summed and divided by `dt` to produce contact forces. Joint constraint forces (already in Newtons, as Box2D internally multiplies solver impulses by `1/dt`) are added directly. The Z component is always 0 (Box2D is 2D). Configurations where `hand_body` references a `"dynamic"` body are rejected — dynamic hand bodies require virtual coupling (ADR-010), which is not yet implemented.
 
 **field_state:**
 
 ```
 {
     "bodies": {
-        "<body_id>": {"position": [x, y], "angle": <float>},
+        "<body_id>": {
+            "position": [x, y],
+            "angle": <float>,
+            "linear_velocity": [vx, vy],
+            "shape": {"type": "circle", "radius": <float>}
+        },
         ...
     }
 }
+```
 ```
 
 Only non-static bodies (dynamic and kinematic) are included in the output.

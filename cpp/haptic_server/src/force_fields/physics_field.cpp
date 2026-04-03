@@ -2,6 +2,8 @@
 #include "msgpack_helpers.hpp"
 
 #include <cmath>
+#include <iostream>
+#include <set>
 #include <string>
 
 PhysicsField::PhysicsField() = default;
@@ -16,6 +18,7 @@ void PhysicsField::destroy_world() {
         world_valid_ = false;
     }
     bodies_.clear();
+    pending_joints_.clear();
     joints_.clear();
     hand_body_idx_ = -1;
 }
@@ -27,12 +30,14 @@ std::string PhysicsField::name() const {
 }
 
 void PhysicsField::reset() {
-    // Reset all dynamic bodies to origin with zero velocity.
-    // Kinematic body will be re-synced on next compute().
+    // Reset all dynamic bodies to their configured initial positions with zero
+    // velocity. Kinematic body will be re-synced on next compute().
     if (!world_valid_) return;
     for (auto& bi : bodies_) {
         if (bi.type == b2_dynamicBody) {
-            b2Body_SetTransform(bi.body_id, {0.0f, 0.0f}, b2MakeRot(0.0f));
+            b2Body_SetTransform(bi.body_id,
+                                {bi.init_x, bi.init_y},
+                                b2MakeRot(bi.init_angle));
             b2Body_SetLinearVelocity(bi.body_id, {0.0f, 0.0f});
             b2Body_SetAngularVelocity(bi.body_id, 0.0f);
         }
@@ -60,11 +65,12 @@ Vec3 PhysicsField::compute(const Vec3& pos, const Vec3& vel, double dt) {
     // Phase 2: Step the Box2D world.
     b2World_Step(world_id_, static_cast<float>(dt), sub_steps_);
 
-    // Phase 3: Extract contact forces on the hand body.
-    // Sum normalImpulse from all contact manifolds touching the hand body.
-    // Box2D reports impulses (N·s); divide by dt to get force (N).
-    double fx = 0.0;
-    double fy = 0.0;
+    // Phase 3: Extract forces on the hand body from contacts and joints.
+    //
+    // Contact data: Box2D reports contact impulses in N·s (normalImpulse,
+    // tangentImpulse). We accumulate them and divide by dt to get force (N).
+    double contact_fx = 0.0;
+    double contact_fy = 0.0;
 
     int capacity = b2Body_GetContactCapacity(hand.body_id);
     if (capacity > MAX_CONTACTS) capacity = MAX_CONTACTS;
@@ -80,38 +86,64 @@ Vec3 PhysicsField::compute(const Vec3& pos, const Vec3& vel, double dt) {
         double sign = (bodyA.index1 == hand.body_id.index1 &&
                        bodyA.world0 == hand.body_id.world0 &&
                        bodyA.revision == hand.body_id.revision) ? -1.0 : 1.0;
+        double nx = static_cast<double>(m.normal.x);
+        double ny = static_cast<double>(m.normal.y);
+        // Tangent is perpendicular to normal: t = (-ny, nx)
+        double tx = -ny;
+        double ty = nx;
         for (int j = 0; j < m.pointCount; ++j) {
-            double impulse = static_cast<double>(
+            double ni = static_cast<double>(
                 m.points[static_cast<size_t>(j)].normalImpulse);
-            fx += sign * static_cast<double>(m.normal.x) * impulse;
-            fy += sign * static_cast<double>(m.normal.y) * impulse;
+            double ti = static_cast<double>(
+                m.points[static_cast<size_t>(j)].tangentImpulse);
+            contact_fx += sign * (nx * ni + tx * ti);
+            contact_fy += sign * (ny * ni + ty * ti);
         }
     }
 
-    // Also sum joint constraint forces acting on the hand body.
+    // Convert contact impulses to forces.
+    contact_fx /= dt;
+    contact_fy /= dt;
+
+    // Joint constraint forces: b2Joint_GetConstraintForce() already returns
+    // force in Newtons (internally it multiplies the solver impulse by inv_h).
+    // Only include joints where the hand body is one of the two connected
+    // bodies; other joints (e.g., B-C in a chain hand→B→C) don't act on hand.
+    double joint_fx = 0.0;
+    double joint_fy = 0.0;
+
     for (const auto& ji : joints_) {
+        bool hand_is_a = (ji.body_id_a.index1 == hand.body_id.index1 &&
+                          ji.body_id_a.world0 == hand.body_id.world0 &&
+                          ji.body_id_a.revision == hand.body_id.revision);
+        bool hand_is_b = (ji.body_id_b.index1 == hand.body_id.index1 &&
+                          ji.body_id_b.world0 == hand.body_id.world0 &&
+                          ji.body_id_b.revision == hand.body_id.revision);
+        if (!hand_is_a && !hand_is_b) continue;
+
         b2Vec2 cf = b2Joint_GetConstraintForce(ji.joint_id);
-        // Joint constraint force is the force applied to bodyB.
-        // If the hand is bodyA of the joint, the reaction on hand = -cf.
-        // We always set hand as bodyA when building joints, so negate.
-        fx -= static_cast<double>(cf.x);
-        fy -= static_cast<double>(cf.y);
+        // GetConstraintForce returns the force applied to bodyB.
+        // Reaction on bodyA is the negative of that.
+        if (hand_is_a) {
+            joint_fx -= static_cast<double>(cf.x);
+            joint_fy -= static_cast<double>(cf.y);
+        } else {
+            joint_fx += static_cast<double>(cf.x);
+            joint_fy += static_cast<double>(cf.y);
+        }
     }
 
-    // Convert impulse to force (Box2D normalImpulse is already impulse = F*dt).
-    if (dt > 0.0) {
-        fx /= dt;
-        fy /= dt;
-    }
+    double fx = (contact_fx + joint_fx) * force_scale_;
+    double fy = (contact_fy + joint_fy) * force_scale_;
 
-    // Apply force scale and return (Z=0 since Box2D is 2D).
-    return {fx * force_scale_, fy * force_scale_, 0.0};
+    // Z=0 since Box2D is 2D.
+    return {fx, fy, 0.0};
 }
 
 // ---- pack_state ----
 
 void PhysicsField::pack_state(msgpack::packer<msgpack::sbuffer>& pk) const {
-    // Pack a "bodies" map: { "body_id": { "position": [x,y], "angle": a }, ... }
+    // Pack a "bodies" map with position, angle, linear_velocity, and shape.
     pk.pack_map(1);
     pk.pack("bodies");
 
@@ -125,7 +157,8 @@ void PhysicsField::pack_state(msgpack::packer<msgpack::sbuffer>& pk) const {
     for (const auto& bi : bodies_) {
         if (bi.type == b2_staticBody) continue;
         pk.pack(bi.id);
-        pk.pack_map(2);
+        pk.pack_map(4);
+
         pk.pack("position");
         if (world_valid_) {
             b2Vec2 p = b2Body_GetPosition(bi.body_id);
@@ -137,12 +170,37 @@ void PhysicsField::pack_state(msgpack::packer<msgpack::sbuffer>& pk) const {
             pk.pack(0.0);
             pk.pack(0.0);
         }
+
         pk.pack("angle");
         if (world_valid_) {
             float angle = b2Rot_GetAngle(b2Body_GetRotation(bi.body_id));
             pk.pack(static_cast<double>(angle));
         } else {
             pk.pack(0.0);
+        }
+
+        pk.pack("linear_velocity");
+        if (world_valid_) {
+            b2Vec2 v = b2Body_GetLinearVelocity(bi.body_id);
+            pk.pack_array(2);
+            pk.pack(static_cast<double>(v.x));
+            pk.pack(static_cast<double>(v.y));
+        } else {
+            pk.pack_array(2);
+            pk.pack(0.0);
+            pk.pack(0.0);
+        }
+
+        pk.pack("shape");
+        if (bi.shape_type == "circle") {
+            pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(static_cast<double>(bi.shape_radius));
+        } else {
+            pk.pack_map(3);
+            pk.pack("type"); pk.pack("box");
+            pk.pack("width"); pk.pack(static_cast<double>(bi.shape_width));
+            pk.pack("height"); pk.pack(static_cast<double>(bi.shape_height));
         }
     }
 }
@@ -151,15 +209,56 @@ void PhysicsField::pack_state(msgpack::packer<msgpack::sbuffer>& pk) const {
 
 bool PhysicsField::update_params(const msgpack::object& params) {
     if (params.type != msgpack::type::MAP) return false;
-    return build_world(params);
+    // Build into a temporary state; only swap if successful.
+    // Save current state so we can restore on failure.
+    auto old_world_id = world_id_;
+    bool old_world_valid = world_valid_;
+    auto old_bodies = std::move(bodies_);
+    auto old_joints = std::move(joints_);
+    auto old_pending = std::move(pending_joints_);
+    auto old_hand_id = hand_body_id_;
+    int old_hand_idx = hand_body_idx_;
+    double old_force_scale = force_scale_;
+    float old_gx = gravity_x_;
+    float old_gy = gravity_y_;
+    int old_sub = sub_steps_;
+
+    // Clear so build_world starts fresh (without destroying the old Box2D world yet)
+    world_valid_ = false;
+    bodies_.clear();
+    joints_.clear();
+    pending_joints_.clear();
+    hand_body_idx_ = -1;
+
+    if (build_world(params)) {
+        // Success — destroy old world
+        if (old_world_valid) {
+            b2DestroyWorld(old_world_id);
+        }
+        return true;
+    }
+
+    // Failure — restore previous state
+    if (world_valid_) {
+        b2DestroyWorld(world_id_);
+    }
+    world_id_ = old_world_id;
+    world_valid_ = old_world_valid;
+    bodies_ = std::move(old_bodies);
+    joints_ = std::move(old_joints);
+    pending_joints_ = std::move(old_pending);
+    hand_body_id_ = old_hand_id;
+    hand_body_idx_ = old_hand_idx;
+    force_scale_ = old_force_scale;
+    gravity_x_ = old_gx;
+    gravity_y_ = old_gy;
+    sub_steps_ = old_sub;
+    return false;
 }
 
 // ---- build_world ----
 
 bool PhysicsField::build_world(const msgpack::object& params) {
-    // Tear down any existing world first.
-    destroy_world();
-
     auto map = params.via.map;
 
     // Extract top-level keys: gravity, bodies, hand_body, force_scale, sub_steps
@@ -187,9 +286,10 @@ bool PhysicsField::build_world(const msgpack::object& params) {
             if (val.type != msgpack::type::STR) return false;
             hand_body = std::string(val.via.str.ptr, val.via.str.size);
         } else if (ks == "force_scale") {
-            haptic::try_get_double(val, fscale);
+            if (!haptic::try_get_double(val, fscale)) return false;
         } else if (ks == "sub_steps") {
-            haptic::try_get_double(val, substeps_d);
+            if (!haptic::try_get_double(val, substeps_d)) return false;
+            if (std::trunc(substeps_d) != substeps_d) return false;
         }
     }
 
@@ -207,11 +307,11 @@ bool PhysicsField::build_world(const msgpack::object& params) {
     if (sub_steps_ < 1) sub_steps_ = 1;
     hand_body_id_ = hand_body;
 
-    // Create bodies.
+    // Create bodies; track IDs for uniqueness.
+    std::set<std::string> seen_ids;
     auto arr = bodies_arr->via.array;
     for (uint32_t i = 0; i < arr.size; ++i) {
-        if (!parse_body(arr.ptr[i])) {
-            destroy_world();
+        if (!parse_body(arr.ptr[i], seen_ids)) {
             return false;
         }
     }
@@ -225,7 +325,18 @@ bool PhysicsField::build_world(const msgpack::object& params) {
         }
     }
     if (hand_body_idx_ < 0) {
-        destroy_world();
+        return false;
+    }
+
+    // Reject dynamic hand body — requires virtual coupling (ADR-010).
+    if (bodies_[static_cast<size_t>(hand_body_idx_)].type == b2_dynamicBody) {
+        std::cerr << "PhysicsField: dynamic hand body requires virtual coupling "
+                  << "(not yet implemented)\n";
+        return false;
+    }
+
+    // Resolve deferred joints (second pass — all bodies exist now).
+    if (!resolve_pending_joints()) {
         return false;
     }
 
@@ -234,7 +345,8 @@ bool PhysicsField::build_world(const msgpack::object& params) {
 
 // ---- parse_body ----
 
-bool PhysicsField::parse_body(const msgpack::object& body_obj) {
+bool PhysicsField::parse_body(const msgpack::object& body_obj,
+                               std::set<std::string>& seen_ids) {
     if (body_obj.type != msgpack::type::MAP) return false;
     auto map = body_obj.via.map;
 
@@ -248,11 +360,6 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj) {
     double friction_val = 0.6;
     double linear_damping_val = 0.0;
     double angular_damping_val = 0.0;
-    bool has_mass = false;
-    bool has_restitution = false;
-    bool has_friction = false;
-    bool has_linear_damping = false;
-    bool has_angular_damping = false;
 
     for (uint32_t i = 0; i < map.size; ++i) {
         auto& key = map.ptr[i].key;
@@ -277,23 +384,21 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj) {
             if (!haptic::try_get_double(val.via.array.ptr[1], py)) return false;
         } else if (ks == "mass") {
             if (!haptic::try_get_double(val, mass_val)) return false;
-            has_mass = true;
         } else if (ks == "restitution") {
             if (!haptic::try_get_double(val, restitution_val)) return false;
-            has_restitution = true;
         } else if (ks == "friction") {
             if (!haptic::try_get_double(val, friction_val)) return false;
-            has_friction = true;
         } else if (ks == "linear_damping") {
             if (!haptic::try_get_double(val, linear_damping_val)) return false;
-            has_linear_damping = true;
         } else if (ks == "angular_damping") {
             if (!haptic::try_get_double(val, angular_damping_val)) return false;
-            has_angular_damping = true;
         }
     }
 
     if (id.empty() || type_str.empty() || !shape_obj) return false;
+
+    // Reject duplicate body IDs.
+    if (!seen_ids.insert(id).second) return false;
 
     // Map type string to b2BodyType.
     b2BodyType b2type;
@@ -306,8 +411,8 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj) {
     b2BodyDef body_def = b2DefaultBodyDef();
     body_def.type = b2type;
     body_def.position = {static_cast<float>(px), static_cast<float>(py)};
-    if (has_linear_damping) body_def.linearDamping = static_cast<float>(linear_damping_val);
-    if (has_angular_damping) body_def.angularDamping = static_cast<float>(angular_damping_val);
+    body_def.linearDamping = static_cast<float>(linear_damping_val);
+    body_def.angularDamping = static_cast<float>(angular_damping_val);
 
     b2BodyId b2body = b2CreateBody(world_id_, &body_def);
 
@@ -338,21 +443,20 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj) {
         }
     }
 
-    // Create shape def with physics properties.
+    // Create shape def with physics properties — always apply documented defaults.
     b2ShapeDef shape_def = b2DefaultShapeDef();
-    if (has_restitution) shape_def.restitution = static_cast<float>(restitution_val);
-    if (has_friction) shape_def.friction = static_cast<float>(friction_val);
+    shape_def.restitution = static_cast<float>(restitution_val);
+    shape_def.friction = static_cast<float>(friction_val);
     // Enable contact events so we can read contact data on the hand body.
     shape_def.enableContactEvents = true;
 
-    // For dynamic bodies with explicit mass: set density = mass / area.
-    // For kinematic/static bodies density doesn't matter.
+    // For dynamic bodies: set density = mass / area (default mass = 1.0 kg).
     if (shape_type == "circle") {
         if (shape_radius <= 0.0) return false;
         b2Circle circle;
         circle.center = {0.0f, 0.0f};
         circle.radius = static_cast<float>(shape_radius);
-        if (has_mass && b2type == b2_dynamicBody) {
+        if (b2type == b2_dynamicBody) {
             double area = 3.14159265358979 * shape_radius * shape_radius;
             shape_def.density = static_cast<float>(mass_val / area);
         }
@@ -362,7 +466,7 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj) {
         float hx = static_cast<float>(shape_width) * 0.5f;
         float hy = static_cast<float>(shape_height) * 0.5f;
         b2Polygon box = b2MakeBox(hx, hy);
-        if (has_mass && b2type == b2_dynamicBody) {
+        if (b2type == b2_dynamicBody) {
             double area = shape_width * shape_height;
             shape_def.density = static_cast<float>(mass_val / area);
         }
@@ -371,7 +475,7 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj) {
         return false;
     }
 
-    // Store body info.
+    // Store body info (including initial pose for reset).
     BodyInfo bi;
     bi.id = id;
     bi.body_id = b2body;
@@ -380,98 +484,103 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj) {
     bi.shape_radius = static_cast<float>(shape_radius);
     bi.shape_width = static_cast<float>(shape_width);
     bi.shape_height = static_cast<float>(shape_height);
+    bi.init_x = static_cast<float>(px);
+    bi.init_y = static_cast<float>(py);
+    bi.init_angle = 0.0f;
     bodies_.push_back(bi);
 
-    // Handle inline joint definition.
+    // Defer joint creation to second pass (after all bodies exist).
     if (joint_obj) {
-        if (!parse_joint(*joint_obj, id, b2body)) return false;
+        if (joint_obj->type != msgpack::type::MAP) return false;
+        auto jmap = joint_obj->via.map;
+
+        PendingJoint pj;
+        pj.owner_body_id = id;
+
+        for (uint32_t i = 0; i < jmap.size; ++i) {
+            auto& jk = jmap.ptr[i].key;
+            auto& jv = jmap.ptr[i].val;
+            if (jk.type != msgpack::type::STR) continue;
+            std::string jks(jk.via.str.ptr, jk.via.str.size);
+
+            if (jks == "type") {
+                if (jv.type != msgpack::type::STR) return false;
+                pj.type = std::string(jv.via.str.ptr, jv.via.str.size);
+            } else if (jks == "anchor") {
+                if (jv.type != msgpack::type::STR) return false;
+                pj.anchor_str = std::string(jv.via.str.ptr, jv.via.str.size);
+            } else if (jks == "offset") {
+                if (jv.type != msgpack::type::ARRAY || jv.via.array.size != 2)
+                    return false;
+                double ox = 0.0, oy = 0.0;
+                haptic::try_get_double(jv.via.array.ptr[0], ox);
+                haptic::try_get_double(jv.via.array.ptr[1], oy);
+                pj.offset_x = static_cast<float>(ox);
+                pj.offset_y = static_cast<float>(oy);
+            }
+        }
+
+        if (pj.type.empty() || pj.anchor_str.empty()) return false;
+        pending_joints_.push_back(pj);
     }
 
     return true;
 }
 
-// ---- parse_joint ----
+// ---- resolve_pending_joints (second pass after all bodies are created) ----
 
-bool PhysicsField::parse_joint(const msgpack::object& joint_obj,
-                               const std::string& owner_body_id,
-                               b2BodyId owner_b2_id) {
-    if (joint_obj.type != msgpack::type::MAP) return false;
-    auto map = joint_obj.via.map;
-
-    std::string jtype;
-    std::string anchor_str;  // "hand" or a body id
-    double offset_x = 0.0, offset_y = 0.0;
-
-    for (uint32_t i = 0; i < map.size; ++i) {
-        auto& key = map.ptr[i].key;
-        auto& val = map.ptr[i].val;
-        if (key.type != msgpack::type::STR) continue;
-        std::string ks(key.via.str.ptr, key.via.str.size);
-
-        if (ks == "type") {
-            if (val.type != msgpack::type::STR) return false;
-            jtype = std::string(val.via.str.ptr, val.via.str.size);
-        } else if (ks == "anchor") {
-            if (val.type != msgpack::type::STR) return false;
-            anchor_str = std::string(val.via.str.ptr, val.via.str.size);
-        } else if (ks == "offset") {
-            if (val.type != msgpack::type::ARRAY || val.via.array.size != 2)
-                return false;
-            haptic::try_get_double(val.via.array.ptr[0], offset_x);
-            haptic::try_get_double(val.via.array.ptr[1], offset_y);
-        }
-    }
-
-    if (jtype.empty() || anchor_str.empty()) return false;
-
-    // Resolve anchor body.
-    b2BodyId anchor_body{};
-    bool found = false;
-
-    if (anchor_str == "hand") {
-        // Anchor to the hand body. It must already exist.
+bool PhysicsField::resolve_pending_joints() {
+    for (const auto& pj : pending_joints_) {
+        // Resolve owner body.
+        b2BodyId owner_b2{};
+        bool owner_found = false;
         for (const auto& bi : bodies_) {
-            if (bi.id == hand_body_id_) {
-                anchor_body = bi.body_id;
-                found = true;
+            if (bi.id == pj.owner_body_id) {
+                owner_b2 = bi.body_id;
+                owner_found = true;
                 break;
             }
         }
-    } else {
+        if (!owner_found) return false;
+
+        // Resolve anchor body.
+        b2BodyId anchor_b2{};
+        bool anchor_found = false;
+        std::string anchor_id = pj.anchor_str;
+        if (anchor_id == "hand") anchor_id = hand_body_id_;
         for (const auto& bi : bodies_) {
-            if (bi.id == anchor_str) {
-                anchor_body = bi.body_id;
-                found = true;
+            if (bi.id == anchor_id) {
+                anchor_b2 = bi.body_id;
+                anchor_found = true;
                 break;
             }
         }
+        if (!anchor_found) return false;
+
+        b2Vec2 local_anchor_owner = {pj.offset_x, pj.offset_y};
+
+        if (pj.type == "revolute") {
+            b2RevoluteJointDef jd = b2DefaultRevoluteJointDef();
+            jd.bodyIdA = anchor_b2;
+            jd.bodyIdB = owner_b2;
+            jd.localAnchorA = {0.0f, 0.0f};
+            jd.localAnchorB = local_anchor_owner;
+            b2JointId jid = b2CreateRevoluteJoint(world_id_, &jd);
+            joints_.push_back({jid, anchor_b2, owner_b2,
+                               pj.owner_body_id, pj.type});
+        } else if (pj.type == "prismatic") {
+            b2PrismaticJointDef jd = b2DefaultPrismaticJointDef();
+            jd.bodyIdA = anchor_b2;
+            jd.bodyIdB = owner_b2;
+            jd.localAnchorA = {0.0f, 0.0f};
+            jd.localAnchorB = local_anchor_owner;
+            jd.localAxisA = {1.0f, 0.0f};  // default: slide along X
+            b2JointId jid = b2CreatePrismaticJoint(world_id_, &jd);
+            joints_.push_back({jid, anchor_b2, owner_b2,
+                               pj.owner_body_id, pj.type});
+        } else {
+            return false;
+        }
     }
-    if (!found) return false;
-
-    b2Vec2 local_anchor_owner = {static_cast<float>(offset_x),
-                                  static_cast<float>(offset_y)};
-
-    if (jtype == "revolute") {
-        b2RevoluteJointDef jd = b2DefaultRevoluteJointDef();
-        // bodyA = anchor (hand), bodyB = owner (the body with the joint def)
-        jd.bodyIdA = anchor_body;
-        jd.bodyIdB = owner_b2_id;
-        jd.localAnchorA = {0.0f, 0.0f};
-        jd.localAnchorB = local_anchor_owner;
-        b2JointId jid = b2CreateRevoluteJoint(world_id_, &jd);
-        joints_.push_back({jid, owner_body_id, jtype});
-    } else if (jtype == "prismatic") {
-        b2PrismaticJointDef jd = b2DefaultPrismaticJointDef();
-        jd.bodyIdA = anchor_body;
-        jd.bodyIdB = owner_b2_id;
-        jd.localAnchorA = {0.0f, 0.0f};
-        jd.localAnchorB = local_anchor_owner;
-        jd.localAxisA = {1.0f, 0.0f};  // default: slide along X
-        b2JointId jid = b2CreatePrismaticJoint(world_id_, &jd);
-        joints_.push_back({jid, owner_body_id, jtype});
-    } else {
-        return false;
-    }
-
     return true;
 }

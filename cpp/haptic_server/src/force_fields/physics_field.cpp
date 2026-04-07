@@ -83,9 +83,7 @@ Vec3 PhysicsField::compute(const Vec3& pos, const Vec3& vel, double dt) {
         // If hand owns shapeA, the reaction on the hand is opposite the normal.
         // If hand owns shapeB, the reaction on the hand is along the normal.
         b2BodyId bodyA = b2Shape_GetBody(cd.shapeIdA);
-        double sign = (bodyA.index1 == hand.body_id.index1 &&
-                       bodyA.world0 == hand.body_id.world0 &&
-                       bodyA.revision == hand.body_id.revision) ? -1.0 : 1.0;
+        double sign = B2_ID_EQUALS(bodyA, hand.body_id) ? -1.0 : 1.0;
         double nx = static_cast<double>(m.normal.x);
         double ny = static_cast<double>(m.normal.y);
         // Tangent is perpendicular to normal: t = (-ny, nx)
@@ -113,12 +111,8 @@ Vec3 PhysicsField::compute(const Vec3& pos, const Vec3& vel, double dt) {
     double joint_fy = 0.0;
 
     for (const auto& ji : joints_) {
-        bool hand_is_a = (ji.body_id_a.index1 == hand.body_id.index1 &&
-                          ji.body_id_a.world0 == hand.body_id.world0 &&
-                          ji.body_id_a.revision == hand.body_id.revision);
-        bool hand_is_b = (ji.body_id_b.index1 == hand.body_id.index1 &&
-                          ji.body_id_b.world0 == hand.body_id.world0 &&
-                          ji.body_id_b.revision == hand.body_id.revision);
+        bool hand_is_a = B2_ID_EQUALS(ji.body_id_a, hand.body_id);
+        bool hand_is_b = B2_ID_EQUALS(ji.body_id_b, hand.body_id);
         if (!hand_is_a && !hand_is_b) continue;
 
         b2Vec2 cf = b2Joint_GetConstraintForce(ji.joint_id);
@@ -266,7 +260,7 @@ bool PhysicsField::build_world(const msgpack::object& params) {
     std::string hand_body;
     double gx = 0.0, gy = 0.0;
     double fscale = 1.0;
-    double substeps_d = 4.0;
+    double substeps_d = 1.0;
 
     for (uint32_t i = 0; i < map.size; ++i) {
         auto& key = map.ptr[i].key;
@@ -357,9 +351,10 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj,
     double px = 0.0, py = 0.0;
     double mass_val = 1.0;
     double restitution_val = 0.0;
-    double friction_val = 0.6;
+    double friction_val = 0.3;
     double linear_damping_val = 0.0;
     double angular_damping_val = 0.0;
+    bool fixed_rotation = false;
 
     for (uint32_t i = 0; i < map.size; ++i) {
         auto& key = map.ptr[i].key;
@@ -392,6 +387,9 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj,
             if (!haptic::try_get_double(val, linear_damping_val)) return false;
         } else if (ks == "angular_damping") {
             if (!haptic::try_get_double(val, angular_damping_val)) return false;
+        } else if (ks == "fixed_rotation") {
+            if (val.type != msgpack::type::BOOLEAN) return false;
+            fixed_rotation = val.via.boolean;
         }
     }
 
@@ -413,6 +411,7 @@ bool PhysicsField::parse_body(const msgpack::object& body_obj,
     body_def.position = {static_cast<float>(px), static_cast<float>(py)};
     body_def.linearDamping = static_cast<float>(linear_damping_val);
     body_def.angularDamping = static_cast<float>(angular_damping_val);
+    body_def.fixedRotation = fixed_rotation;
 
     b2BodyId b2body = b2CreateBody(world_id_, &body_def);
 

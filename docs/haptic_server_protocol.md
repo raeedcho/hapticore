@@ -239,7 +239,7 @@ A Box2D v3.0 physics world with rigid bodies, collisions, and joints. The hand c
 | `bodies` | array of body defs | (required) | List of body definitions (see below) |
 | `hand_body` | string | (required) | ID of the kinematic body controlled by the device |
 | `force_scale` | float | 1.0 | Multiplier applied to the output force |
-| `sub_steps` | int | 4 | Number of Box2D sub-steps per tick |
+| `sub_steps` | int | 1 | Number of Box2D sub-steps per tick |
 
 **Body definition:**
 
@@ -251,7 +251,8 @@ A Box2D v3.0 physics world with rigid bodies, collisions, and joints. The hand c
 | `position` | array[2] float | `[0,0]` | Initial position `[x, y]` in meters |
 | `mass` | float | 1.0 | Body mass in kg (dynamic bodies only) |
 | `restitution` | float | 0.0 | Bounce coefficient [0, 1] |
-| `friction` | float | 0.6 | Coulomb friction coefficient |
+| `friction` | float | 0.3 | Coulomb friction coefficient |
+| `fixed_rotation` | bool | false | If true, body cannot rotate |
 | `linear_damping` | float | 0.0 | Linear velocity damping |
 | `angular_damping` | float | 0.0 | Angular velocity damping |
 | `joint` | map | — | Optional inline joint definition |
@@ -285,7 +286,6 @@ Box: `{"type": "box", "width": <float>, "height": <float>}`
         ...
     }
 }
-```
 ```
 
 Only non-static bodies (dynamic and kinematic) are included in the output.

@@ -95,5 +95,5 @@ private:
     // Cached gravity and sub-step count for tuning
     float gravity_x_ = 0.0f;
     float gravity_y_ = 0.0f;
-    int sub_steps_ = 4;
+    int sub_steps_ = 1;
 };

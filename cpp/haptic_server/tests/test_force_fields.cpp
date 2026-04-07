@@ -1717,6 +1717,131 @@ TEST(PhysicsFieldTest, StaticWallCollisionForceDirection) {
     EXPECT_DOUBLE_EQ(f[2], 0.0);
 }
 
+TEST(PhysicsFieldTest, DynamicBodyReaction) {
+    // Move the kinematic hand into a free dynamic puck (no wall).
+    // Verify: (a) force on hand opposes hand's motion direction,
+    // (b) the puck moves away from the hand.
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        // kinematic hand at origin
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+        // free dynamic puck just ahead of hand (touching distance)
+        pk.pack_map(5);
+        pk.pack("id"); pk.pack("puck");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(0.5);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.041); pk.pack(0.0);
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+
+    // Drive hand rightward, continuously pushing through the puck's space.
+    // The hand moves faster than the puck can escape, maintaining contact.
+    bool saw_negative_force = false;
+    Vec3 f{};
+    for (int i = 0; i < 200; ++i) {
+        // Hand accelerates rightward — moves 0.0005 m per tick = 2 m/s
+        double x = 0.0005 * i;
+        f = pf.compute({x, 0.0, 0.0}, {2.0, 0.0, 0.0}, 0.00025);
+        if (f[0] < -1e-6) saw_negative_force = true;
+    }
+    // (a) At some point during the push, hand should have experienced pushback.
+    EXPECT_TRUE(saw_negative_force)
+        << "Contact force should oppose hand motion at some point during push";
+
+    // (b) Verify puck has moved rightward by reading pack_state.
+    msgpack::sbuffer sbuf;
+    msgpack::packer<msgpack::sbuffer> pk2(sbuf);
+    pf.pack_state(pk2);
+    auto oh_state = msgpack::unpack(sbuf.data(), sbuf.size());
+    auto state_map = oh_state->via.map;
+    for (uint32_t i = 0; i < state_map.size; ++i) {
+        std::string k(state_map.ptr[i].key.via.str.ptr,
+                      state_map.ptr[i].key.via.str.size);
+        if (k == "bodies") {
+            auto bmap = state_map.ptr[i].val.via.map;
+            for (uint32_t j = 0; j < bmap.size; ++j) {
+                std::string bid(bmap.ptr[j].key.via.str.ptr,
+                                bmap.ptr[j].key.via.str.size);
+                if (bid == "puck") {
+                    auto pmap = bmap.ptr[j].val.via.map;
+                    for (uint32_t m = 0; m < pmap.size; ++m) {
+                        std::string pk3(pmap.ptr[m].key.via.str.ptr,
+                                        pmap.ptr[m].key.via.str.size);
+                        if (pk3 == "position") {
+                            double puck_x = 0.0;
+                            pmap.ptr[m].val.via.array.ptr[0].convert(puck_x);
+                            EXPECT_GT(puck_x, 0.041)
+                                << "Puck should have moved rightward from initial 0.041";
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(PhysicsFieldTest, JointForcePropagation) {
+    // Create a kinematic hand with a dynamic rod attached via revolute joint.
+    // Accelerate the hand sideways and verify nonzero joint reaction force.
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(-9.81);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        // kinematic hand
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        // dynamic rod attached to hand
+        pk.pack_map(6);
+        pk.pack("id"); pk.pack("rod");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(0.3);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("shape"); pk.pack_map(3);
+            pk.pack("type"); pk.pack("box");
+            pk.pack("width"); pk.pack(0.2);
+            pk.pack("height"); pk.pack(0.01);
+        pk.pack("joint"); pk.pack_map(3);
+            pk.pack("type"); pk.pack("revolute");
+            pk.pack("anchor"); pk.pack("hand");
+            pk.pack("offset"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+
+    // Let gravity act on the rod for a few ticks (rod hangs from hand).
+    for (int i = 0; i < 20; ++i) {
+        pf.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    }
+
+    // Now accelerate hand sideways over multiple ticks.
+    Vec3 f{};
+    for (int i = 0; i < 100; ++i) {
+        double x = 0.001 * i;  // increasing x position
+        f = pf.compute({x, 0.0, 0.0}, {1.0, 0.0, 0.0}, 0.00025);
+    }
+    // The joint should transmit force — at minimum gravity pulling the rod down
+    // should produce a nonzero Y component (rod weight on hand).
+    double force_mag = std::sqrt(f[0] * f[0] + f[1] * f[1]);
+    EXPECT_GT(force_mag, 1e-6) << "Joint should transmit nonzero force to hand";
+}
+
 TEST(PhysicsFieldTest, PreserveWorldOnFailedUpdate) {
     PhysicsField pf;
     // Build a valid world first.

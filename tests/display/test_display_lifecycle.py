@@ -34,6 +34,7 @@ class TestDisplayProcessLifecycle:
         zmq_config = ZMQConfig(
             event_pub_address=make_ipc_address("dp_evt"),
             haptic_state_address=make_ipc_address("dp_state"),
+            display_event_address=make_ipc_address("dp_tevt"),
         )
         proc = DisplayProcess(
             display_config=DisplayConfig(),
@@ -49,12 +50,13 @@ class TestDisplayProcessLifecycle:
         assert not proc.is_alive()
 
     def test_survives_display_commands(self) -> None:
-        """Send 5 display commands; verify process does not crash."""
+        """Send 5 valid display commands; verify process does not crash."""
         from hapticore.display.process import DisplayProcess
 
         zmq_config = ZMQConfig(
             event_pub_address=make_ipc_address("dp_evt"),
             haptic_state_address=make_ipc_address("dp_state"),
+            display_event_address=make_ipc_address("dp_tevt"),
         )
 
         proc = DisplayProcess(
@@ -72,7 +74,12 @@ class TestDisplayProcessLifecycle:
 
         for i in range(5):
             payload = msgpack.packb(
-                {"action": "show", "stim_id": f"s{i}", "params": {}},
+                {
+                    "action": "show",
+                    "stim_id": f"s{i}",
+                    "params": {"type": "circle", "radius": 0.01},
+                    "timestamp": time.monotonic(),
+                },
                 use_bin_type=True,
             )
             pub.send_multipart([TOPIC_DISPLAY, payload])

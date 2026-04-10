@@ -217,7 +217,7 @@ def _create_grating(win: Window, params: dict[str, Any]) -> BaseVisualStim:
     pos = params.get("position", [0, 0])
     size = params.get("size")
     sf = params.get("sf")
-    ori = params.get("ori", 0.0)
+    ori = params.get("orientation", 0.0)
     phase = params.get("phase", 0.0)
     contrast = params.get("contrast", 1.0)
     mask = params.get("mask")

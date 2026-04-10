@@ -11,15 +11,14 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from hapticore.core.config import DisplayConfig
+from hapticore.display.scene_manager import SceneManager
 
 
 class TestShowHideClear:
     """Verify show/hide/clear mutations on SceneManager state."""
 
-    def _make_scene(self, **display_kwargs: object) -> object:
+    def _make_scene(self, **display_kwargs: object) -> SceneManager:
         """Create a SceneManager with a mock Window."""
-        from hapticore.display.scene_manager import SceneManager
-
         win = MagicMock()
         config = DisplayConfig(**display_kwargs)  # type: ignore[arg-type]
         return SceneManager(win, config)
@@ -30,8 +29,8 @@ class TestShowHideClear:
             mock_stim = MagicMock()
             mock_stim.__class__.__name__ = "Circle"
             mock_create.return_value = mock_stim
-            scene.show("target", {"type": "circle", "radius": 0.01})  # type: ignore[union-attr]
-            assert "target" in scene.active_stimuli  # type: ignore[union-attr]
+            scene.show("target", {"type": "circle", "radius": 0.01})
+            assert "target" in scene.active_stimuli
 
     def test_show_replaces_existing(self) -> None:
         scene = self._make_scene()
@@ -39,50 +38,48 @@ class TestShowHideClear:
             stim1 = MagicMock()
             stim2 = MagicMock()
             mock_create.side_effect = [stim1, stim2]
-            scene.show("target", {"type": "circle"})  # type: ignore[union-attr]
-            scene.show("target", {"type": "rectangle"})  # type: ignore[union-attr]
+            scene.show("target", {"type": "circle"})
+            scene.show("target", {"type": "rectangle"})
             # Should have exactly one entry
-            assert len(scene.active_stimuli) == 1  # type: ignore[union-attr]
+            assert len(scene.active_stimuli) == 1
 
     def test_hide_removes_from_active(self) -> None:
         scene = self._make_scene()
         with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
             stim = MagicMock()
             mock_create.return_value = stim
-            scene.show("target", {"type": "circle"})  # type: ignore[union-attr]
-            scene.hide("target")  # type: ignore[union-attr]
-            assert "target" not in scene.active_stimuli  # type: ignore[union-attr]
+            scene.show("target", {"type": "circle"})
+            scene.hide("target")
+            assert "target" not in scene.active_stimuli
             # draw_all should not attempt to draw the hidden stimulus
             stim.draw.reset_mock()
-            scene.draw_all()  # type: ignore[union-attr]
+            scene.draw_all()
             stim.draw.assert_not_called()
 
     def test_hide_nonexistent_is_noop(self) -> None:
         scene = self._make_scene()
-        scene.hide("nonexistent")  # type: ignore[union-attr]
+        scene.hide("nonexistent")
         # Should not raise
 
     def test_clear_empties_all(self) -> None:
         scene = self._make_scene()
         with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
             mock_create.return_value = MagicMock()
-            scene.show("a", {"type": "circle"})  # type: ignore[union-attr]
-            scene.show("b", {"type": "rectangle"})  # type: ignore[union-attr]
-            scene.clear()  # type: ignore[union-attr]
-            assert len(scene.active_stimuli) == 0  # type: ignore[union-attr]
+            scene.show("a", {"type": "circle"})
+            scene.show("b", {"type": "rectangle"})
+            scene.clear()
+            assert len(scene.active_stimuli) == 0
 
     def test_show_missing_type_raises_value_error(self) -> None:
         scene = self._make_scene()
         with pytest.raises(ValueError, match="type"):
-            scene.show("target", {"radius": 0.01})  # type: ignore[union-attr]
+            scene.show("target", {"radius": 0.01})
 
 
 class TestDrawOrder:
     """Verify draw order: insertion order for stimuli, cursor always last."""
 
-    def _make_scene(self, **display_kwargs: object) -> object:
-        from hapticore.display.scene_manager import SceneManager
-
+    def _make_scene(self, **display_kwargs: object) -> SceneManager:
         win = MagicMock()
         config = DisplayConfig(**display_kwargs)  # type: ignore[arg-type]
         return SceneManager(win, config)
@@ -93,14 +90,14 @@ class TestDrawOrder:
             stim_a = MagicMock()
             stim_b = MagicMock()
             mock_create.side_effect = [stim_a, stim_b]
-            scene.show("a", {"type": "circle"})  # type: ignore[union-attr]
-            scene.show("b", {"type": "rectangle"})  # type: ignore[union-attr]
+            scene.show("a", {"type": "circle"})
+            scene.show("b", {"type": "rectangle"})
 
             # Reset mock call tracking
             stim_a.draw.reset_mock()
             stim_b.draw.reset_mock()
 
-            scene.draw_all()  # type: ignore[union-attr]
+            scene.draw_all()
 
             stim_a.draw.assert_called_once()
             stim_b.draw.assert_called_once()
@@ -116,9 +113,9 @@ class TestDrawOrder:
             cursor.draw = MagicMock(side_effect=lambda: draw_order.append("cursor"))
             mock_create.side_effect = [stim, cursor]
 
-            scene.show("target", {"type": "circle"})  # type: ignore[union-attr]
-            scene.set_cursor_position([0.0, 0.0])  # type: ignore[union-attr]
-            scene.draw_all()  # type: ignore[union-attr]
+            scene.show("target", {"type": "circle"})
+            scene.set_cursor_position([0.0, 0.0])
+            scene.draw_all()
 
         assert draw_order == ["stim", "cursor"]
 
@@ -126,9 +123,7 @@ class TestDrawOrder:
 class TestCursorVisibility:
     """Verify cursor respects DisplayConfig.cursor_visible."""
 
-    def _make_scene(self, **display_kwargs: object) -> object:
-        from hapticore.display.scene_manager import SceneManager
-
+    def _make_scene(self, **display_kwargs: object) -> SceneManager:
         win = MagicMock()
         config = DisplayConfig(**display_kwargs)  # type: ignore[arg-type]
         return SceneManager(win, config)
@@ -137,13 +132,13 @@ class TestCursorVisibility:
         scene = self._make_scene(cursor_visible=True)
         with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
             mock_create.return_value = MagicMock()
-            scene.set_cursor_position([0.05, 0.03])  # type: ignore[union-attr]
+            scene.set_cursor_position([0.05, 0.03])
             mock_create.assert_called_once()
 
     def test_cursor_visible_false_is_noop(self) -> None:
         scene = self._make_scene(cursor_visible=False)
         with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
-            scene.set_cursor_position([0.05, 0.03])  # type: ignore[union-attr]
+            scene.set_cursor_position([0.05, 0.03])
             mock_create.assert_not_called()
 
     def test_cursor_uses_config_radius_and_color(self) -> None:
@@ -154,7 +149,7 @@ class TestCursorVisibility:
         )
         with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
             mock_create.return_value = MagicMock()
-            scene.set_cursor_position([0.0, 0.0])  # type: ignore[union-attr]
+            scene.set_cursor_position([0.0, 0.0])
             args, _kwargs = mock_create.call_args
             # create_stimulus(win, "circle", params_dict)
             params = args[2]
@@ -166,8 +161,8 @@ class TestCursorVisibility:
         with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
             cursor_mock = MagicMock()
             mock_create.return_value = cursor_mock
-            scene.set_cursor_position([0.05, 0.03])  # type: ignore[union-attr]
-            scene.set_cursor_position([0.1, 0.0])  # type: ignore[union-attr]
+            scene.set_cursor_position([0.05, 0.03])
+            scene.set_cursor_position([0.1, 0.0])
             # Second call should update pos, not create new
             assert mock_create.call_count == 1
             assert list(cursor_mock.pos) == [0.1, 0.0]
@@ -176,9 +171,7 @@ class TestCursorVisibility:
 class TestUpdate:
     """Verify update delegates to update_stimulus."""
 
-    def _make_scene(self) -> object:
-        from hapticore.display.scene_manager import SceneManager
-
+    def _make_scene(self) -> SceneManager:
         win = MagicMock()
         config = DisplayConfig()
         return SceneManager(win, config)
@@ -191,12 +184,12 @@ class TestUpdate:
         ):
             stim = MagicMock()
             mock_create.return_value = stim
-            scene.show("target", {"type": "circle"})  # type: ignore[union-attr]
-            scene.update("target", {"position": [0.1, 0.0]})  # type: ignore[union-attr]
+            scene.show("target", {"type": "circle"})
+            scene.update("target", {"position": [0.1, 0.0]})
             mock_update.assert_called_once_with(stim, {"position": [0.1, 0.0]})
 
     def test_update_unknown_warns(self) -> None:
         scene = self._make_scene()
         with patch("hapticore.display.scene_manager.update_stimulus") as mock_update:
-            scene.update("nonexistent", {"position": [0.0, 0.0]})  # type: ignore[union-attr]
+            scene.update("nonexistent", {"position": [0.0, 0.0]})
             mock_update.assert_not_called()

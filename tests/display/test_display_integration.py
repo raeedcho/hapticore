@@ -175,7 +175,7 @@ class TestDisplayIntegration:
         pub.close()
         ctx.term()
 
-    def test_headless_no_dropped_frames(self) -> None:
+    def test_headless_empty_loop_no_crash(self) -> None:
         """Run for 100+ frames headless with no stimuli — verify no crash."""
         from hapticore.display.process import DisplayProcess
 

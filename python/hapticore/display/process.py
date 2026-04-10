@@ -102,13 +102,11 @@ class DisplayProcess(multiprocessing.Process):
             shown_stim_ids: list[str] = []
             command_timestamp: float | None = None
             for cmd in display_msgs:
-                action = cmd.get("action")
-                if action == "show":
-                    stim_id = cmd.get("stim_id", "")
-                    shown_stim_ids.append(stim_id)
+                result = self._handle_display_command(scene, cmd)
+                if result is not None:
+                    shown_stim_ids.append(result)
                     if command_timestamp is None:
                         command_timestamp = cmd.get("timestamp", time.monotonic())
-                self._handle_display_command(scene, cmd)
 
             # 2. Drain haptic state — keep only the latest
             state_msgs = self._drain_messages(state_sub)
@@ -150,12 +148,17 @@ class DisplayProcess(multiprocessing.Process):
                     )
 
     @staticmethod
-    def _handle_display_command(scene: Any, cmd: dict[str, Any]) -> None:
-        """Dispatch a single display command to the SceneManager."""
+    def _handle_display_command(scene: Any, cmd: dict[str, Any]) -> str | None:
+        """Dispatch a single display command to the SceneManager.
+
+        Returns the stim_id for successful ``"show"`` commands, ``None`` otherwise.
+        """
         action = cmd.get("action")
         try:
             if action == "show":
-                scene.show(cmd["stim_id"], cmd.get("params", {}))
+                stim_id = cmd["stim_id"]
+                scene.show(stim_id, cmd.get("params", {}))
+                return stim_id
             elif action == "hide":
                 scene.hide(cmd.get("stim_id", ""))
             elif action == "clear":
@@ -168,6 +171,7 @@ class DisplayProcess(multiprocessing.Process):
                 logger.warning("Unknown display action: %r", action)
         except Exception:
             logger.exception("Error handling display command: %r", cmd)
+        return None
 
     def _create_window(self, visual_module: Any) -> Any:
         """Create a PsychoPy Window from the display configuration."""

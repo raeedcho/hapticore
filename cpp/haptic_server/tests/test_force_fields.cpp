@@ -12,6 +12,7 @@
 #include "force_fields/cart_pendulum_field.hpp"
 #include "force_fields/channel_field.hpp"
 #include "force_fields/composite_field.hpp"
+#include "force_fields/physics_field.hpp"
 #include "force_fields/field_factory.hpp"
 
 // Helper to create a msgpack object from a map
@@ -1061,6 +1062,829 @@ TEST(FieldFactoryTest, ReturnsNullptrForEmptyString) {
     EXPECT_EQ(field, nullptr);
 }
 
+TEST(FieldFactoryTest, CreatesPhysicsWorldField) {
+    auto field = create_field("physics_world");
+    ASSERT_NE(field, nullptr);
+    EXPECT_EQ(field->name(), "physics_world");
+}
+
+// ==================== PhysicsField Tests ====================
+
+TEST(PhysicsFieldTest, DefaultStateNoWorld) {
+    PhysicsField pf;
+    EXPECT_FALSE(pf.has_world());
+    EXPECT_EQ(pf.body_count(), 0u);
+    // compute should be safe without a world
+    Vec3 f = pf.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    EXPECT_DOUBLE_EQ(f[0], 0.0);
+    EXPECT_DOUBLE_EQ(f[1], 0.0);
+    EXPECT_DOUBLE_EQ(f[2], 0.0);
+}
+
+TEST(PhysicsFieldTest, CreateSimpleWorld) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(1);
+        // hand body: kinematic circle
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+    });
+    EXPECT_TRUE(pf.update_params(oh.get()));
+    EXPECT_TRUE(pf.has_world());
+    EXPECT_EQ(pf.body_count(), 1u);
+}
+
+TEST(PhysicsFieldTest, AirHockeyTwoBodies) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("striker");
+        pk.pack("bodies"); pk.pack_array(2);
+        // striker: kinematic circle
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("striker");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+        // puck: dynamic circle
+        pk.pack_map(6);
+        pk.pack("id"); pk.pack("puck");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.015);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.05);
+        pk.pack("mass"); pk.pack(0.1);
+        pk.pack("restitution"); pk.pack(0.9);
+    });
+    EXPECT_TRUE(pf.update_params(oh.get()));
+    EXPECT_TRUE(pf.has_world());
+    EXPECT_EQ(pf.body_count(), 2u);
+}
+
+TEST(PhysicsFieldTest, BoxShapeWorks) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(-9.81);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        // hand: kinematic circle
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        // wall: static box
+        pk.pack_map(4);
+        pk.pack("id"); pk.pack("wall");
+        pk.pack("type"); pk.pack("static");
+        pk.pack("shape"); pk.pack_map(3);
+            pk.pack("type"); pk.pack("box");
+            pk.pack("width"); pk.pack(0.3);
+            pk.pack("height"); pk.pack(0.005);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.0); pk.pack(-0.05);
+    });
+    EXPECT_TRUE(pf.update_params(oh.get()));
+    EXPECT_EQ(pf.body_count(), 2u);
+}
+
+TEST(PhysicsFieldTest, ComputeReturnsZeroWhenNotTouching) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        // hand body
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        // distant puck
+        pk.pack_map(5);
+        pk.pack("id"); pk.pack("puck");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.5); pk.pack(0.5);
+        pk.pack("mass"); pk.pack(0.1);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+
+    // Step several times with hand at origin — puck is far away
+    double dt = 0.00025;
+    Vec3 f = {0.0, 0.0, 0.0};
+    for (int i = 0; i < 10; ++i) {
+        f = pf.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, dt);
+    }
+    // No contact → force should be zero (or very close)
+    EXPECT_NEAR(f[0], 0.0, 1e-6);
+    EXPECT_NEAR(f[1], 0.0, 1e-6);
+    EXPECT_DOUBLE_EQ(f[2], 0.0);  // always zero (2D)
+}
+
+TEST(PhysicsFieldTest, RevoluteJointCreation) {
+    // Create a kinematic hand and a dynamic rod jointed to it.
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(-9.81);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        // kinematic hand body
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        // dynamic rod with revolute joint to hand
+        pk.pack_map(6);
+        pk.pack("id"); pk.pack("rod");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("shape"); pk.pack_map(3);
+            pk.pack("type"); pk.pack("box");
+            pk.pack("width"); pk.pack(0.2);
+            pk.pack("height"); pk.pack(0.01);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("mass"); pk.pack(0.3);
+        pk.pack("joint"); pk.pack_map(3);
+            pk.pack("type"); pk.pack("revolute");
+            pk.pack("anchor"); pk.pack("hand");
+            pk.pack("offset"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+    });
+    EXPECT_TRUE(pf.update_params(oh.get()));
+    EXPECT_TRUE(pf.has_world());
+    EXPECT_EQ(pf.body_count(), 2u);
+    EXPECT_EQ(pf.joint_count(), 1u);
+}
+
+TEST(PhysicsFieldTest, MissingHandBodyFails) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("nonexistent");
+        pk.pack("bodies"); pk.pack_array(1);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+    });
+    EXPECT_FALSE(pf.update_params(oh.get()));
+    EXPECT_FALSE(pf.has_world());
+}
+
+TEST(PhysicsFieldTest, MissingBodiesFails) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(2);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+    });
+    EXPECT_FALSE(pf.update_params(oh.get()));
+}
+
+TEST(PhysicsFieldTest, InvalidShapeTypeFails) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(1);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("triangle");
+            pk.pack("radius"); pk.pack(0.02);
+    });
+    EXPECT_FALSE(pf.update_params(oh.get()));
+}
+
+TEST(PhysicsFieldTest, PackStateContainsBodiesMap) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(1);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+
+    // Pack state and verify structure
+    msgpack::sbuffer sbuf;
+    msgpack::packer<msgpack::sbuffer> pk(sbuf);
+    pf.pack_state(pk);
+    auto state_oh = msgpack::unpack(sbuf.data(), sbuf.size());
+    auto& state = state_oh.get();
+    ASSERT_EQ(state.type, msgpack::type::MAP);
+    auto state_map = state.via.map;
+    ASSERT_GE(state_map.size, 1u);
+    // First key should be "bodies"
+    std::string first_key(state_map.ptr[0].key.via.str.ptr,
+                          state_map.ptr[0].key.via.str.size);
+    EXPECT_EQ(first_key, "bodies");
+}
+
+TEST(PhysicsFieldTest, ResetDoesNotCrash) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(1);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+    // Reset and then compute — should not crash
+    pf.reset();
+    Vec3 f = pf.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    EXPECT_DOUBLE_EQ(f[2], 0.0);
+}
+
+TEST(PhysicsFieldTest, RebuildWorldOnSecondUpdateParams) {
+    PhysicsField pf;
+    // First world
+    auto oh1 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("a");
+        pk.pack("bodies"); pk.pack_array(1);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("a");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+    });
+    ASSERT_TRUE(pf.update_params(oh1.get()));
+    EXPECT_EQ(pf.body_count(), 1u);
+
+    // Second world with 2 bodies — should tear down old world
+    auto oh2 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("b");
+        pk.pack("bodies"); pk.pack_array(2);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("b");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        pk.pack_map(4);
+        pk.pack("id"); pk.pack("c");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        pk.pack("mass"); pk.pack(0.1);
+    });
+    ASSERT_TRUE(pf.update_params(oh2.get()));
+    EXPECT_EQ(pf.body_count(), 2u);
+}
+
+// ==================== Additional PhysicsField Tests ====================
+
+TEST(PhysicsFieldTest, DuplicateBodyIdRejected) {
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("a");
+        pk.pack("bodies"); pk.pack_array(2);
+        // first body with id "a"
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("a");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        // duplicate id "a"
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("a");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+    });
+    EXPECT_FALSE(pf.update_params(oh.get()));
+}
+
+TEST(PhysicsFieldTest, DynamicHandBodyRejected) {
+    // A dynamic hand body would create F=M·a instability (ADR-010).
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(1);
+        pk.pack_map(4);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(1.0);
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+    });
+    EXPECT_FALSE(pf.update_params(oh.get()));
+    EXPECT_FALSE(pf.has_world());
+}
+
+TEST(PhysicsFieldTest, DeferredJointOrderIndependent) {
+    // Body "rod" references "hand" in its joint, but "hand" is declared AFTER
+    // "rod" in the bodies array.  Deferred joint resolution should handle this.
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        // "rod" declared first — references "hand" which doesn't exist yet
+        pk.pack_map(5);
+        pk.pack("id"); pk.pack("rod");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(0.1);
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        pk.pack("joint"); pk.pack_map(3);
+            pk.pack("type"); pk.pack("revolute");
+            pk.pack("anchor"); pk.pack("hand");
+            pk.pack("offset"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        // "hand" declared second
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+    });
+    EXPECT_TRUE(pf.update_params(oh.get()));
+    EXPECT_EQ(pf.body_count(), 2u);
+    EXPECT_EQ(pf.joint_count(), 1u);
+}
+
+TEST(PhysicsFieldTest, ResetRestoresInitialPositions) {
+    // Dynamic body initially at (0.05, 0.10) should return there after reset.
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(-9.81);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        pk.pack_map(5);
+        pk.pack("id"); pk.pack("ball");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(0.5);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.05); pk.pack(0.10);
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+
+    // Step the simulation so the ball falls under gravity.
+    for (int i = 0; i < 100; ++i) {
+        pf.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    }
+
+    // Read state — ball should have moved from initial position.
+    {
+        msgpack::sbuffer sbuf;
+        msgpack::packer<msgpack::sbuffer> pk(sbuf);
+        pf.pack_state(pk);
+        auto state_oh = msgpack::unpack(sbuf.data(), sbuf.size());
+        auto& state_map = state_oh.get().via.map;
+        // "bodies" key
+        auto& bodies_map = state_map.ptr[0].val.via.map;
+        for (uint32_t i = 0; i < bodies_map.size; ++i) {
+            std::string bid(bodies_map.ptr[i].key.via.str.ptr,
+                            bodies_map.ptr[i].key.via.str.size);
+            if (bid == "ball") {
+                auto& bm = bodies_map.ptr[i].val.via.map;
+                // Find "position"
+                for (uint32_t j = 0; j < bm.size; ++j) {
+                    std::string k(bm.ptr[j].key.via.str.ptr,
+                                  bm.ptr[j].key.via.str.size);
+                    if (k == "position") {
+                        double y_after_fall =
+                            bm.ptr[j].val.via.array.ptr[1].as<double>();
+                        EXPECT_LT(y_after_fall, 0.10);  // fallen below initial
+                    }
+                }
+            }
+        }
+    }
+
+    // Reset and verify ball is back at initial position.
+    pf.reset();
+    {
+        msgpack::sbuffer sbuf;
+        msgpack::packer<msgpack::sbuffer> pk(sbuf);
+        pf.pack_state(pk);
+        auto state_oh = msgpack::unpack(sbuf.data(), sbuf.size());
+        auto& state_map = state_oh.get().via.map;
+        auto& bodies_map = state_map.ptr[0].val.via.map;
+        for (uint32_t i = 0; i < bodies_map.size; ++i) {
+            std::string bid(bodies_map.ptr[i].key.via.str.ptr,
+                            bodies_map.ptr[i].key.via.str.size);
+            if (bid == "ball") {
+                auto& bm = bodies_map.ptr[i].val.via.map;
+                for (uint32_t j = 0; j < bm.size; ++j) {
+                    std::string k(bm.ptr[j].key.via.str.ptr,
+                                  bm.ptr[j].key.via.str.size);
+                    if (k == "position") {
+                        double x_reset =
+                            bm.ptr[j].val.via.array.ptr[0].as<double>();
+                        double y_reset =
+                            bm.ptr[j].val.via.array.ptr[1].as<double>();
+                        EXPECT_NEAR(x_reset, 0.05, 1e-4);
+                        EXPECT_NEAR(y_reset, 0.10, 1e-4);
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(PhysicsFieldTest, GravityFall) {
+    // A dynamic body with downward gravity should fall (y decreases).
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(-9.81);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        pk.pack_map(5);
+        pk.pack("id"); pk.pack("ball");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(0.1);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.0); pk.pack(1.0);
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+
+    // Step simulation — hand at origin, ball at y=1.0 falling
+    for (int i = 0; i < 200; ++i) {
+        pf.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    }
+
+    // Check ball y-position decreased (gravity pulled it down).
+    msgpack::sbuffer sbuf;
+    msgpack::packer<msgpack::sbuffer> pk(sbuf);
+    pf.pack_state(pk);
+    auto state_oh = msgpack::unpack(sbuf.data(), sbuf.size());
+    auto& bodies_map = state_oh.get().via.map.ptr[0].val.via.map;
+    for (uint32_t i = 0; i < bodies_map.size; ++i) {
+        std::string bid(bodies_map.ptr[i].key.via.str.ptr,
+                        bodies_map.ptr[i].key.via.str.size);
+        if (bid == "ball") {
+            auto& bm = bodies_map.ptr[i].val.via.map;
+            for (uint32_t j = 0; j < bm.size; ++j) {
+                std::string k(bm.ptr[j].key.via.str.ptr,
+                              bm.ptr[j].key.via.str.size);
+                if (k == "position") {
+                    double y_val =
+                        bm.ptr[j].val.via.array.ptr[1].as<double>();
+                    EXPECT_LT(y_val, 1.0);  // ball has fallen
+                }
+            }
+        }
+    }
+}
+
+TEST(PhysicsFieldTest, ForceScaleMultiplier) {
+    // With force_scale=2.0, forces should double compared to force_scale=1.0.
+    // We test by pushing the hand into a dynamic puck against a static wall.
+    // (Box2D needs at least one dynamic body to generate contact impulses.)
+    auto make_world = [](double scale) {
+        return pack_and_unpack([scale](msgpack::packer<msgpack::sbuffer>& pk) {
+            pk.pack_map(4);
+            pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+            pk.pack("hand_body"); pk.pack("hand");
+            pk.pack("force_scale"); pk.pack(scale);
+            pk.pack("bodies"); pk.pack_array(3);
+            // kinematic hand
+            pk.pack_map(3);
+            pk.pack("id"); pk.pack("hand");
+            pk.pack("type"); pk.pack("kinematic");
+            pk.pack("shape"); pk.pack_map(2);
+                pk.pack("type"); pk.pack("circle");
+                pk.pack("radius"); pk.pack(0.02);
+            // dynamic puck between hand and wall
+            pk.pack_map(5);
+            pk.pack("id"); pk.pack("puck");
+            pk.pack("type"); pk.pack("dynamic");
+            pk.pack("mass"); pk.pack(0.5);
+            pk.pack("position"); pk.pack_array(2); pk.pack(0.06); pk.pack(0.0);
+            pk.pack("shape"); pk.pack_map(2);
+                pk.pack("type"); pk.pack("circle");
+                pk.pack("radius"); pk.pack(0.02);
+            // static wall
+            pk.pack_map(4);
+            pk.pack("id"); pk.pack("wall");
+            pk.pack("type"); pk.pack("static");
+            pk.pack("position"); pk.pack_array(2); pk.pack(0.10); pk.pack(0.0);
+            pk.pack("shape"); pk.pack_map(3);
+                pk.pack("type"); pk.pack("box");
+                pk.pack("width"); pk.pack(0.02);
+                pk.pack("height"); pk.pack(0.2);
+        });
+    };
+
+    // Force with scale=1.0
+    PhysicsField pf1;
+    auto oh1 = make_world(1.0);
+    ASSERT_TRUE(pf1.update_params(oh1.get()));
+    // Drive hand into the puck
+    Vec3 f1{};
+    for (int i = 0; i < 100; ++i) {
+        f1 = pf1.compute({0.05, 0.0, 0.0}, {1.0, 0.0, 0.0}, 0.00025);
+    }
+
+    // Force with scale=2.0
+    PhysicsField pf2;
+    auto oh2 = make_world(2.0);
+    ASSERT_TRUE(pf2.update_params(oh2.get()));
+    Vec3 f2{};
+    for (int i = 0; i < 100; ++i) {
+        f2 = pf2.compute({0.05, 0.0, 0.0}, {1.0, 0.0, 0.0}, 0.00025);
+    }
+
+    // Both should have nonzero force, and scale=2 should be ~2x scale=1.
+    ASSERT_LT(f1[0], -1e-6) << "Baseline force should be nonzero negative";
+    double ratio = f2[0] / f1[0];
+    EXPECT_NEAR(ratio, 2.0, 0.1);
+}
+
+TEST(PhysicsFieldTest, StaticWallCollisionForceDirection) {
+    // SAFETY-CRITICAL TEST: Hand pushed into a dynamic puck pinned against a
+    // static wall should experience force in the negative-X direction (pushback).
+    //
+    // Box2D only generates contact impulses for contacts involving at least one
+    // dynamic body.  Kinematic-static contacts produce zero impulse.  So we use
+    // a dynamic puck sandwiched between the kinematic hand and the static wall.
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(3);
+        // kinematic hand — circle at the origin
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+        // dynamic puck — between hand and wall
+        pk.pack_map(5);
+        pk.pack("id"); pk.pack("puck");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(0.5);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.06); pk.pack(0.0);
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+        // static wall far right
+        pk.pack_map(4);
+        pk.pack("id"); pk.pack("wall");
+        pk.pack("type"); pk.pack("static");
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.10); pk.pack(0.0);
+        pk.pack("shape"); pk.pack_map(3);
+            pk.pack("type"); pk.pack("box");
+            pk.pack("width"); pk.pack(0.02);
+            pk.pack("height"); pk.pack(0.2);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+
+    // Drive the hand to the right so it pushes the puck against the wall.
+    // Hand edge at 0.05+0.02=0.07, puck center at 0.06, puck edge at 0.08,
+    // wall edge at 0.10-0.01=0.09.  Position the hand to compress the puck
+    // into the wall.
+    Vec3 f{};
+    for (int i = 0; i < 100; ++i) {
+        f = pf.compute({0.05, 0.0, 0.0}, {1.0, 0.0, 0.0}, 0.00025);
+    }
+    // The puck is to the right of the hand — the reaction force on the hand
+    // must push it back to the left (negative X).
+    EXPECT_LT(f[0], 0.0) << "Wall collision force should push hand left (negative X)";
+    // Y and Z should be near zero.
+    EXPECT_NEAR(f[1], 0.0, std::abs(f[0]) * 0.1 + 1e-6);
+    EXPECT_DOUBLE_EQ(f[2], 0.0);
+}
+
+TEST(PhysicsFieldTest, DynamicBodyReaction) {
+    // Move the kinematic hand into a free dynamic puck (no wall).
+    // Verify: (a) force on hand opposes hand's motion direction,
+    // (b) the puck moves away from the hand.
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        // kinematic hand at origin
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+        // free dynamic puck just ahead of hand (touching distance)
+        pk.pack_map(5);
+        pk.pack("id"); pk.pack("puck");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(0.5);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.041); pk.pack(0.0);
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+
+    // Drive hand rightward, continuously pushing through the puck's space.
+    // The hand moves faster than the puck can escape, maintaining contact.
+    bool saw_negative_force = false;
+    Vec3 f{};
+    for (int i = 0; i < 200; ++i) {
+        // Hand accelerates rightward — moves 0.0005 m per tick = 2 m/s
+        double x = 0.0005 * i;
+        f = pf.compute({x, 0.0, 0.0}, {2.0, 0.0, 0.0}, 0.00025);
+        if (f[0] < -1e-6) saw_negative_force = true;
+    }
+    // (a) At some point during the push, hand should have experienced pushback.
+    EXPECT_TRUE(saw_negative_force)
+        << "Contact force should oppose hand motion at some point during push";
+
+    // (b) Verify puck has moved rightward by reading pack_state.
+    msgpack::sbuffer sbuf;
+    msgpack::packer<msgpack::sbuffer> pk2(sbuf);
+    pf.pack_state(pk2);
+    auto oh_state = msgpack::unpack(sbuf.data(), sbuf.size());
+    auto state_map = oh_state->via.map;
+    for (uint32_t i = 0; i < state_map.size; ++i) {
+        std::string k(state_map.ptr[i].key.via.str.ptr,
+                      state_map.ptr[i].key.via.str.size);
+        if (k == "bodies") {
+            auto bmap = state_map.ptr[i].val.via.map;
+            for (uint32_t j = 0; j < bmap.size; ++j) {
+                std::string bid(bmap.ptr[j].key.via.str.ptr,
+                                bmap.ptr[j].key.via.str.size);
+                if (bid == "puck") {
+                    auto pmap = bmap.ptr[j].val.via.map;
+                    for (uint32_t m = 0; m < pmap.size; ++m) {
+                        std::string pk3(pmap.ptr[m].key.via.str.ptr,
+                                        pmap.ptr[m].key.via.str.size);
+                        if (pk3 == "position") {
+                            double puck_x = 0.0;
+                            pmap.ptr[m].val.via.array.ptr[0].convert(puck_x);
+                            EXPECT_GT(puck_x, 0.041)
+                                << "Puck should have moved rightward from initial 0.041";
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(PhysicsFieldTest, JointForcePropagation) {
+    // Create a kinematic hand with a dynamic rod attached via revolute joint.
+    // Accelerate the hand sideways and verify nonzero joint reaction force.
+    PhysicsField pf;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(-9.81);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(2);
+        // kinematic hand
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+        // dynamic rod attached to hand
+        pk.pack_map(6);
+        pk.pack("id"); pk.pack("rod");
+        pk.pack("type"); pk.pack("dynamic");
+        pk.pack("mass"); pk.pack(0.3);
+        pk.pack("position"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("shape"); pk.pack_map(3);
+            pk.pack("type"); pk.pack("box");
+            pk.pack("width"); pk.pack(0.2);
+            pk.pack("height"); pk.pack(0.01);
+        pk.pack("joint"); pk.pack_map(3);
+            pk.pack("type"); pk.pack("revolute");
+            pk.pack("anchor"); pk.pack("hand");
+            pk.pack("offset"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+    });
+    ASSERT_TRUE(pf.update_params(oh.get()));
+
+    // Let gravity act on the rod for a few ticks (rod hangs from hand).
+    for (int i = 0; i < 20; ++i) {
+        pf.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    }
+
+    // Now accelerate hand sideways over multiple ticks.
+    Vec3 f{};
+    for (int i = 0; i < 100; ++i) {
+        double x = 0.001 * i;  // increasing x position
+        f = pf.compute({x, 0.0, 0.0}, {1.0, 0.0, 0.0}, 0.00025);
+    }
+    // The joint should transmit force — at minimum gravity pulling the rod down
+    // should produce a nonzero Y component (rod weight on hand).
+    double force_mag = std::sqrt(f[0] * f[0] + f[1] * f[1]);
+    EXPECT_GT(force_mag, 1e-6) << "Joint should transmit nonzero force to hand";
+}
+
+TEST(PhysicsFieldTest, PreserveWorldOnFailedUpdate) {
+    PhysicsField pf;
+    // Build a valid world first.
+    auto oh1 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("hand");
+        pk.pack("bodies"); pk.pack_array(1);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("hand");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.02);
+    });
+    ASSERT_TRUE(pf.update_params(oh1.get()));
+    EXPECT_TRUE(pf.has_world());
+    EXPECT_EQ(pf.body_count(), 1u);
+
+    // Attempt an invalid update (missing hand_body reference).
+    auto oh2 = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(3);
+        pk.pack("gravity"); pk.pack_array(2); pk.pack(0.0); pk.pack(0.0);
+        pk.pack("hand_body"); pk.pack("nonexistent");
+        pk.pack("bodies"); pk.pack_array(1);
+        pk.pack_map(3);
+        pk.pack("id"); pk.pack("x");
+        pk.pack("type"); pk.pack("kinematic");
+        pk.pack("shape"); pk.pack_map(2);
+            pk.pack("type"); pk.pack("circle");
+            pk.pack("radius"); pk.pack(0.01);
+    });
+    EXPECT_FALSE(pf.update_params(oh2.get()));
+
+    // Previous world should still be intact.
+    EXPECT_TRUE(pf.has_world());
+    EXPECT_EQ(pf.body_count(), 1u);
+
+    // Compute should still work on the preserved world.
+    Vec3 f = pf.compute({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    EXPECT_DOUBLE_EQ(f[2], 0.0);
+}
+
 // ==================== Non-map input tests ====================
 
 TEST(ForceFieldTest, NonMapParamsReturnsFalse) {
@@ -1086,4 +1910,7 @@ TEST(ForceFieldTest, NonMapParamsReturnsFalse) {
 
     ChannelField ch;
     EXPECT_FALSE(ch.update_params(oh.get()));
+
+    PhysicsField pf;
+    EXPECT_FALSE(pf.update_params(oh.get()));
 }

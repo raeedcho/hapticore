@@ -132,9 +132,16 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.8.8
         with:
           cache: true
-      - name: Install xvfb
-        run: sudo apt-get update && sudo apt-get install -y xvfb
-      - name: Run display unit tests
-        run: xvfb-run -a pixi run pytest tests/unit/test_display.py tests/unit/test_display_client.py tests/unit/test_display_process.py -v
-      - name: Run display integration tests
-        run: xvfb-run -a pixi run pytest tests/integration/test_display_integration.py -v
+          environments: display
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y xvfb libsdl2-2.0-0
+
+      - name: Install PsychoPy (no-deps)
+        run: pixi run -e display install-psychopy
+
+      - name: Run unit tests under xvfb
+        run: xvfb-run -a pixi run -e display test-unit
+
+      - name: Run display tests under xvfb
+        run: xvfb-run -a pixi run -e display test-display

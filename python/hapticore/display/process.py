@@ -104,7 +104,7 @@ class DisplayProcess(multiprocessing.Process):
     ) -> None:
         """Main rendering loop — one iteration per vsync frame."""
         latest_state: dict[str, Any] | None = None
-        state_receive_time: float = 0.0
+        state_receive_time: float = time.monotonic()
         interpolation_enabled = self._display_config.cursor_interpolation
 
         while not self._shutdown.is_set():

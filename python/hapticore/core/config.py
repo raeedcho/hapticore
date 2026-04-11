@@ -28,6 +28,7 @@ class ZMQConfig(BaseModel):
     event_pub_address: str = "ipc:///tmp/hapticore_events"
     haptic_state_address: str = "ipc:///tmp/hapticore_haptic_state"
     haptic_command_address: str = "ipc:///tmp/hapticore_haptic_cmd"
+    display_event_address: str = "ipc:///tmp/hapticore_display_events"
     transport: str = "ipc"
 
 

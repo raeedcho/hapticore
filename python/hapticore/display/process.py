@@ -50,6 +50,7 @@ class DisplayProcess(multiprocessing.Process):
         """Entry point executed in the child process."""
         from psychopy import visual  # noqa: F811 — import ONLY here
 
+        from hapticore.display.photodiode import PhotodiodePatch
         from hapticore.display.scene_manager import SceneManager
 
         signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -74,9 +75,14 @@ class DisplayProcess(multiprocessing.Process):
         timing_pub.bind(self._zmq_config.display_event_address)
 
         scene = SceneManager(win, self._display_config)
+        photodiode = PhotodiodePatch(
+            win,
+            corner=self._display_config.photodiode_corner,
+            enabled=self._display_config.photodiode_enabled,
+        )
 
         try:
-            self._frame_loop(win, display_sub, state_sub, timing_pub, scene)
+            self._frame_loop(win, display_sub, state_sub, timing_pub, scene, photodiode)
         finally:
             dropped = getattr(win, "nDroppedFrames", 0)
             if dropped:
@@ -94,8 +100,13 @@ class DisplayProcess(multiprocessing.Process):
         state_sub: zmq.Socket[Any],
         timing_pub: zmq.Socket[Any],
         scene: Any,
+        photodiode: Any = None,
     ) -> None:
         """Main rendering loop — one iteration per vsync frame."""
+        latest_state: dict[str, Any] | None = None
+        state_receive_time: float = 0.0
+        interpolation_enabled = self._display_config.cursor_interpolation
+
         while not self._shutdown.is_set():
             # 1. Drain display commands and dispatch
             display_msgs = self._drain_messages(display_sub)
@@ -108,16 +119,31 @@ class DisplayProcess(multiprocessing.Process):
                     if command_timestamp is None:
                         command_timestamp = cmd.get("timestamp", time.monotonic())
 
+            # Trigger photodiode on stimulus onset
+            if shown_stim_ids and photodiode is not None:
+                photodiode.trigger()
+
             # 2. Drain haptic state — keep only the latest
             state_msgs = self._drain_messages(state_sub)
             if state_msgs:
                 latest_state = state_msgs[-1]
+                state_receive_time = time.monotonic()
+
+            if latest_state is not None:
                 position = latest_state.get("position", [0.0, 0.0, 0.0])
-                # X, Y only (ignore Z)
-                scene.set_cursor_position([position[0], position[1]])
+                if interpolation_enabled:
+                    dt = time.monotonic() - state_receive_time
+                    cursor_pos = self._interpolate_position(latest_state, dt)
+                else:
+                    cursor_pos = [position[0], position[1]]
+                scene.set_cursor_position(cursor_pos)
 
             # 3. Draw all stimuli
             scene.draw_all()
+
+            # 3b. Draw photodiode on top of everything
+            if photodiode is not None:
+                photodiode.draw()
 
             # 4. Capture flip timestamp via callOnFlip
             flip_time: list[float] = []
@@ -146,6 +172,23 @@ class DisplayProcess(multiprocessing.Process):
                     timing_pub.send_multipart(
                         [TOPIC_EVENT, serialize(event)], zmq.NOBLOCK,
                     )
+
+    @staticmethod
+    def _interpolate_position(state: dict[str, Any], dt: float) -> list[float]:
+        """Extrapolate position using velocity for dead-reckoning interpolation.
+
+        Only used when ``cursor_interpolation=True``.
+
+        Parameters
+        ----------
+        state : dict
+            Haptic state dict with ``"position"`` and ``"velocity"`` keys.
+        dt : float
+            Time elapsed since the state was received (seconds).
+        """
+        pos = state.get("position", [0.0, 0.0, 0.0])
+        vel = state.get("velocity", [0.0, 0.0, 0.0])
+        return [pos[0] + vel[0] * dt, pos[1] + vel[1] * dt]
 
     @staticmethod
     def _handle_display_command(scene: Any, cmd: dict[str, Any]) -> str | None:

@@ -120,3 +120,21 @@ jobs:
 
       - name: Run cross-language test
         run: pixi run -- pytest tests/integration/test_cross_language.py -v
+
+  test-display:
+    name: Display tests (Linux xvfb)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          cache: true
+      - name: Install xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Run display unit tests
+        run: xvfb-run -a pixi run pytest tests/unit/test_display.py tests/unit/test_display_client.py tests/unit/test_display_process.py -v -m display
+      - name: Run display integration tests
+        run: xvfb-run -a pixi run pytest tests/integration/test_display_integration.py -v

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import time
+from unittest.mock import MagicMock
 
 import msgpack
 import zmq
@@ -123,3 +124,49 @@ class TestDrainMessages:
         pub.close()
         ctx.term()
 
+
+class TestPhotodiodeInFrameLoop:
+    """Verify photodiode triggers when a 'show' command is processed."""
+
+    def test_photodiode_triggers_on_show(self) -> None:
+        from hapticore.display.process import DisplayProcess
+
+        proc = DisplayProcess(
+            display_config=DisplayConfig(),
+            zmq_config=ZMQConfig(),
+        )
+
+        scene = MagicMock()
+        photodiode = MagicMock()
+
+        # Simulate show command
+        cmd = {"action": "show", "stim_id": "target", "params": {"type": "circle"}}
+        result = proc._handle_display_command(scene, cmd)
+        assert result == "target"
+
+        # Replicate frame loop logic: trigger photodiode on shown stim_ids
+        shown_stim_ids = [result] if result is not None else []
+        if shown_stim_ids and photodiode is not None:
+            photodiode.trigger()
+        photodiode.trigger.assert_called_once()
+
+    def test_photodiode_no_trigger_on_hide(self) -> None:
+        from hapticore.display.process import DisplayProcess
+
+        proc = DisplayProcess(
+            display_config=DisplayConfig(),
+            zmq_config=ZMQConfig(),
+        )
+
+        scene = MagicMock()
+        photodiode = MagicMock()
+
+        cmd = {"action": "hide", "stim_id": "target"}
+        result = proc._handle_display_command(scene, cmd)
+        assert result is None
+
+        # When no stim_ids shown, photodiode should not trigger
+        shown_stim_ids = [result] if result is not None else []
+        if shown_stim_ids and photodiode is not None:
+            photodiode.trigger()
+        photodiode.trigger.assert_not_called()

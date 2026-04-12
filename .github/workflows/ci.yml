@@ -135,7 +135,7 @@ jobs:
           environments: display
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y xvfb libsdl2-2.0-0
+        run: sudo apt-get update && sudo apt-get install -y xvfb libsdl2-2.0-0 libglu1-mesa
 
       - name: Install PsychoPy (no-deps)
         run: pixi run -e display install-psychopy

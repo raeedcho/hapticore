@@ -11,13 +11,19 @@ import logging
 import multiprocessing
 import signal
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import msgpack
 import zmq
 
 from hapticore.core.config import DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_EVENT, TOPIC_STATE, TrialEvent, serialize
+
+if TYPE_CHECKING:
+    from psychopy.visual import Window
+
+    from hapticore.display.photodiode import PhotodiodePatch
+    from hapticore.display.scene_manager import SceneManager
 
 logger = logging.getLogger(__name__)
 
@@ -93,14 +99,18 @@ class DisplayProcess(multiprocessing.Process):
             ctx.term()
             win.close()
 
+    # Cap dead-reckoning extrapolation to one haptic publish period (200 Hz).
+    # Prevents runaway cursor if the haptic server disconnects or stalls.
+    _MAX_INTERP_DT: float = 1.0 / 200.0
+
     def _frame_loop(
         self,
-        win: Any,
+        win: Window,
         display_sub: zmq.Socket[Any],
         state_sub: zmq.Socket[Any],
         timing_pub: zmq.Socket[Any],
-        scene: Any,
-        photodiode: Any = None,
+        scene: SceneManager,
+        photodiode: PhotodiodePatch | None = None,
     ) -> None:
         """Main rendering loop — one iteration per vsync frame."""
         latest_state: dict[str, Any] | None = None
@@ -132,7 +142,10 @@ class DisplayProcess(multiprocessing.Process):
             if latest_state is not None:
                 position = latest_state.get("position", [0.0, 0.0, 0.0])
                 if interpolation_enabled:
-                    dt = time.monotonic() - state_receive_time
+                    dt = min(
+                        time.monotonic() - state_receive_time,
+                        self._MAX_INTERP_DT,
+                    )
                     cursor_pos = self._interpolate_position(latest_state, dt)
                 else:
                     cursor_pos = [position[0], position[1]]
@@ -191,7 +204,7 @@ class DisplayProcess(multiprocessing.Process):
         return [pos[0] + vel[0] * dt, pos[1] + vel[1] * dt]
 
     @staticmethod
-    def _handle_display_command(scene: Any, cmd: dict[str, Any]) -> str | None:
+    def _handle_display_command(scene: SceneManager, cmd: dict[str, Any]) -> str | None:
         """Dispatch a single display command to the SceneManager.
 
         Returns the stim_id for successful ``"show"`` commands, ``None`` otherwise.
@@ -216,7 +229,7 @@ class DisplayProcess(multiprocessing.Process):
             logger.exception("Error handling display command: %r", cmd)
         return None
 
-    def _create_window(self, visual_module: Any) -> Any:
+    def _create_window(self, visual_module: Any) -> Window:
         """Create a PsychoPy Window from the display configuration."""
         cfg = self._display_config
         effective_fullscr = cfg.fullscreen and not self._headless

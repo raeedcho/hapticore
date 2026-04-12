@@ -126,47 +126,35 @@ class TestDrainMessages:
 
 
 class TestPhotodiodeInFrameLoop:
-    """Verify photodiode triggers when a 'show' command is processed."""
+    """Verify _handle_display_command returns stim_id on show, None otherwise.
 
-    def test_photodiode_triggers_on_show(self) -> None:
+    The frame loop uses the return value to decide whether to trigger
+    the photodiode: ``if shown_stim_ids and photodiode is not None``.
+    """
+
+    def test_show_returns_stim_id(self) -> None:
+        """'show' command returns stim_id, which causes photodiode.trigger()."""
         from hapticore.display.process import DisplayProcess
 
-        proc = DisplayProcess(
-            display_config=DisplayConfig(),
-            zmq_config=ZMQConfig(),
-        )
-
         scene = MagicMock()
-        photodiode = MagicMock()
-
-        # Simulate show command
         cmd = {"action": "show", "stim_id": "target", "params": {"type": "circle"}}
-        result = proc._handle_display_command(scene, cmd)
+        result = DisplayProcess._handle_display_command(scene, cmd)
         assert result == "target"
 
-        # Replicate frame loop logic: trigger photodiode on shown stim_ids
-        shown_stim_ids = [result] if result is not None else []
-        if shown_stim_ids and photodiode is not None:
-            photodiode.trigger()
-        photodiode.trigger.assert_called_once()
-
-    def test_photodiode_no_trigger_on_hide(self) -> None:
+    def test_hide_returns_none(self) -> None:
+        """'hide' command returns None — photodiode should not trigger."""
         from hapticore.display.process import DisplayProcess
 
-        proc = DisplayProcess(
-            display_config=DisplayConfig(),
-            zmq_config=ZMQConfig(),
-        )
-
         scene = MagicMock()
-        photodiode = MagicMock()
-
         cmd = {"action": "hide", "stim_id": "target"}
-        result = proc._handle_display_command(scene, cmd)
+        result = DisplayProcess._handle_display_command(scene, cmd)
         assert result is None
 
-        # When no stim_ids shown, photodiode should not trigger
-        shown_stim_ids = [result] if result is not None else []
-        if shown_stim_ids and photodiode is not None:
-            photodiode.trigger()
-        photodiode.trigger.assert_not_called()
+    def test_clear_returns_none(self) -> None:
+        """'clear' command returns None — photodiode should not trigger."""
+        from hapticore.display.process import DisplayProcess
+
+        scene = MagicMock()
+        cmd = {"action": "clear"}
+        result = DisplayProcess._handle_display_command(scene, cmd)
+        assert result is None

@@ -13,7 +13,6 @@ from psychopy import visual  # noqa: E402
 
 from hapticore.display.photodiode import (  # noqa: E402
     PhotodiodePatch,
-    _CORNER_POSITIONS,
     _VALID_CORNERS,
 )
 

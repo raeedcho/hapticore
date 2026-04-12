@@ -109,17 +109,6 @@ class TestCursorInterpolation:
         assert pytest.approx(result[0], abs=1e-9) == 0.1 + 0.1 * 0.01
         assert pytest.approx(result[1], abs=1e-9) == 0.2
 
-    def test_no_interpolation_uses_raw_position(self) -> None:
-        """When cursor_interpolation=False, position is state['position'][0:2]."""
-        state = {
-            "position": [0.1, 0.2, 0.0],
-            "velocity": [0.1, 0.0, 0.0],
-        }
-        # Without interpolation, just slice position
-        pos = state["position"]
-        cursor_pos = [pos[0], pos[1]]
-        assert cursor_pos == [0.1, 0.2]
-
     def test_interpolation_with_both_axes(self) -> None:
         from hapticore.display.process import DisplayProcess
 

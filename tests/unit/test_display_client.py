@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import msgpack
+import pytest
 
 from hapticore.core.interfaces import DisplayInterface
 from hapticore.core.messages import TOPIC_DISPLAY
@@ -128,12 +129,13 @@ class TestUpdateScene:
 
 
 class TestGetFlipTimestamp:
-    def test_initial_value_is_none(self) -> None:
+    def test_raises_not_implemented(self) -> None:
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()
         try:
             client = DisplayClient(pub)
-            assert client.get_flip_timestamp() is None
+            with pytest.raises(NotImplementedError):
+                client.get_flip_timestamp()
         finally:
             pub.close()

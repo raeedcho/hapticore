@@ -17,15 +17,24 @@ logger = logging.getLogger(__name__)
 
 _VALID_CORNERS = {"bottom_left", "bottom_right", "top_left", "top_right"}
 
+_PATCH_SIZE_NORM: float = 0.05  # single source of truth for patch size
 _INSET_NORM: float = 0.03  # offset from screen edge in norm units
-_HALF_SIZE_NORM: float = 0.025  # half of PATCH_SIZE_NORM (0.05 / 2)
 
-_CORNER_POSITIONS: dict[str, list[float]] = {
-    "bottom_left": [-1.0 + _INSET_NORM + _HALF_SIZE_NORM, -1.0 + _INSET_NORM + _HALF_SIZE_NORM],
-    "bottom_right": [1.0 - _INSET_NORM - _HALF_SIZE_NORM, -1.0 + _INSET_NORM + _HALF_SIZE_NORM],
-    "top_left": [-1.0 + _INSET_NORM + _HALF_SIZE_NORM, 1.0 - _INSET_NORM - _HALF_SIZE_NORM],
-    "top_right": [1.0 - _INSET_NORM - _HALF_SIZE_NORM, 1.0 - _INSET_NORM - _HALF_SIZE_NORM],
-}
+
+def _compute_corner_positions(
+    size: float, inset: float,
+) -> dict[str, list[float]]:
+    """Compute patch center positions for each corner."""
+    half = size / 2
+    return {
+        "bottom_left": [-1.0 + inset + half, -1.0 + inset + half],
+        "bottom_right": [1.0 - inset - half, -1.0 + inset + half],
+        "top_left": [-1.0 + inset + half, 1.0 - inset - half],
+        "top_right": [1.0 - inset - half, 1.0 - inset - half],
+    }
+
+
+_CORNER_POSITIONS = _compute_corner_positions(_PATCH_SIZE_NORM, _INSET_NORM)
 
 _BLACK: list[float] = [-1.0, -1.0, -1.0]
 _WHITE: list[float] = [1.0, 1.0, 1.0]
@@ -45,7 +54,7 @@ class PhotodiodePatch:
         If ``False``, :meth:`trigger` and :meth:`draw` are no-ops.
     """
 
-    PATCH_SIZE_NORM: float = 0.05  # in norm units
+    PATCH_SIZE_NORM: float = _PATCH_SIZE_NORM  # public alias for external reference
 
     def __init__(self, win: Window, corner: str = "bottom_left", *, enabled: bool = True) -> None:
         if corner not in _VALID_CORNERS:

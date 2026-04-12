@@ -23,7 +23,6 @@ class DisplayClient:
 
     def __init__(self, publisher: EventPublisher) -> None:
         self._publisher = publisher
-        self._last_flip_timestamp: float | None = None
 
     def show_stimulus(self, stim_id: str, params: dict[str, Any]) -> None:
         """Publish a 'show' command for the given stimulus."""
@@ -42,8 +41,18 @@ class DisplayClient:
         self._send({"action": "update_scene", "params": scene_state})
 
     def get_flip_timestamp(self) -> float | None:
-        """Return the timestamp of the last display flip."""
-        return self._last_flip_timestamp
+        """Return the timestamp of the last display flip.
+
+        Raises
+        ------
+        NotImplementedError
+            Timing feedback subscription is not yet implemented. Will be
+            wired to ``display_event_address`` in a future phase.
+        """
+        raise NotImplementedError(
+            "DisplayClient does not yet subscribe to display timing events. "
+            "Use stimulus_onset events from display_event_address directly."
+        )
 
     def _send(self, cmd: dict[str, Any]) -> None:
         """Stamp and publish a display command on the display topic."""

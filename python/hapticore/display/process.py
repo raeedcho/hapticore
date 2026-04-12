@@ -103,6 +103,9 @@ class DisplayProcess(multiprocessing.Process):
     # Prevents runaway cursor if the haptic server disconnects or stalls.
     _MAX_INTERP_DT: float = 1.0 / 200.0
 
+    # Sleep duration for headless mode throttle (~60 Hz).
+    _HEADLESS_FRAME_SLEEP: float = 1.0 / 60.0
+
     def _frame_loop(
         self,
         win: Window,
@@ -164,6 +167,10 @@ class DisplayProcess(multiprocessing.Process):
 
             # 5. Flip — blocks until vsync
             win.flip()
+
+            # Throttle headless mode (no vsync → flip returns immediately)
+            if self._headless:
+                time.sleep(self._HEADLESS_FRAME_SLEEP)
 
             # 6. Publish stimulus_onset timing event if any "show" commands
             if shown_stim_ids and flip_time:

@@ -49,29 +49,30 @@ class TestDisplayIntegration:
         pub = ctx.socket(zmq.PUB)
         pub.setsockopt(zmq.LINGER, 0)
         pub.bind(zmq_config.event_pub_address)
-        time.sleep(0.5)
 
-        payload = msgpack.packb(
-            {
-                "action": "show",
-                "stim_id": "target",
-                "params": {"type": "circle", "radius": 0.01},
-                "timestamp": time.monotonic(),
-            },
-            use_bin_type=True,
-        )
-        pub.send_multipart([TOPIC_DISPLAY, payload])
+        try:
+            time.sleep(0.5)
 
-        # Let it run for a few frames
-        time.sleep(0.5)
-        assert proc.is_alive()
+            payload = msgpack.packb(
+                {
+                    "action": "show",
+                    "stim_id": "target",
+                    "params": {"type": "circle", "radius": 0.01},
+                    "timestamp": time.monotonic(),
+                },
+                use_bin_type=True,
+            )
+            pub.send_multipart([TOPIC_DISPLAY, payload])
 
-        proc.request_shutdown()
-        proc.join(timeout=3.0)
-        assert not proc.is_alive()
-
-        pub.close()
-        ctx.term()
+            # Let it run for a few frames
+            time.sleep(0.5)
+            assert proc.is_alive()
+        finally:
+            proc.request_shutdown()
+            proc.join(timeout=3.0)
+            assert not proc.is_alive()
+            pub.close()
+            ctx.term()
 
     def test_stimulus_onset_event_published(self) -> None:
         """Send 'show' command, subscribe to timing events, verify onset event."""
@@ -98,46 +99,47 @@ class TestDisplayIntegration:
         event_sub.connect(zmq_config.display_event_address)
         event_sub.subscribe(TOPIC_EVENT)
 
-        time.sleep(0.5)
+        try:
+            time.sleep(0.5)
 
-        cmd_ts = time.monotonic()
-        payload = msgpack.packb(
-            {
-                "action": "show",
-                "stim_id": "target",
-                "params": {"type": "circle", "radius": 0.01},
-                "timestamp": cmd_ts,
-            },
-            use_bin_type=True,
-        )
-        pub.send_multipart([TOPIC_DISPLAY, payload])
+            cmd_ts = time.monotonic()
+            payload = msgpack.packb(
+                {
+                    "action": "show",
+                    "stim_id": "target",
+                    "params": {"type": "circle", "radius": 0.01},
+                    "timestamp": cmd_ts,
+                },
+                use_bin_type=True,
+            )
+            pub.send_multipart([TOPIC_DISPLAY, payload])
 
-        # Wait for timing event
-        poller = zmq.Poller()
-        poller.register(event_sub, zmq.POLLIN)
-        received = False
-        deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline:
-            socks = dict(poller.poll(100))
-            if event_sub in socks:
-                topic, data = event_sub.recv_multipart()
-                assert topic == TOPIC_EVENT
-                event = msgpack.unpackb(data, raw=False)
-                assert event["event_name"] == "stimulus_onset"
-                assert "target" in event["data"]["stim_ids"]
-                assert "onset_timestamp" in event["data"]
-                assert event["data"]["onset_timestamp"] > 0
-                received = True
-                break
+            # Wait for timing event
+            poller = zmq.Poller()
+            poller.register(event_sub, zmq.POLLIN)
+            received = False
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                socks = dict(poller.poll(100))
+                if event_sub in socks:
+                    topic, data = event_sub.recv_multipart()
+                    assert topic == TOPIC_EVENT
+                    event = msgpack.unpackb(data, raw=False)
+                    assert event["event_name"] == "stimulus_onset"
+                    assert "target" in event["data"]["stim_ids"]
+                    assert "onset_timestamp" in event["data"]
+                    assert event["data"]["onset_timestamp"] > 0
+                    received = True
+                    break
 
-        assert received, "Did not receive stimulus_onset timing event"
-
-        proc.request_shutdown()
-        proc.join(timeout=3.0)
-
-        pub.close()
-        event_sub.close()
-        ctx.term()
+            assert received, "Did not receive stimulus_onset timing event"
+        finally:
+            proc.request_shutdown()
+            proc.join(timeout=3.0)
+            assert not proc.is_alive()
+            pub.close()
+            event_sub.close()
+            ctx.term()
 
     def test_show_hide_show_no_crash(self) -> None:
         """Send show, hide, then show again for same stim_id — no crash."""
@@ -155,25 +157,30 @@ class TestDisplayIntegration:
         pub = ctx.socket(zmq.PUB)
         pub.setsockopt(zmq.LINGER, 0)
         pub.bind(zmq_config.event_pub_address)
-        time.sleep(0.5)
 
-        for action in ["show", "hide", "show"]:
-            msg: dict = {"action": action, "stim_id": "target", "timestamp": time.monotonic()}
-            if action == "show":
-                msg["params"] = {"type": "circle", "radius": 0.01}
-            payload = msgpack.packb(msg, use_bin_type=True)
-            pub.send_multipart([TOPIC_DISPLAY, payload])
-            time.sleep(0.1)
+        try:
+            time.sleep(0.5)
 
-        time.sleep(0.3)
-        assert proc.is_alive()
+            for action in ["show", "hide", "show"]:
+                msg: dict = {
+                    "action": action,
+                    "stim_id": "target",
+                    "timestamp": time.monotonic(),
+                }
+                if action == "show":
+                    msg["params"] = {"type": "circle", "radius": 0.01}
+                payload = msgpack.packb(msg, use_bin_type=True)
+                pub.send_multipart([TOPIC_DISPLAY, payload])
+                time.sleep(0.1)
 
-        proc.request_shutdown()
-        proc.join(timeout=3.0)
-        assert not proc.is_alive()
-
-        pub.close()
-        ctx.term()
+            time.sleep(0.3)
+            assert proc.is_alive()
+        finally:
+            proc.request_shutdown()
+            proc.join(timeout=3.0)
+            assert not proc.is_alive()
+            pub.close()
+            ctx.term()
 
     def test_headless_empty_loop_no_crash(self) -> None:
         """Run for 100+ frames headless with no stimuli — verify no crash."""
@@ -187,10 +194,11 @@ class TestDisplayIntegration:
         )
         proc.start()
 
-        # headless flip is very fast, 100 frames should complete quickly
-        time.sleep(2.0)
-        assert proc.is_alive()
-
-        proc.request_shutdown()
-        proc.join(timeout=3.0)
-        assert not proc.is_alive()
+        try:
+            # headless flip is very fast, 100 frames should complete quickly
+            time.sleep(2.0)
+            assert proc.is_alive()
+        finally:
+            proc.request_shutdown()
+            proc.join(timeout=3.0)
+            assert not proc.is_alive()

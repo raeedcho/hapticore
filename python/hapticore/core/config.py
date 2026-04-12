@@ -83,7 +83,8 @@ class DisplayConfig(BaseModel):
         default=100.0, description="Haptic meters to display units (cm) scale factor"
     )
     display_offset: list[float] = Field(
-        default_factory=lambda: [0.0, 0.0], description="Display offset in cm [x, y] for co-location calibration"
+        default_factory=lambda: [0.0, 0.0],
+        description="Display offset in cm [x, y] for co-location calibration",
     )
 
 

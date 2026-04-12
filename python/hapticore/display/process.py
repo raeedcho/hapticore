@@ -240,7 +240,7 @@ class DisplayProcess(multiprocessing.Process):
 
     def _create_window(self, visual_module: Any) -> Window:
         """Create a PsychoPy Window from the display configuration."""
-        from psychopy import monitors # noqa: F811 — import ONLY here
+        from psychopy import monitors  # noqa: F811 — import ONLY here
 
         cfg = self._display_config
         mon = monitors.Monitor("hapticore")

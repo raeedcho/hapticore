@@ -89,14 +89,15 @@ After any change to `pixi.toml` or `pyproject.toml`, always run `pixi install` a
 
 ### Display environment
 
-PsychoPy and its dependencies live in a separate pixi environment (`display`). PsychoPy is installed via `pixi run -e display install-psychopy` after `pixi install`. Run display tests with `pixi run -e display test-display` (requires `xvfb`, `libsdl2-2.0-0`, and `libglu1-mesa` on Linux). Unit tests can also run under the display environment: `pixi run -e display test-unit`. CI for display testing uses `setup-pixi` with `environments: display` and installs system dependencies (`xvfb`, `libsdl2-2.0-0`, `libglu1-mesa`) before running tests.
+PsychoPy and its dependencies live in a separate pixi environment (`display`), because PsychoPy requires Python <3.12 and uses `--no-deps` installation to avoid pulling in GUI dependencies (wxPython, pyobjc) that are not needed for library-only use.
 
 ```bash
-# display environment (PsychoPy)
-pixi run -e display install-psychopy   # install PsychoPy in the display environment
-pixi run -e display test-unit          # run unit tests under the display environment
-pixi run -e display test-display       # run display tests (requires xvfb on Linux)
+pixi run -e display install-psychopy  # install PsychoPy (run once after pixi install)
+pixi run -e display test-unit         # unit tests with PsychoPy available
+pixi run -e display test-display      # display tests (requires xvfb, libsdl2-2.0-0, and libglu1-mesa on Linux)
 ```
+
+CI uses `setup-pixi` with `environments: display` and installs system deps (`xvfb`, `libsdl2-2.0-0`, `libglu1-mesa`) via apt before running display tests. On macOS, display tests run locally but require the event loop pump (`tests/display/conftest.py`) to avoid window stalls.
 
 ## Common pitfalls an agent should avoid
 

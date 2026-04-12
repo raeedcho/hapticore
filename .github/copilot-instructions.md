@@ -87,6 +87,17 @@ ctest --preset dev-mock
 
 After any change to `pixi.toml` or `pyproject.toml`, always run `pixi install` and commit the updated `pixi.lock` alongside it. CI will fail if the lockfile is out of sync.
 
+### Display environment
+
+PsychoPy and its dependencies live in a separate pixi environment (`display`). PsychoPy is installed via `pixi run -e display install-psychopy` after `pixi install`. Run display tests with `pixi run -e display test-display` (requires `xvfb`, `libsdl2-2.0-0`, and `libglu1-mesa` on Linux). Unit tests can also run under the display environment: `pixi run -e display test-unit`. CI for display testing uses `setup-pixi` with `environments: display` and installs system dependencies (`xvfb`, `libsdl2-2.0-0`, `libglu1-mesa`) before running tests.
+
+```bash
+# display environment (PsychoPy)
+pixi run -e display install-psychopy   # install PsychoPy in the display environment
+pixi run -e display test-unit          # run unit tests under the display environment
+pixi run -e display test-display       # run display tests (requires xvfb on Linux)
+```
+
 ## Common pitfalls an agent should avoid
 
 ### Python pitfalls

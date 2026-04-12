@@ -20,12 +20,19 @@ from hapticore.display.stimulus_factory import (  # noqa: E402
 
 @pytest.fixture(scope="module")
 def win():
-    """Shared headless PsychoPy Window for all tests in the module."""
+    from psychopy import monitors # noqa: F811 — import ONLY here
+
+    mon = monitors.Monitor("test")
+    mon.setWidth(53.0)
+    mon.setSizePix([200, 200])
+    mon.setDistance(50.0)
+
     w = visual.Window(
         size=[200, 200],
         fullscr=False,
         color=[0, 0, 0],
-        units="m",
+        monitor=mon,
+        units="cm",
         allowGUI=False,
         winType="pyglet",
         checkTiming=False,

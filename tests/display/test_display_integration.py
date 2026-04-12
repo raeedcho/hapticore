@@ -100,7 +100,7 @@ class TestDisplayIntegration:
         event_sub.subscribe(TOPIC_EVENT)
 
         try:
-            time.sleep(0.5)
+            time.sleep(1.5)
 
             cmd_ts = time.monotonic()
             payload = msgpack.packb(

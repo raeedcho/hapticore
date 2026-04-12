@@ -151,7 +151,9 @@ class DisplayProcess(multiprocessing.Process):
                     )
                     cursor_pos = self._interpolate_position(latest_state, dt)
                 else:
-                    cursor_pos = [position[0], position[1]]
+                    scale = self._display_config.display_scale
+                    offset = self._display_config.display_offset
+                    cursor_pos = [position[0] * scale + offset[0], position[1] * scale + offset[1]]
                 scene.set_cursor_position(cursor_pos)
 
             # 3. Draw all stimuli
@@ -238,13 +240,21 @@ class DisplayProcess(multiprocessing.Process):
 
     def _create_window(self, visual_module: Any) -> Window:
         """Create a PsychoPy Window from the display configuration."""
+        from psychopy import monitors # noqa: F811 — import ONLY here
+
         cfg = self._display_config
+        mon = monitors.Monitor("hapticore")
+        mon.setWidth(cfg.monitor_width_cm)        # physical screen width
+        mon.setSizePix(list(cfg.resolution))       # pixel resolution
+        mon.setDistance(cfg.monitor_distance_cm)    # viewing distance
+
         effective_fullscr = cfg.fullscreen and not self._headless
         return visual_module.Window(
             size=list(cfg.resolution),
             fullscr=effective_fullscr,
             color=cfg.background_color,
-            units="m",
+            monitor=mon,
+            units="cm",
             allowGUI=not effective_fullscr,
             winType="pyglet",
             checkTiming=False,

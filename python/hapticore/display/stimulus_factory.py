@@ -29,7 +29,7 @@ STIMULUS_TYPES: set[str] = {
 def create_stimulus(win: Window, stim_type: str, params: dict[str, Any]) -> BaseVisualStim:
     """Create a PsychoPy stimulus from a type name and parameter dict.
 
-    All stimuli use ``units="m"`` (meters in lab frame).
+    All stimuli use ``units="cm"`` (centimeters in lab frame).
 
     Raises:
         ValueError: If *stim_type* is not one of the supported types.
@@ -112,7 +112,7 @@ def _create_circle(win: Window, params: dict[str, Any]) -> BaseVisualStim:
         lineColor=color,
         lineWidth=line_width,
         opacity=opacity,
-        units="m",
+        units="cm",
     )
 
 
@@ -134,7 +134,7 @@ def _create_rectangle(win: Window, params: dict[str, Any]) -> BaseVisualStim:
         lineColor=color,
         ori=orientation,
         opacity=opacity,
-        units="m",
+        units="cm",
     )
 
 
@@ -151,7 +151,7 @@ def _create_line(win: Window, params: dict[str, Any]) -> BaseVisualStim:
         end=end,
         lineColor=color,
         lineWidth=line_width,
-        units="m",
+        units="cm",
     )
 
 
@@ -172,7 +172,7 @@ def _create_polygon(win: Window, params: dict[str, Any]) -> BaseVisualStim:
         fillColor=fill_color,
         lineColor=color,
         opacity=opacity,
-        units="m",
+        units="cm",
     )
 
 
@@ -191,7 +191,7 @@ def _create_text(win: Window, params: dict[str, Any]) -> BaseVisualStim:
         color=color,
         height=height,
         font=font,
-        units="m",
+        units="cm",
     )
 
 
@@ -207,7 +207,7 @@ def _create_image(win: Window, params: dict[str, Any]) -> BaseVisualStim:
         image=params["image_path"],
         pos=pos,
         size=size,
-        units="m",
+        units="cm",
     )
 
 
@@ -230,7 +230,7 @@ def _create_grating(win: Window, params: dict[str, Any]) -> BaseVisualStim:
         phase=phase,
         contrast=contrast,
         mask=mask,
-        units="m",
+        units="cm",
     )
 
 
@@ -255,5 +255,5 @@ def _create_dot_field(win: Window, params: dict[str, Any]) -> BaseVisualStim:
         speed=speed,
         color=color,
         fieldPos=pos,
-        units="m",
+        units="cm",
     )

@@ -42,6 +42,10 @@ python-bidi = "*"
 arabic_reshaper = "*"
 freetype-py = "*"
 requests = "*"
+pyserial = "*"
+
+[feature.display.target.osx-arm64.pypi-dependencies]
+pyobjc-framework-Cocoa = "*"
 
 [feature.display.target.linux-64.dependencies]
 # Fix Linux C++ library mismatch in conda envs (PsychoPy's OpenGL chain)

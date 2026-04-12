@@ -135,7 +135,7 @@ jobs:
           environments: display
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y xvfb libsdl2-2.0-0 libglu1-mesa
+        run: sudo apt-get update && sudo apt-get install -y xvfb libsdl2-2.0-0 libglu1-mesa libgl1-mesa-dri
 
       - name: Install PsychoPy (no-deps)
         run: pixi run -e display install-psychopy
@@ -144,4 +144,4 @@ jobs:
         run: xvfb-run -a pixi run -e display test-unit
 
       - name: Run display tests under xvfb
-        run: xvfb-run -a pixi run -e display test-display
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" pixi run -e display test-display

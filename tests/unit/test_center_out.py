@@ -172,7 +172,71 @@ class TestCenterOutBrokeHold:
             ctx.term()
 
 
-class TestCenterOutCommands:
+class TestCenterOutBrokeTargetHold:
+    def test_broke_target_hold_returns_to_reach(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            hold_time=0.001,
+        )
+        try:
+            assert task.state == "move_to_center"
+
+            # Move to center
+            haptic.set_position([0.0, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "hold_center"
+
+            # Complete center hold
+            time.sleep(0.01)
+            expired = task.timer.check()
+            for name in expired:
+                task.trigger(name)
+            assert task.state == "reach"
+
+            # Arrive at target
+            haptic.set_position([0.08, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "hold_target"
+
+            # Move away from target before hold timer fires
+            haptic.set_position([0.5, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "reach"
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_hold_target_break_cancels_hold_timer(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            hold_time=0.001,
+        )
+        try:
+            # Navigate to hold_target
+            haptic.set_position([0.0, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            time.sleep(0.01)
+            expired = task.timer.check()
+            for name in expired:
+                task.trigger(name)
+            haptic.set_position([0.08, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "hold_target"
+
+            # hold_complete timer should be active
+            assert "hold_complete" in task.timer._timers
+
+            # Move away immediately — timer should be cancelled before it fires
+            haptic.set_position([0.5, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "reach"
+            assert "hold_complete" not in task.timer._timers
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+
+
     def test_set_force_field_on_move_to_center(self) -> None:
         task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out()
         try:

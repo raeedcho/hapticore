@@ -251,8 +251,6 @@ class TestCenterOutIntegration:
                     target = task.current_condition.get(
                         "target_position", [0.08, 0.0]
                     )
-                    if len(target) == 2:
-                        target = [target[0], target[1], 0.0]
                     haptic.set_position(target)
             return original_get_state()
 

@@ -116,6 +116,18 @@ class TestCenterOutCorrectSequence:
             pub.close()
             ctx.term()
 
+    def test_set_force_field_on_move_to_center(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out()
+        try:
+            # After entering move_to_center, a set_force_field command should have been sent
+            cmds = [c for c in haptic._command_log if c.method == "set_force_field"]
+            assert len(cmds) >= 1
+            assert cmds[0].params["type"] == "spring_damper"
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
 
 class TestCenterOutTimeout:
     def test_reach_timeout(self) -> None:
@@ -230,20 +242,6 @@ class TestCenterOutBrokeTargetHold:
             task.check_triggers(haptic.get_latest_state())
             assert task.state == "reach"
             assert "hold_complete" not in task.timer._timers
-        finally:
-            controller.teardown()
-            pub.close()
-            ctx.term()
-
-
-
-    def test_set_force_field_on_move_to_center(self) -> None:
-        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out()
-        try:
-            # After entering move_to_center, a set_force_field command should have been sent
-            cmds = [c for c in haptic._command_log if c.method == "set_force_field"]
-            assert len(cmds) >= 1
-            assert cmds[0].params["type"] == "spring_damper"
         finally:
             controller.teardown()
             pub.close()

@@ -41,17 +41,11 @@ _SPATIAL_DIMENSION_KEYS = frozenset({
 _SPATIAL_VERTEX_KEYS = frozenset({"vertices"})
 
 # ---------------------------------------------------------------------------
-# Cup-and-ball visual constants (all in cm — display-internal dimensions
-# with no haptic-space analog, defined directly in PsychoPy's units).
+# Cup-and-ball visual constants used by the renderer's per-frame updates.
+# Creation-time defaults live in display_client.py (task-controlled lifecycle).
 # ---------------------------------------------------------------------------
-_CUP_HALF_WIDTH_CM: float = 1.5
-_CUP_DEPTH_CM: float = 3.0
-_BALL_RADIUS_CM: float = 0.8
 _BALL_COLOR: list[float] = [0.2, 0.6, 1.0]
 _SPILL_COLOR: list[float] = [1.0, 0.3, 0.3]
-_CUP_COLOR: list[float] = [0.8, 0.8, 0.8]
-_STRING_COLOR: list[float] = [0.5, 0.5, 0.5]
-_STRING_WIDTH: float = 2.0  # pixels
 
 
 class DisplayProcess(multiprocessing.Process):
@@ -331,23 +325,18 @@ class DisplayProcess(multiprocessing.Process):
         # no continuous visual updates needed — task controller manages
         # discrete stimuli via show/hide commands.
 
-    def _ensure_stimulus(
-        self, scene: SceneManager, stim_id: str,
-        create_params: dict[str, Any], update_params: dict[str, Any],
-    ) -> None:
-        """Create stimulus on first call, update on subsequent calls."""
-        if not scene.has_stimulus(stim_id):
-            scene.show(stim_id, create_params)
-        else:
-            scene.update(stim_id, update_params)
-
     def _update_cart_pendulum(
         self,
         scene: SceneManager,
         state: dict[str, Any],
         field_state: dict[str, Any],
     ) -> None:
-        """Render cup, ball, and string for the CartPendulumField."""
+        """Update cup, ball, and string positions from CartPendulumField state.
+
+        Positions are converted from meters to cm via _effective_scale/offset.
+        Only updates stimuli that already exist — the task is responsible for
+        creating them via display.show_cart_pendulum().
+        """
         eff_scale = self._effective_scale()
         eff_offset = self._effective_offset_cm()
 
@@ -356,71 +345,28 @@ class DisplayProcess(multiprocessing.Process):
         ball_y = field_state.get("ball_y", 0.0)
         spilled = field_state.get("spilled", False)
 
-        # Convert meters → cm and apply offset
         cup_cx = cup_x * eff_scale + eff_offset[0]
         cup_cy = eff_offset[1]
         ball_cx = ball_x * eff_scale + eff_offset[0]
         ball_cy = ball_y * eff_scale + eff_offset[1]
 
-        ball_color = _SPILL_COLOR if spilled else _BALL_COLOR
+        # Update cup position
+        if scene.has_stimulus("__cup"):
+            scene.update("__cup", {"position": [cup_cx, cup_cy]})
 
-        # --- Cup (U-shaped polygon) ---
-        hw = _CUP_HALF_WIDTH_CM
-        d = _CUP_DEPTH_CM
-        cup_vertices = [
-            [-hw, 0.0],
-            [-hw, -d],
-            [hw, -d],
-            [hw, 0.0],
-        ]
-        self._ensure_stimulus(
-            scene,
-            "__cup",
-            create_params={
-                "type": "polygon",
-                "vertices": cup_vertices,
-                "color": _CUP_COLOR,
-                "fill": False,
-                "position": [cup_cx, cup_cy],
-            },
-            update_params={"position": [cup_cx, cup_cy]},
-        )
-
-        # --- Ball (filled circle) ---
-        self._ensure_stimulus(
-            scene,
-            "__ball",
-            create_params={
-                "type": "circle",
-                "radius": _BALL_RADIUS_CM,
-                "color": ball_color,
-                "position": [ball_cx, ball_cy],
-            },
-            update_params={
+        # Update ball position and spill color
+        if scene.has_stimulus("__ball"):
+            ball_color = _SPILL_COLOR if spilled else _BALL_COLOR
+            scene.update("__ball", {
                 "position": [ball_cx, ball_cy],
                 "color": ball_color,
-            },
-        )
+            })
 
-        # --- String (line from cup center to ball center) ---
-        # PsychoPy Line has start/end attributes not covered by
-        # update_stimulus(), so we access the raw stimulus directly.
-        if not scene.has_stimulus("__string"):
-            scene.show(
-                "__string",
-                {
-                    "type": "line",
-                    "start": [cup_cx, cup_cy],
-                    "end": [ball_cx, ball_cy],
-                    "color": _STRING_COLOR,
-                    "line_width": _STRING_WIDTH,
-                },
-            )
-        else:
-            string_stim = scene.get_stimulus("__string")
-            if string_stim is not None:
-                string_stim.start = [cup_cx, cup_cy]
-                string_stim.end = [ball_cx, ball_cy]
+        # Update string endpoints
+        string_stim = scene.get_stimulus("__string")
+        if string_stim is not None:
+            string_stim.start = [cup_cx, cup_cy]
+            string_stim.end = [ball_cx, ball_cy]
 
     def _update_physics_bodies(
         self, scene: SceneManager, field_state: dict[str, Any],

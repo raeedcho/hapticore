@@ -232,6 +232,10 @@ Built-in field types: `null`, `spring_damper`, `constant`, `workspace_limit`, `c
 Example — cup-and-ball task:
 
 ```python
+# Show cup-and-ball visuals (can be called before setting the haptic field)
+self.display.show_cart_pendulum()
+
+# Set the haptic force field
 self.haptic.send_command(Command(
     command_id=self.new_command_id(),
     method="set_force_field",
@@ -245,6 +249,12 @@ self.haptic.send_command(Command(
         }
     }
 ))
+```
+
+To hide the visuals (e.g., in a trial-end or ITI callback):
+
+```python
+self.display.hide_cart_pendulum()
 ```
 
 Example — constrain to a horizontal plane (free in X and Y, held at Z=0):

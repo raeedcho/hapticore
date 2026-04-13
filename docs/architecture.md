@@ -107,9 +107,9 @@ PsychoPy runs in a dedicated process (`DisplayProcess`). OpenGL calls must happe
 
 **Photodiode patch:** A corner patch toggles black/white on stimulus onset (`"show"` commands) for hardware timing verification. Drawn last, on top of all stimuli. Configured via `DisplayConfig.photodiode_enabled` and `photodiode_corner`.
 
-**Field-state rendering:** The frame loop dispatches to field-specific renderers based on `active_field` in the haptic state:
+**Field-state rendering:** The frame loop dispatches to field-specific renderers based on `active_field` in the haptic state, but only updates positions of stimuli that already exist. Tasks are responsible for creating and removing field-state visuals via `display.show_cart_pendulum()` / `display.hide_cart_pendulum()` or `display.show_physics_bodies()` / `display.hide_physics_bodies()`. This decouples visual lifecycle from the haptic field — a task can show the pendulum visuals during a preview state while the field is still `null`, or hide visuals during a "blind" condition without changing the haptic field.
 
-- **`cart_pendulum`:** Renders cup (`__cup`, U-shaped polygon), ball (`__ball`, filled circle), and string (`__string`, line from cup to ball). Ball color changes to red when `spilled=True`. All positions from `field_state` are converted via `_effective_scale()` (= `display_scale × _METERS_TO_CM`) and `_effective_offset_cm()`. Visual dimensions (cup width, ball radius) are display-internal constants in cm.
+- **`cart_pendulum`:** Updates cup (`__cup`), ball (`__ball`), and string (`__string`) positions. Ball color changes to red when `spilled=True`. All positions from `field_state` are converted via `_effective_scale()` (= `display_scale × _METERS_TO_CM`) and `_effective_offset_cm()`.
 - **`physics_world`:** Updates positions and angles of `__body_<id>` stimuli. The task controller creates the visual appearance during state entry callbacks; the renderer only updates positions (scaled) and orientations (radians→degrees).
 - Other field types (null, spring_damper, etc.): no continuous visual updates — the task controller manages discrete stimuli via show/hide commands.
 

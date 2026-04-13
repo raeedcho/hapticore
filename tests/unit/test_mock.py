@@ -129,3 +129,40 @@ class TestMockDisplay:
         assert mock.get_flip_timestamp() is None
         mock.update_scene({"cursor_pos": [0.0, 0.0]})
         assert mock.get_flip_timestamp() is not None
+
+    def test_show_cart_pendulum(self) -> None:
+        mock = MockDisplay()
+        mock.show_cart_pendulum()
+        assert "__cup" in mock._visible_stimuli
+        assert "__ball" in mock._visible_stimuli
+        assert "__string" in mock._visible_stimuli
+        assert mock._visible_stimuli["__cup"]["type"] == "polygon"
+        assert mock._visible_stimuli["__ball"]["type"] == "circle"
+        assert mock._visible_stimuli["__string"]["type"] == "line"
+
+    def test_hide_cart_pendulum(self) -> None:
+        mock = MockDisplay()
+        mock.show_cart_pendulum()
+        mock.hide_cart_pendulum()
+        assert "__cup" not in mock._visible_stimuli
+        assert "__ball" not in mock._visible_stimuli
+        assert "__string" not in mock._visible_stimuli
+
+    def test_show_physics_bodies(self) -> None:
+        mock = MockDisplay()
+        mock.show_physics_bodies({
+            "puck": {"type": "circle", "radius": 0.02},
+            "wall": {"type": "polygon", "vertices": []},
+        })
+        assert "__body_puck" in mock._visible_stimuli
+        assert "__body_wall" in mock._visible_stimuli
+
+    def test_hide_physics_bodies(self) -> None:
+        mock = MockDisplay()
+        mock.show_physics_bodies({
+            "puck": {"type": "circle"},
+            "wall": {"type": "polygon"},
+        })
+        mock.hide_physics_bodies(["puck", "wall"])
+        assert "__body_puck" not in mock._visible_stimuli
+        assert "__body_wall" not in mock._visible_stimuli

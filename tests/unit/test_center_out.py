@@ -116,6 +116,18 @@ class TestCenterOutCorrectSequence:
             pub.close()
             ctx.term()
 
+    def test_set_force_field_on_move_to_center(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out()
+        try:
+            # After entering move_to_center, a set_force_field command should have been sent
+            cmds = [c for c in haptic._command_log if c.method == "set_force_field"]
+            assert len(cmds) >= 1
+            assert cmds[0].params["type"] == "spring_damper"
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
 
 class TestCenterOutTimeout:
     def test_reach_timeout(self) -> None:
@@ -172,14 +184,64 @@ class TestCenterOutBrokeHold:
             ctx.term()
 
 
-class TestCenterOutCommands:
-    def test_set_force_field_on_move_to_center(self) -> None:
-        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out()
+class TestCenterOutBrokeTargetHold:
+    def test_broke_target_hold_returns_to_reach(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            hold_time=0.001,
+        )
         try:
-            # After entering move_to_center, a set_force_field command should have been sent
-            cmds = [c for c in haptic._command_log if c.method == "set_force_field"]
-            assert len(cmds) >= 1
-            assert cmds[0].params["type"] == "spring_damper"
+            assert task.state == "move_to_center"
+
+            # Move to center
+            haptic.set_position([0.0, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "hold_center"
+
+            # Complete center hold
+            time.sleep(0.01)
+            expired = task.timer.check()
+            for name in expired:
+                task.trigger(name)
+            assert task.state == "reach"
+
+            # Arrive at target
+            haptic.set_position([0.08, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "hold_target"
+
+            # Move away from target before hold timer fires
+            haptic.set_position([0.5, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "reach"
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_hold_target_break_cancels_hold_timer(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            hold_time=0.001,
+        )
+        try:
+            # Navigate to hold_target
+            haptic.set_position([0.0, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            time.sleep(0.01)
+            expired = task.timer.check()
+            for name in expired:
+                task.trigger(name)
+            haptic.set_position([0.08, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "hold_target"
+
+            # hold_complete timer should be active
+            assert "hold_complete" in task.timer._timers
+
+            # Move away immediately — timer should be cancelled before it fires
+            haptic.set_position([0.5, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "reach"
+            assert "hold_complete" not in task.timer._timers
         finally:
             controller.teardown()
             pub.close()
@@ -205,6 +267,50 @@ class TestCenterOutEventCodes:
 
             # reach sends code 20
             assert 20 in sync._event_codes
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+
+class TestCenterOutTrialStartNormalization:
+    def test_on_trial_start_defaults_to_target_distance(self) -> None:
+        """Condition without target_position defaults to target_distance on X-axis."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            start_trial=False
+        )
+        try:
+            condition: dict[str, Any] = {}  # No target_position
+            task.on_trial_start(condition)
+            assert task.current_condition["target_position"] == [0.08, 0.0, 0.0]
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_on_trial_start_extends_2d_to_3d(self) -> None:
+        """2D target_position is extended to 3D with Z=0."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            start_trial=False
+        )
+        try:
+            condition: dict[str, Any] = {"target_position": [0.05, 0.03]}
+            task.on_trial_start(condition)
+            assert task.current_condition["target_position"] == [0.05, 0.03, 0.0]
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_on_trial_start_preserves_3d(self) -> None:
+        """3D target_position is unchanged."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            start_trial=False
+        )
+        try:
+            condition: dict[str, Any] = {"target_position": [0.05, 0.03, 0.01]}
+            task.on_trial_start(condition)
+            assert task.current_condition["target_position"] == [0.05, 0.03, 0.01]
         finally:
             controller.teardown()
             pub.close()

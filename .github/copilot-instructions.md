@@ -59,6 +59,7 @@ All positions, velocities, and forces use the **lab frame**: X = horizontal (+ r
 - Force fields are parameterized C++ classes. Python sets parameters via commands; C++ evaluates forces at 4 kHz. Never compute forces in Python.
 - For tasks with collisions or rigid body dynamics, use the `PhysicsField` (Box2D wrapper) configured declaratively from Python. Do not write custom collision code per task. See `docs/task_authoring_guide.md` § "Approach B: Physics world".
 - The interface contract between C++ and Python is defined in `docs/haptic_server_protocol.md`. Both sides must conform to this spec.
+- All spatial values (positions, radii, widths, distances) use **meters (SI)** throughout task code, config files, and inter-process messages. `display_scale` is a dimensionless workspace multiplier (default 1.0); the fixed meters→cm conversion for PsychoPy is handled internally by the display process. `display_offset` is in meters. Never pass pre-converted cm values to `show_stimulus()` or `update_scene()`. See ADR-011.
 
 ## Build and test commands
 

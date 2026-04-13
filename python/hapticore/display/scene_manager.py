@@ -29,9 +29,13 @@ class SceneManager:
         Display configuration (cursor radius, color, visibility).
     """
 
-    def __init__(self, win: Window, display_config: DisplayConfig) -> None:
+    def __init__(
+        self, win: Window, display_config: DisplayConfig,
+        *, spatial_scale: float = 1.0,
+    ) -> None:
         self._win = win
         self._display_config = display_config
+        self._spatial_scale = spatial_scale
         self._stimuli: dict[str, BaseVisualStim] = {}
         self._draw_order: list[str] = []
         self._cursor_stim: BaseVisualStim | None = None
@@ -65,6 +69,19 @@ class SceneManager:
         stim = create_stimulus(self._win, stim_type, create_params)
         self._stimuli[stim_id] = stim
         self._draw_order.append(stim_id)
+
+    def has_stimulus(self, stim_id: str) -> bool:
+        """Check whether a stimulus with the given ID is currently active."""
+        return stim_id in self._stimuli
+
+    def get_stimulus(self, stim_id: str) -> BaseVisualStim | None:
+        """Return the raw PsychoPy stimulus object, or None if not active.
+
+        Use sparingly — prefer show/hide/update for normal operations.
+        Needed for properties like Line.start/Line.end that aren't
+        covered by update_stimulus().
+        """
+        return self._stimuli.get(stim_id)
 
     def hide(self, stim_id: str) -> None:
         """Remove a stimulus. No-op if *stim_id* doesn't exist."""
@@ -104,7 +121,7 @@ class SceneManager:
                 self._win,
                 "circle",
                 {
-                    "radius": self._display_config.cursor_radius,
+                    "radius": self._display_config.cursor_radius * self._spatial_scale,
                     "color": self._display_config.cursor_color,
                     "position": position,
                 },

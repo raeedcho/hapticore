@@ -62,12 +62,31 @@ class CenterOutTask(BaseTask):
         {"trigger": "hold_complete", "source": "hold_center", "dest": "reach"},
         {"trigger": "at_target", "source": "reach", "dest": "hold_target"},
         {"trigger": "hold_complete", "source": "hold_target", "dest": "success"},
-        {"trigger": "time_expired", "source": ["reach", "hold_target"], "dest": "timeout"},
+        {"trigger": "time_expired", "source": "reach", "dest": "timeout"},
         {"trigger": "broke_hold", "source": "hold_center", "dest": "move_to_center"},
+        {"trigger": "broke_target_hold", "source": "hold_target", "dest": "reach"},
         {"trigger": "trial_end", "source": ["success", "timeout"], "dest": "iti"},
     ]
 
     INITIAL_STATE = "iti"
+
+    # --- Lifecycle ---
+
+    def on_trial_start(self, condition: dict[str, Any]) -> None:
+        """Normalize condition dict before callbacks run.
+
+        Ensures ``target_position`` is always present (defaulting to the
+        ``target_distance`` parameter on the X-axis) and is always 3D so
+        distance checks in callbacks never need to extend it.
+        """
+        super().on_trial_start(condition)
+        if "target_position" not in self.current_condition:
+            self.current_condition["target_position"] = [
+                self.params["target_distance"], 0.0, 0.0,
+            ]
+        tp = self.current_condition["target_position"]
+        if len(tp) == 2:
+            self.current_condition["target_position"] = [tp[0], tp[1], 0.0]
 
     # --- State callbacks ---
 
@@ -102,10 +121,10 @@ class CenterOutTask(BaseTask):
             method="set_force_field",
             params={"type": "null"},
         ))
-        target_pos = self.current_condition.get("target_position", [0.08, 0.0])
+        target_pos = self.current_condition["target_position"]
         self.display.show_stimulus("peripheral_target", {
             "type": "circle",
-            "position": target_pos,
+            "position": target_pos[:2],
             "radius": self.params["target_radius"],
             "color": [0.0, 1.0, 0.0],
         })
@@ -119,7 +138,6 @@ class CenterOutTask(BaseTask):
 
     def on_enter_success(self, event: Any = None) -> None:
         """Monkey reached and held the target — reward."""
-        self.timer.cancel("time_expired")
         self.reward()
         self.log_trial(outcome="success")
         self.display.clear()
@@ -144,16 +162,17 @@ class CenterOutTask(BaseTask):
                 self.trigger("at_center")
 
         elif self.state == "reach":
-            target = self.current_condition.get("target_position", [0.08, 0.0])
-            # Extend to 3D if target is 2D
-            if len(target) == 2:
-                target = [target[0], target[1], 0.0]
+            target = self.current_condition["target_position"]
             if self.distance(pos, target) < self.params["target_radius"]:
                 self.trigger("at_target")
 
-        elif (
-            self.state == "hold_center"
-            and self.distance(pos, [0.0, 0.0, 0.0]) > self.params["target_radius"]
-        ):
-            self.timer.cancel("hold_complete")
-            self.trigger("broke_hold")
+        elif self.state == "hold_center":
+            if self.distance(pos, [0.0, 0.0, 0.0]) > self.params["target_radius"]:
+                self.timer.cancel("hold_complete")
+                self.trigger("broke_hold")
+
+        elif self.state == "hold_target":
+            target = self.current_condition["target_position"]
+            if self.distance(pos, target) > self.params["target_radius"]:
+                self.timer.cancel("hold_complete")
+                self.trigger("broke_target_hold")

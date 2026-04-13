@@ -67,7 +67,7 @@ class TestCLISimulate:
         args = Namespace(
             config=str(config_path),
             rig=None, subject=None, task=None, extra_config=[],
-            experiment_name=None, fast=True,
+            experiment_name=None, fast=True, display=False,
         )
 
         start = time.monotonic()
@@ -93,7 +93,7 @@ class TestCLISimulate:
             subject=str(configs / "subject" / "example_subject.yaml"),
             task=str(configs / "task" / "center_out.yaml"),
             extra_config=[str(configs / "example_experiment.yaml")],
-            experiment_name=None, fast=True,
+            experiment_name=None, fast=True, display=False,
         )
 
         start = time.monotonic()

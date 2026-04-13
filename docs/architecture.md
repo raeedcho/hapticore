@@ -93,7 +93,27 @@ The `TaskController` process is the experiment orchestrator. It creates a `trans
 
 ### Display process
 
-PsychoPy runs in a dedicated process. OpenGL calls must happen in the main thread. The frame loop: drain ZMQ subscriber queue (non-blocking) → update stimulus positions → draw → `win.flip()`. Stimulus onset timestamps captured via `win.callOnFlip()`.
+PsychoPy runs in a dedicated process (`DisplayProcess`). OpenGL calls must happen in the main thread. The frame loop: drain ZMQ subscriber queue (non-blocking) → update stimulus positions → update from field state → draw → `win.flip()`. Stimulus onset timestamps captured via `win.callOnFlip()`.
+
+**Display command protocol:** The TaskController sends commands on the `b"display"` topic via the `EventPublisher`. Commands are msgpack-encoded dicts with an `"action"` key:
+- `"show"` — create/replace a stimulus (`stim_id`, `params` with `"type"` key)
+- `"hide"` — remove a stimulus (`stim_id`)
+- `"clear"` — remove all stimuli
+- `"update_scene"` — update properties of existing stimuli (`params` dict of `{stim_id: {property: value}}`)
+
+**Timing events:** On each `win.flip()` that follows a `"show"` command, a `stimulus_onset` event is published on the `b"event"` topic via the dedicated `display_event_address` PUB socket. This provides sub-frame onset timestamps for trial event logging.
+
+**Unit system:** All spatial values throughout the system — including display command parameters and `DisplayConfig` fields — use meters (SI). The PsychoPy window uses `units="cm"` internally. The `DisplayProcess` is the sole conversion boundary: it applies `display_scale` (a dimensionless workspace multiplier, default 1.0) and a fixed ×100 meters→cm factor to all spatial parameters before rendering. `display_offset` is in meters and specifies the display origin shift for co-location calibration. This conversion applies to haptic state cursor positions, field-state body positions, and all spatial parameters in `"show"` / `"update_scene"` display commands (`position`, `radius`, `width`, `height`, `start`, `end`, `vertices`). Non-spatial parameters (`color`, `opacity`, `orientation`, `line_width`) pass through unchanged. See ADR-011.
+
+**Photodiode patch:** A corner patch toggles black/white on stimulus onset (`"show"` commands) for hardware timing verification. Drawn last, on top of all stimuli. Configured via `DisplayConfig.photodiode_enabled` and `photodiode_corner`.
+
+**Field-state rendering:** The frame loop dispatches to field-specific renderers based on `active_field` in the haptic state:
+
+- **`cart_pendulum`:** Renders cup (`__cup`, U-shaped polygon), ball (`__ball`, filled circle), and string (`__string`, line from cup to ball). Ball color changes to red when `spilled=True`. All positions from `field_state` are converted via `_effective_scale()` (= `display_scale × _METERS_TO_CM`) and `_effective_offset_cm()`. Visual dimensions (cup width, ball radius) are display-internal constants in cm.
+- **`physics_world`:** Updates positions and angles of `__body_<id>` stimuli. The task controller creates the visual appearance during state entry callbacks; the renderer only updates positions (scaled) and orientations (radians→degrees).
+- Other field types (null, spring_damper, etc.): no continuous visual updates — the task controller manages discrete stimuli via show/hide commands.
+
+Reserved stimulus IDs (prefixed `__`): `__cup`, `__ball`, `__string` (cart_pendulum); `__body_<id>` (physics_world).
 
 For tasks using PhysicsField (Tetris, air hockey, rod navigation), the display process reads the full set of body positions and angles from the `field_state` dict in the published `HapticState`. It renders all bodies without knowing anything about the physics — just positions and shapes.
 

@@ -273,6 +273,50 @@ class TestCenterOutEventCodes:
             ctx.term()
 
 
+class TestCenterOutTrialStartNormalization:
+    def test_on_trial_start_defaults_to_target_distance(self) -> None:
+        """Condition without target_position defaults to target_distance on X-axis."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            start_trial=False
+        )
+        try:
+            condition: dict[str, Any] = {}  # No target_position
+            task.on_trial_start(condition)
+            assert task.current_condition["target_position"] == [0.08, 0.0, 0.0]
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_on_trial_start_extends_2d_to_3d(self) -> None:
+        """2D target_position is extended to 3D with Z=0."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            start_trial=False
+        )
+        try:
+            condition: dict[str, Any] = {"target_position": [0.05, 0.03]}
+            task.on_trial_start(condition)
+            assert task.current_condition["target_position"] == [0.05, 0.03, 0.0]
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_on_trial_start_preserves_3d(self) -> None:
+        """3D target_position is unchanged."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_center_out(
+            start_trial=False
+        )
+        try:
+            condition: dict[str, Any] = {"target_position": [0.05, 0.03, 0.01]}
+            task.on_trial_start(condition)
+            assert task.current_condition["target_position"] == [0.05, 0.03, 0.01]
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+
 class TestCenterOutFullSession:
     def test_10_trials_scripted(self) -> None:
         """Run 10 trials with a scripted trajectory."""

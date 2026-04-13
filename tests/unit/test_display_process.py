@@ -137,31 +137,35 @@ class TestPhotodiodeInFrameLoop:
     the photodiode: ``if shown_stim_ids and photodiode is not None``.
     """
 
+    def _make_proc(self) -> DisplayProcess:
+        return DisplayProcess(
+            display_config=DisplayConfig(),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+
     def test_show_returns_stim_id(self) -> None:
         """'show' command returns stim_id, which causes photodiode.trigger()."""
-        from hapticore.display.process import DisplayProcess
-
+        proc = self._make_proc()
         scene = MagicMock()
         cmd = {"action": "show", "stim_id": "target", "params": {"type": "circle"}}
-        result = DisplayProcess._handle_display_command(scene, cmd)
+        result = proc._handle_display_command(scene, cmd)
         assert result == "target"
 
     def test_hide_returns_none(self) -> None:
         """'hide' command returns None — photodiode should not trigger."""
-        from hapticore.display.process import DisplayProcess
-
+        proc = self._make_proc()
         scene = MagicMock()
         cmd = {"action": "hide", "stim_id": "target"}
-        result = DisplayProcess._handle_display_command(scene, cmd)
+        result = proc._handle_display_command(scene, cmd)
         assert result is None
 
     def test_clear_returns_none(self) -> None:
         """'clear' command returns None — photodiode should not trigger."""
-        from hapticore.display.process import DisplayProcess
-
+        proc = self._make_proc()
         scene = MagicMock()
         cmd = {"action": "clear"}
-        result = DisplayProcess._handle_display_command(scene, cmd)
+        result = proc._handle_display_command(scene, cmd)
         assert result is None
 
 
@@ -227,12 +231,14 @@ class TestUpdateFromFieldState:
 class TestUpdatePhysicsBodies:
     """Verify _update_physics_bodies scales positions and updates orientation."""
 
-    def _make_proc(self, scale: float = 100.0, offset: list[float] | None = None) -> DisplayProcess:
+    def _make_proc(
+        self, display_scale: float = 1.0, offset: list[float] | None = None,
+    ) -> DisplayProcess:
         from hapticore.display.process import DisplayProcess
 
         return DisplayProcess(
             display_config=DisplayConfig(
-                display_scale=scale,
+                display_scale=display_scale,
                 display_offset=offset or [0.0, 0.0],
             ),
             zmq_config=ZMQConfig(),
@@ -242,7 +248,11 @@ class TestUpdatePhysicsBodies:
     def test_updates_position_and_orientation(self) -> None:
         import math
 
-        proc = self._make_proc(scale=100.0, offset=[1.0, 2.0])
+        from hapticore.display.process import _METERS_TO_CM
+
+        # display_scale=1.0 → eff_scale = 1.0 * 100 = 100
+        # offset=[0.01, 0.02] m → eff_offset = [1.0, 2.0] cm
+        proc = self._make_proc(display_scale=1.0, offset=[0.01, 0.02])
         scene = MagicMock()
         scene.has_stimulus.return_value = True
 
@@ -253,10 +263,11 @@ class TestUpdatePhysicsBodies:
         }
         proc._update_physics_bodies(scene, field_state)
 
+        eff = 1.0 * _METERS_TO_CM
         scene.update.assert_called_once_with(
             "__body_puck",
             {
-                "position": [0.05 * 100.0 + 1.0, 0.1 * 100.0 + 2.0],
+                "position": [0.05 * eff + 0.01 * eff, 0.1 * eff + 0.02 * eff],
                 "orientation": 1.5708 * (180.0 / math.pi),
             },
         )
@@ -275,7 +286,7 @@ class TestUpdatePhysicsBodies:
         scene.update.assert_not_called()
 
     def test_handles_multiple_bodies(self) -> None:
-        proc = self._make_proc(scale=100.0, offset=[0.0, 0.0])
+        proc = self._make_proc(display_scale=1.0, offset=[0.0, 0.0])
         scene = MagicMock()
         scene.has_stimulus.return_value = True
 
@@ -292,10 +303,12 @@ class TestUpdatePhysicsBodies:
 class TestUpdateCartPendulum:
     """Verify _update_cart_pendulum creates and updates cup/ball/string stimuli."""
 
-    def _make_proc(self, scale: float = 100.0, offset: list[float] | None = None) -> DisplayProcess:
+    def _make_proc(
+        self, display_scale: float = 1.0, offset: list[float] | None = None,
+    ) -> DisplayProcess:
         return DisplayProcess(
             display_config=DisplayConfig(
-                display_scale=scale,
+                display_scale=display_scale,
                 display_offset=offset or [0.0, 0.0],
             ),
             zmq_config=ZMQConfig(),
@@ -366,8 +379,12 @@ class TestUpdateCartPendulum:
         assert string_stim.end is not None
 
     def test_positions_scaled_by_display_scale_and_offset(self) -> None:
-        """Positions from field_state (meters) are converted via scale + offset."""
-        proc = self._make_proc(scale=100.0, offset=[5.0, 10.0])
+        """Positions from field_state (meters) are converted via eff_scale + offset."""
+        from hapticore.display.process import _METERS_TO_CM
+
+        # display_scale=1.0, offset=[0.05, 0.1] m
+        # eff_scale = 1.0 * 100 = 100, eff_offset = [5.0, 10.0] cm
+        proc = self._make_proc(display_scale=1.0, offset=[0.05, 0.1])
         scene = MagicMock()
         scene.has_stimulus.return_value = False
 
@@ -377,10 +394,14 @@ class TestUpdateCartPendulum:
 
         show_calls = {call.args[0]: call.args[1] for call in scene.show.call_args_list}
 
-        # Cup: cup_x * 100 + 5 = 8.0, offset[1] = 10.0
-        assert show_calls["__cup"]["position"] == [0.03 * 100.0 + 5.0, 10.0]
-        # Ball: ball_x * 100 + 5 = 10.0, ball_y * 100 + 10 = 2.0
-        assert show_calls["__ball"]["position"] == [0.05 * 100.0 + 5.0, -0.08 * 100.0 + 10.0]
+        eff = 1.0 * _METERS_TO_CM
+        # Cup: cup_x * eff + offset_x * eff = 0.03*100 + 0.05*100 = 8.0
+        assert show_calls["__cup"]["position"] == [0.03 * eff + 0.05 * eff, 0.1 * eff]
+        # Ball: ball_x * eff + off_x, ball_y * eff + off_y
+        assert show_calls["__ball"]["position"] == [
+            0.05 * eff + 0.05 * eff,
+            -0.08 * eff + 0.1 * eff,
+        ]
 
     def test_ball_color_blue_when_not_spilled(self) -> None:
         """Ball should be blue when spilled=False."""
@@ -430,7 +451,9 @@ class TestUpdateCartPendulum:
 
     def test_string_endpoints_updated_directly(self) -> None:
         """On subsequent frames, string start/end are set directly on the stim."""
-        proc = self._make_proc(scale=100.0, offset=[0.0, 0.0])
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc(display_scale=1.0, offset=[0.0, 0.0])
         scene = MagicMock()
         scene.has_stimulus.return_value = True
         string_stim = MagicMock()
@@ -440,6 +463,196 @@ class TestUpdateCartPendulum:
         fs = self._make_field_state(cup_x=0.01, ball_x=0.03, ball_y=-0.05)
         proc._update_cart_pendulum(scene, state, fs)
 
+        eff = 1.0 * _METERS_TO_CM
         # String endpoints should match cup center → ball center (in cm)
-        assert string_stim.start == [0.01 * 100.0, 0.0]
-        assert string_stim.end == [0.03 * 100.0, -0.05 * 100.0]
+        assert string_stim.start == [0.01 * eff, 0.0]
+        assert string_stim.end == [0.03 * eff, -0.05 * eff]
+
+
+class TestEffectiveScale:
+    """Verify _effective_scale combines display_scale with _METERS_TO_CM."""
+
+    def test_default_scale(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = DisplayProcess(
+            display_config=DisplayConfig(),  # display_scale=1.0
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+        assert proc._effective_scale() == 1.0 * _METERS_TO_CM
+
+    def test_custom_scale(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = DisplayProcess(
+            display_config=DisplayConfig(display_scale=2.0),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+        assert proc._effective_scale() == 2.0 * _METERS_TO_CM
+
+
+class TestEffectiveOffsetCm:
+    """Verify _effective_offset_cm converts meters offset to cm."""
+
+    def test_zero_offset(self) -> None:
+        proc = DisplayProcess(
+            display_config=DisplayConfig(display_offset=[0.0, 0.0]),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+        assert proc._effective_offset_cm() == [0.0, 0.0]
+
+    def test_nonzero_offset(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = DisplayProcess(
+            display_config=DisplayConfig(
+                display_scale=1.0,
+                display_offset=[0.05, -0.03],
+            ),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+        eff = 1.0 * _METERS_TO_CM
+        assert proc._effective_offset_cm() == [0.05 * eff, -0.03 * eff]
+
+
+class TestConvertSpatialParams:
+    """Verify _convert_spatial_params converts meters → cm for spatial keys."""
+
+    def _make_proc(
+        self, display_scale: float = 1.0, offset: list[float] | None = None,
+    ) -> DisplayProcess:
+        return DisplayProcess(
+            display_config=DisplayConfig(
+                display_scale=display_scale,
+                display_offset=offset or [0.0, 0.0],
+            ),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+
+    def test_position_converted(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc(display_scale=1.0, offset=[0.01, 0.02])
+        eff = 1.0 * _METERS_TO_CM
+        result = proc._convert_spatial_params({"position": [0.05, 0.1]})
+        assert result["position"] == [0.05 * eff + 0.01 * eff, 0.1 * eff + 0.02 * eff]
+
+    def test_radius_converted(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc(display_scale=1.0)
+        eff = 1.0 * _METERS_TO_CM
+        result = proc._convert_spatial_params({"radius": 0.015})
+        assert result["radius"] == 0.015 * eff
+
+    def test_vertices_converted(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc(display_scale=1.0, offset=[0.01, 0.0])
+        eff = 1.0 * _METERS_TO_CM
+        verts = [[-0.01, 0.0], [0.01, 0.0], [0.0, 0.02]]
+        result = proc._convert_spatial_params({"vertices": verts})
+        expected = [
+            [-0.01 * eff + 0.01 * eff, 0.0],
+            [0.01 * eff + 0.01 * eff, 0.0],
+            [0.0 * eff + 0.01 * eff, 0.02 * eff],
+        ]
+        assert result["vertices"] == expected
+
+    def test_nonspatial_passes_through(self) -> None:
+        proc = self._make_proc()
+        result = proc._convert_spatial_params({
+            "color": [1.0, 0.0, 0.0],
+            "opacity": 0.5,
+            "type": "circle",
+        })
+        assert result == {"color": [1.0, 0.0, 0.0], "opacity": 0.5, "type": "circle"}
+
+    def test_mixed_params(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc(display_scale=1.0)
+        eff = 1.0 * _METERS_TO_CM
+        result = proc._convert_spatial_params({
+            "type": "circle",
+            "position": [0.05, 0.0],
+            "radius": 0.01,
+            "color": [1.0, 1.0, 0.0],
+        })
+        assert result["type"] == "circle"
+        assert result["position"] == [0.05 * eff, 0.0]
+        assert result["radius"] == 0.01 * eff
+        assert result["color"] == [1.0, 1.0, 0.0]
+
+    def test_start_end_converted(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc(display_scale=1.0)
+        eff = 1.0 * _METERS_TO_CM
+        result = proc._convert_spatial_params({
+            "start": [0.0, 0.0],
+            "end": [0.1, 0.05],
+        })
+        assert result["start"] == [0.0, 0.0]
+        assert result["end"] == [0.1 * eff, 0.05 * eff]
+
+    def test_width_height_converted(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc(display_scale=2.0)
+        eff = 2.0 * _METERS_TO_CM
+        result = proc._convert_spatial_params({"width": 0.02, "height": 0.01})
+        assert result["width"] == 0.02 * eff
+        assert result["height"] == 0.01 * eff
+
+
+class TestHandleDisplayCommandConversion:
+    """Verify _handle_display_command converts spatial params for show/update_scene."""
+
+    def _make_proc(self) -> DisplayProcess:
+        return DisplayProcess(
+            display_config=DisplayConfig(),  # display_scale=1.0
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+
+    def test_show_converts_radius(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc()
+        scene = MagicMock()
+        cmd = {
+            "action": "show",
+            "stim_id": "target",
+            "params": {"type": "circle", "radius": 0.015, "position": [0.08, 0.0]},
+        }
+        proc._handle_display_command(scene, cmd)
+
+        eff = 1.0 * _METERS_TO_CM
+        args = scene.show.call_args
+        assert args[0][1]["radius"] == 0.015 * eff
+        assert args[0][1]["position"] == [0.08 * eff, 0.0]
+        # Non-spatial keys pass through
+        assert args[0][1]["type"] == "circle"
+
+    def test_update_scene_converts_positions(self) -> None:
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc()
+        scene = MagicMock()
+        cmd = {
+            "action": "update_scene",
+            "params": {
+                "target": {"position": [0.05, 0.1]},
+            },
+        }
+        proc._handle_display_command(scene, cmd)
+
+        eff = 1.0 * _METERS_TO_CM
+        args = scene.update.call_args
+        assert args[0][1]["position"] == [0.05 * eff, 0.1 * eff]

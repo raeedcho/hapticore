@@ -202,8 +202,20 @@ class TestCursorVisibility:
             args, _kwargs = mock_create.call_args
             # create_stimulus(win, "circle", params_dict)
             params = args[2]
-            assert params["radius"] == 0.008
+            # spatial_scale defaults to 1.0, so radius is unscaled
+            assert params["radius"] == 0.008 * 1.0
             assert params["color"] == [1.0, 0.0, 0.0]
+
+    def test_cursor_radius_uses_spatial_scale(self) -> None:
+        win = MagicMock()
+        config = DisplayConfig(cursor_visible=True, cursor_radius=0.005)
+        scene = SceneManager(win, config, spatial_scale=100.0)
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            mock_create.return_value = MagicMock()
+            scene.set_cursor_position([0.0, 0.0])
+            args, _kwargs = mock_create.call_args
+            params = args[2]
+            assert params["radius"] == 0.005 * 100.0  # 0.5 cm
 
     def test_cursor_position_updates_on_subsequent_calls(self) -> None:
         scene = self._make_scene(cursor_visible=True)

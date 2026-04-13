@@ -109,7 +109,7 @@ PsychoPy runs in a dedicated process (`DisplayProcess`). OpenGL calls must happe
 
 **Field-state rendering:** The frame loop dispatches to field-specific renderers based on `active_field` in the haptic state:
 
-- **`cart_pendulum`:** Renders cup (`__cup`, U-shaped polygon), ball (`__ball`, filled circle), and string (`__string`, line from cup to ball). Ball color changes to red when `spilled=True`. All positions from `field_state` are converted via `display_scale`/`display_offset`. Visual dimensions (cup width, ball radius) are defined in cm.
+- **`cart_pendulum`:** Renders cup (`__cup`, U-shaped polygon), ball (`__ball`, filled circle), and string (`__string`, line from cup to ball). Ball color changes to red when `spilled=True`. All positions from `field_state` are converted via `_effective_scale()` (= `display_scale × _METERS_TO_CM`) and `_effective_offset_cm()`. Visual dimensions (cup width, ball radius) are display-internal constants in cm.
 - **`physics_world`:** Updates positions and angles of `__body_<id>` stimuli. The task controller creates the visual appearance during state entry callbacks; the renderer only updates positions (scaled) and orientations (radians→degrees).
 - Other field types (null, spring_damper, etc.): no continuous visual updates — the task controller manages discrete stimuli via show/hide commands.
 

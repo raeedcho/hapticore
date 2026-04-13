@@ -469,3 +469,39 @@ This uses the `transitions` library's `GraphMachine` to produce an SVG showing a
 | `cpp/.../my_custom_field.h/.cpp` | Only for novel analytical force computations | Custom ForceField subclass |
 
 Most tasks — including those with collisions and rigid body dynamics — do not require any C++ changes. The `PhysicsField` handles collision detection, contact forces, and joint dynamics via Box2D, configured entirely from Python.
+
+## Common pitfalls
+
+### Hold-break detection: check every tick, not just on entry
+
+A common mistake is checking whether the hand left a hold zone only once (e.g., in `on_enter_hold_center`). The hand can leave at any point during the hold period. Check distance continuously in `check_triggers()`:
+
+```python
+def check_triggers(self, haptic_state: HapticState):
+    if self.state == "hold_center":
+        if self.distance(haptic_state.position, [0, 0, 0]) > self.params["target_radius"]:
+            self.trigger("broke_hold")
+```
+
+Without this, the monkey can leave the hold zone after entry and still get rewarded when the hold timer expires.
+
+### Timer cleanup: cancel timers on state exit
+
+If a state sets a timer (e.g., `self.timer.set("time_expired", 2.0)`), cancel it when leaving that state early. Otherwise the timer fires in the wrong state, potentially triggering an invalid transition:
+
+```python
+def on_exit_reach(self):
+    self.timer.cancel("time_expired")
+```
+
+This is especially important for states that can be exited by multiple triggers (e.g., `reach` can end via `at_target` or `time_expired`).
+
+### Unreachable transitions: verify every trigger has a path
+
+The `transitions` library silently ignores triggers that don't match any transition from the current state. If you misspell a trigger name or forget to add a transition, the state machine silently stays put. Use `hapticore graph-task` to visualize and manually verify that every state has a way out:
+
+```bash
+hapticore graph-task hapticore.tasks.my_task.MyTask
+```
+
+A state with no outgoing transitions is a deadlock — the task will hang there forever.

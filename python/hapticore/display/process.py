@@ -29,7 +29,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Cup-and-ball visual constants (all in cm — the display uses units="cm")
+# Fixed meters → cm conversion — property of the PsychoPy backend (units="cm").
+# ---------------------------------------------------------------------------
+_METERS_TO_CM: float = 100.0
+
+# Spatial parameter key categories for _convert_spatial_params().
+_SPATIAL_POSITION_KEYS = frozenset({"position", "start", "end"})
+_SPATIAL_DIMENSION_KEYS = frozenset({
+    "radius", "width", "height", "size", "field_size", "dot_size",
+})
+_SPATIAL_VERTEX_KEYS = frozenset({"vertices"})
+
+# ---------------------------------------------------------------------------
+# Cup-and-ball visual constants (all in cm — display-internal dimensions
+# with no haptic-space analog, defined directly in PsychoPy's units).
 # ---------------------------------------------------------------------------
 _CUP_HALF_WIDTH_CM: float = 1.5
 _CUP_DEPTH_CM: float = 3.0
@@ -60,6 +73,43 @@ class DisplayProcess(multiprocessing.Process):
         self._zmq_config = zmq_config
         self._headless = headless
         self._shutdown = multiprocessing.Event()
+
+    # ------------------------------------------------------------------
+    # Spatial conversion helpers
+    # ------------------------------------------------------------------
+
+    def _effective_scale(self) -> float:
+        """Combined workspace scale × meters→cm conversion factor."""
+        return self._display_config.display_scale * _METERS_TO_CM
+
+    def _effective_offset_cm(self) -> list[float]:
+        """Display offset (meters) converted to cm."""
+        s = self._effective_scale()
+        return [o * s for o in self._display_config.display_offset]
+
+    def _convert_spatial_params(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Convert spatial parameters from meters to display cm.
+
+        Position-like keys get scale + offset; dimension-like keys get
+        scale only; vertex lists get per-vertex position conversion.
+        Non-spatial keys pass through unchanged.
+        """
+        eff = self._effective_scale()
+        offset = self._effective_offset_cm()
+        out: dict[str, Any] = {}
+        for k, v in params.items():
+            if k in _SPATIAL_POSITION_KEYS:
+                out[k] = [v[0] * eff + offset[0], v[1] * eff + offset[1]]
+            elif k in _SPATIAL_DIMENSION_KEYS:
+                out[k] = v * eff if isinstance(v, (int, float)) else [c * eff for c in v]
+            elif k in _SPATIAL_VERTEX_KEYS:
+                out[k] = [
+                    [vx * eff + offset[0], vy * eff + offset[1]]
+                    for vx, vy in v
+                ]
+            else:
+                out[k] = v
+        return out
 
     def request_shutdown(self) -> None:
         """Signal the process to exit its frame loop and shut down."""
@@ -93,7 +143,9 @@ class DisplayProcess(multiprocessing.Process):
         timing_pub.setsockopt(zmq.LINGER, 0)
         timing_pub.bind(self._zmq_config.display_event_address)
 
-        scene = SceneManager(win, self._display_config)
+        scene = SceneManager(
+            win, self._display_config, spatial_scale=self._effective_scale(),
+        )
         photodiode = PhotodiodePatch(
             win,
             corner=self._display_config.photodiode_corner,
@@ -156,8 +208,8 @@ class DisplayProcess(multiprocessing.Process):
                 state_receive_time = time.monotonic()
 
             if latest_state is not None:
-                scale = self._display_config.display_scale
-                offset = self._display_config.display_offset
+                eff_scale = self._effective_scale()
+                eff_offset = self._effective_offset_cm()
                 if interpolation_enabled:
                     dt = min(
                         time.monotonic() - state_receive_time,
@@ -167,7 +219,10 @@ class DisplayProcess(multiprocessing.Process):
                 else:
                     raw = latest_state.get("position", [0.0, 0.0, 0.0])
 
-                cursor_pos = [raw[0] * scale + offset[0], raw[1] * scale + offset[1]]
+                cursor_pos = [
+                    raw[0] * eff_scale + eff_offset[0],
+                    raw[1] * eff_scale + eff_offset[1],
+                ]
                 scene.set_cursor_position(cursor_pos)
 
             # 2b. Update scene from field_state data
@@ -230,9 +285,11 @@ class DisplayProcess(multiprocessing.Process):
         vel = state.get("velocity", [0.0, 0.0, 0.0])
         return [pos[0] + vel[0] * dt, pos[1] + vel[1] * dt]
 
-    @staticmethod
-    def _handle_display_command(scene: SceneManager, cmd: dict[str, Any]) -> str | None:
+    def _handle_display_command(self, scene: SceneManager, cmd: dict[str, Any]) -> str | None:
         """Dispatch a single display command to the SceneManager.
+
+        Spatial parameters in ``"show"`` and ``"update_scene"`` commands are
+        converted from meters to display cm via :meth:`_convert_spatial_params`.
 
         Returns the stim_id for successful ``"show"`` commands, ``None`` otherwise.
         """
@@ -240,7 +297,8 @@ class DisplayProcess(multiprocessing.Process):
         try:
             if action == "show":
                 stim_id = cmd["stim_id"]
-                scene.show(stim_id, cmd.get("params", {}))
+                params = self._convert_spatial_params(cmd.get("params", {}))
+                scene.show(stim_id, params)
                 return stim_id
             elif action == "hide":
                 scene.hide(cmd.get("stim_id", ""))
@@ -249,7 +307,7 @@ class DisplayProcess(multiprocessing.Process):
             elif action == "update_scene":
                 params = cmd.get("params", {})
                 for stim_id, stim_params in params.items():
-                    scene.update(stim_id, stim_params)
+                    scene.update(stim_id, self._convert_spatial_params(stim_params))
             else:
                 logger.warning("Unknown display action: %r", action)
         except Exception:
@@ -290,8 +348,8 @@ class DisplayProcess(multiprocessing.Process):
         field_state: dict[str, Any],
     ) -> None:
         """Render cup, ball, and string for the CartPendulumField."""
-        scale = self._display_config.display_scale
-        offset = self._display_config.display_offset
+        eff_scale = self._effective_scale()
+        eff_offset = self._effective_offset_cm()
 
         cup_x = field_state.get("cup_x", 0.0)
         ball_x = field_state.get("ball_x", 0.0)
@@ -299,10 +357,10 @@ class DisplayProcess(multiprocessing.Process):
         spilled = field_state.get("spilled", False)
 
         # Convert meters → cm and apply offset
-        cup_cx = cup_x * scale + offset[0]
-        cup_cy = offset[1]
-        ball_cx = ball_x * scale + offset[0]
-        ball_cy = ball_y * scale + offset[1]
+        cup_cx = cup_x * eff_scale + eff_offset[0]
+        cup_cy = eff_offset[1]
+        ball_cx = ball_x * eff_scale + eff_offset[0]
+        ball_cy = ball_y * eff_scale + eff_offset[1]
 
         ball_color = _SPILL_COLOR if spilled else _BALL_COLOR
 
@@ -373,8 +431,8 @@ class DisplayProcess(multiprocessing.Process):
         ``show_stimulus("__body_<id>", ...)``. This method only updates
         positions and angles from the physics simulation.
         """
-        scale = self._display_config.display_scale
-        offset = self._display_config.display_offset
+        eff_scale = self._effective_scale()
+        eff_offset = self._effective_offset_cm()
         bodies = field_state.get("bodies", {})
         for body_id, body_state in bodies.items():
             stim_id = f"__body_{body_id}"
@@ -383,8 +441,8 @@ class DisplayProcess(multiprocessing.Process):
                 angle_rad = body_state.get("angle", 0.0)
                 scene.update(stim_id, {
                     "position": [
-                        pos[0] * scale + offset[0],
-                        pos[1] * scale + offset[1],
+                        pos[0] * eff_scale + eff_offset[0],
+                        pos[1] * eff_scale + eff_offset[1],
                     ],
                     "orientation": angle_rad * (180.0 / math.pi),
                 })

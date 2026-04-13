@@ -81,6 +81,12 @@ The source field can be a single state name, a list of state names, or `"*"` for
 
 For each state, you can implement `on_enter_<state>()` and `on_exit_<state>()` methods. These are called automatically by the state machine when entering or exiting a state.
 
+> **Display units:** The PsychoPy window uses `units="cm"`. All positional and size
+> parameters passed to `display.show_stimulus()` must be in **cm** (display-space),
+> not meters. Haptic-state-derived visuals (cursor, field-state renderers) are
+> automatically converted via `display_scale`/`display_offset`, but discrete
+> display commands are passed through as-is.
+
 ```python
     def on_enter_move_to_center(self):
         """Guide monkey to the center position."""

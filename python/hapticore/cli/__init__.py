@@ -69,16 +69,28 @@ def _simulate(args: argparse.Namespace) -> None:
 
     display_proc = None
     if args.display:
+        # Build a session-specific ZMQConfig with random IPC addresses so
+        # that parallel sessions don't collide and, critically, so the
+        # EventPublisher and DisplayProcess share the *same* addresses.
+        from hapticore.core.config import ZMQConfig
         from hapticore.display.display_client import DisplayClient
         from hapticore.display.process import DisplayProcess
 
-        display_proc = DisplayProcess(config.display, config.zmq, headless=False)
+        session_zmq = ZMQConfig(
+            event_pub_address=make_ipc_address("sim_evt"),
+            haptic_state_address=make_ipc_address("sim_state"),
+            display_event_address=make_ipc_address("sim_disp"),
+        )
+        display_proc = DisplayProcess(config.display, session_zmq, headless=False)
         display_proc.start()
         time.sleep(1.5)  # let PsychoPy create the window (~1s on macOS)
 
-    # Create event publisher
+    # Create event publisher — use the session ZMQ config so commands
+    # reach the DisplayProcess subscriber (when --display is active).
     ctx = zmq.Context()
-    address = make_ipc_address("sim")
+    address = (
+        session_zmq.event_pub_address if args.display else make_ipc_address("sim")
+    )
     publisher = EventPublisher(ctx, address)
 
     if args.display:

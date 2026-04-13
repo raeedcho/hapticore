@@ -5,6 +5,7 @@ from __future__ import annotations
 import multiprocessing
 import time
 import unittest.mock
+from typing import Any
 from unittest.mock import MagicMock
 
 import msgpack
@@ -286,3 +287,159 @@ class TestUpdatePhysicsBodies:
         }
         proc._update_physics_bodies(scene, field_state)
         assert scene.update.call_count == 2
+
+
+class TestUpdateCartPendulum:
+    """Verify _update_cart_pendulum creates and updates cup/ball/string stimuli."""
+
+    def _make_proc(self, scale: float = 100.0, offset: list[float] | None = None) -> DisplayProcess:
+        return DisplayProcess(
+            display_config=DisplayConfig(
+                display_scale=scale,
+                display_offset=offset or [0.0, 0.0],
+            ),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+
+    def _make_field_state(
+        self,
+        *,
+        cup_x: float = 0.0,
+        ball_x: float = 0.02,
+        ball_y: float = -0.1,
+        spilled: bool = False,
+    ) -> dict[str, Any]:
+        return {
+            "cup_x": cup_x,
+            "ball_x": ball_x,
+            "ball_y": ball_y,
+            "phi": 0.2,
+            "phi_dot": 0.0,
+            "spilled": spilled,
+        }
+
+    def test_creates_cup_ball_string_on_first_call(self) -> None:
+        """First call should create __cup, __ball, __string via scene.show()."""
+        proc = self._make_proc()
+        scene = MagicMock()
+        scene.has_stimulus.return_value = False
+
+        state: dict[str, Any] = {"active_field": "cart_pendulum"}
+        fs = self._make_field_state()
+        proc._update_cart_pendulum(scene, state, fs)
+
+        # All three stimuli should be created via show()
+        show_calls = {call.args[0]: call.args[1] for call in scene.show.call_args_list}
+        assert "__cup" in show_calls
+        assert "__ball" in show_calls
+        assert "__string" in show_calls
+
+        # Cup should be a polygon
+        assert show_calls["__cup"]["type"] == "polygon"
+        # Ball should be a circle
+        assert show_calls["__ball"]["type"] == "circle"
+        # String should be a line
+        assert show_calls["__string"]["type"] == "line"
+
+    def test_updates_existing_stimuli_on_subsequent_calls(self) -> None:
+        """Subsequent calls should update __cup and __ball via scene.update()."""
+        proc = self._make_proc()
+        scene = MagicMock()
+        # Simulate stimuli already existing
+        scene.has_stimulus.return_value = True
+        string_stim = MagicMock()
+        scene.get_stimulus.return_value = string_stim
+
+        state: dict[str, Any] = {"active_field": "cart_pendulum"}
+        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=-0.08)
+        proc._update_cart_pendulum(scene, state, fs)
+
+        # Cup and ball should be updated (not created)
+        scene.show.assert_not_called()
+        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
+        assert "__cup" in update_calls
+        assert "__ball" in update_calls
+
+        # String endpoints should be set directly on the stimulus object
+        assert string_stim.start is not None
+        assert string_stim.end is not None
+
+    def test_positions_scaled_by_display_scale_and_offset(self) -> None:
+        """Positions from field_state (meters) are converted via scale + offset."""
+        proc = self._make_proc(scale=100.0, offset=[5.0, 10.0])
+        scene = MagicMock()
+        scene.has_stimulus.return_value = False
+
+        state: dict[str, Any] = {"active_field": "cart_pendulum"}
+        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=-0.08)
+        proc._update_cart_pendulum(scene, state, fs)
+
+        show_calls = {call.args[0]: call.args[1] for call in scene.show.call_args_list}
+
+        # Cup: cup_x * 100 + 5 = 8.0, offset[1] = 10.0
+        assert show_calls["__cup"]["position"] == [0.03 * 100.0 + 5.0, 10.0]
+        # Ball: ball_x * 100 + 5 = 10.0, ball_y * 100 + 10 = 2.0
+        assert show_calls["__ball"]["position"] == [0.05 * 100.0 + 5.0, -0.08 * 100.0 + 10.0]
+
+    def test_ball_color_blue_when_not_spilled(self) -> None:
+        """Ball should be blue when spilled=False."""
+        from hapticore.display.process import _BALL_COLOR
+
+        proc = self._make_proc()
+        scene = MagicMock()
+        scene.has_stimulus.return_value = False
+
+        state: dict[str, Any] = {"active_field": "cart_pendulum"}
+        fs = self._make_field_state(spilled=False)
+        proc._update_cart_pendulum(scene, state, fs)
+
+        show_calls = {call.args[0]: call.args[1] for call in scene.show.call_args_list}
+        assert show_calls["__ball"]["color"] == _BALL_COLOR
+
+    def test_ball_color_red_when_spilled(self) -> None:
+        """Ball should turn red when spilled=True."""
+        from hapticore.display.process import _SPILL_COLOR
+
+        proc = self._make_proc()
+        scene = MagicMock()
+        scene.has_stimulus.return_value = False
+
+        state: dict[str, Any] = {"active_field": "cart_pendulum"}
+        fs = self._make_field_state(spilled=True)
+        proc._update_cart_pendulum(scene, state, fs)
+
+        show_calls = {call.args[0]: call.args[1] for call in scene.show.call_args_list}
+        assert show_calls["__ball"]["color"] == _SPILL_COLOR
+
+    def test_spill_color_change_on_update(self) -> None:
+        """When updating existing ball, spill color should be passed to update()."""
+        from hapticore.display.process import _SPILL_COLOR
+
+        proc = self._make_proc()
+        scene = MagicMock()
+        scene.has_stimulus.return_value = True
+        scene.get_stimulus.return_value = MagicMock()
+
+        state: dict[str, Any] = {"active_field": "cart_pendulum"}
+        fs = self._make_field_state(spilled=True)
+        proc._update_cart_pendulum(scene, state, fs)
+
+        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
+        assert update_calls["__ball"]["color"] == _SPILL_COLOR
+
+    def test_string_endpoints_updated_directly(self) -> None:
+        """On subsequent frames, string start/end are set directly on the stim."""
+        proc = self._make_proc(scale=100.0, offset=[0.0, 0.0])
+        scene = MagicMock()
+        scene.has_stimulus.return_value = True
+        string_stim = MagicMock()
+        scene.get_stimulus.return_value = string_stim
+
+        state: dict[str, Any] = {"active_field": "cart_pendulum"}
+        fs = self._make_field_state(cup_x=0.01, ball_x=0.03, ball_y=-0.05)
+        proc._update_cart_pendulum(scene, state, fs)
+
+        # String endpoints should match cup center → ball center (in cm)
+        assert string_stim.start == [0.01 * 100.0, 0.0]
+        assert string_stim.end == [0.03 * 100.0, -0.05 * 100.0]

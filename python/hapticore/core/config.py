@@ -80,11 +80,14 @@ class DisplayConfig(BaseModel):
         default=False, description="Interpolate cursor position between haptic state updates"
     )
     display_scale: float = Field(
-        default=100.0, description="Haptic meters to display units (cm) scale factor"
+        default=1.0,
+        description="Workspace scale factor (dimensionless, meters→meters). "
+        "1.0 = haptic workspace maps 1:1 onto display workspace. "
+        "2.0 = everything appears twice as large on screen.",
     )
     display_offset: list[float] = Field(
         default_factory=lambda: [0.0, 0.0],
-        description="Display offset in cm [x, y] for co-location calibration",
+        description="Display offset in meters [x, y] for co-location calibration",
     )
 
 

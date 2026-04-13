@@ -101,11 +101,9 @@ PsychoPy runs in a dedicated process (`DisplayProcess`). OpenGL calls must happe
 - `"clear"` — remove all stimuli
 - `"update_scene"` — update properties of existing stimuli (`params` dict of `{stim_id: {property: value}}`)
 
-For discrete display commands (`"show"` and `"update_scene"`), all positional and size parameters must be specified in the display coordinate system (cm when `units="cm"`). These payloads are passed through to PsychoPy as-is — they are **not** automatically converted from haptic-space meters by `display_scale`/`display_offset`. Task authors must convert positions to cm before calling `show_stimulus()`.
-
 **Timing events:** On each `win.flip()` that follows a `"show"` command, a `stimulus_onset` event is published on the `b"event"` topic via the dedicated `display_event_address` PUB socket. This provides sub-frame onset timestamps for trial event logging.
 
-**Unit system:** The PsychoPy window uses `units="cm"`. A `Monitor` object is configured from `DisplayConfig.monitor_width_cm`, `monitor_distance_cm`, and `resolution`. Haptic positions arrive in meters (lab frame) and are converted to cm via `display_scale` (default 100.0) and `display_offset` (default `[0, 0]`). This meter→cm conversion applies automatically to haptic-state-derived visuals (cursor position, field-state renderers for cart_pendulum and physics_world) but **not** to discrete display command parameters, which are already in display-space cm.
+**Unit system:** All spatial values throughout the system — including display command parameters and `DisplayConfig` fields — use meters (SI). The PsychoPy window uses `units="cm"` internally. The `DisplayProcess` is the sole conversion boundary: it applies `display_scale` (a dimensionless workspace multiplier, default 1.0) and a fixed ×100 meters→cm factor to all spatial parameters before rendering. `display_offset` is in meters and specifies the display origin shift for co-location calibration. This conversion applies to haptic state cursor positions, field-state body positions, and all spatial parameters in `"show"` / `"update_scene"` display commands (`position`, `radius`, `width`, `height`, `start`, `end`, `vertices`). Non-spatial parameters (`color`, `opacity`, `orientation`, `line_width`) pass through unchanged. See ADR-011.
 
 **Photodiode patch:** A corner patch toggles black/white on stimulus onset (`"show"` commands) for hardware timing verification. Drawn last, on top of all stimuli. Configured via `DisplayConfig.photodiode_enabled` and `photodiode_corner`.
 

@@ -61,7 +61,7 @@ def update_stimulus(stim: BaseVisualStim, params: dict[str, Any]) -> None:
 
     Supported keys:
         position : list[float]
-            ``[x, y]`` in meters (lab frame).
+            ``[x, y]`` position passed directly to the PsychoPy stimulus.
         color : list[float]
             RGB triplet applied to ``fillColor``, ``lineColor``, and
             ``color`` attributes when present on the stimulus.

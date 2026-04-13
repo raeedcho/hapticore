@@ -558,9 +558,9 @@ class TestConvertSpatialParams:
         verts = [[-0.01, 0.0], [0.01, 0.0], [0.0, 0.02]]
         result = proc._convert_spatial_params({"vertices": verts})
         expected = [
-            [-0.01 * eff + 0.01 * eff, 0.0],
-            [0.01 * eff + 0.01 * eff, 0.0],
-            [0.0 * eff + 0.01 * eff, 0.02 * eff],
+            [-0.01 * eff, 0.0],
+            [0.01 * eff, 0.0],
+            [0.0 * eff, 0.02 * eff],
         ]
         assert result["vertices"] == expected
 

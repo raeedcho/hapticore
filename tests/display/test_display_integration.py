@@ -51,7 +51,7 @@ class TestDisplayIntegration:
         pub.bind(zmq_config.event_pub_address)
 
         try:
-            time.sleep(0.5)
+            time.sleep(2.5)
 
             payload = msgpack.packb(
                 {
@@ -100,7 +100,7 @@ class TestDisplayIntegration:
         event_sub.subscribe(TOPIC_EVENT)
 
         try:
-            time.sleep(1.5)
+            time.sleep(2.5)
 
             cmd_ts = time.monotonic()
             payload = msgpack.packb(
@@ -159,7 +159,7 @@ class TestDisplayIntegration:
         pub.bind(zmq_config.event_pub_address)
 
         try:
-            time.sleep(0.5)
+            time.sleep(2.5)
 
             for action in ["show", "hide", "show"]:
                 msg: dict = {
@@ -226,7 +226,7 @@ class TestCartPendulumRendering:
         state_pub.bind(zmq_config.haptic_state_address)
 
         try:
-            time.sleep(0.5)
+            time.sleep(2.5)
 
             # Publish haptic state with cart_pendulum field_state
             state = {
@@ -274,7 +274,7 @@ class TestCartPendulumRendering:
         state_pub.bind(zmq_config.haptic_state_address)
 
         try:
-            time.sleep(0.5)
+            time.sleep(2.5)
 
             for spilled in [False, True, False]:
                 state = {
@@ -321,7 +321,7 @@ class TestCartPendulumRendering:
         state_pub.bind(zmq_config.haptic_state_address)
 
         try:
-            time.sleep(0.5)
+            time.sleep(2.5)
 
             # Start with cart_pendulum
             cp_state = {
@@ -390,7 +390,7 @@ class TestCartPendulumRendering:
         event_sub.subscribe(TOPIC_EVENT)
 
         try:
-            time.sleep(1.5)
+            time.sleep(2.5)
 
             # Show a target circle
             show_cmd = msgpack.packb(

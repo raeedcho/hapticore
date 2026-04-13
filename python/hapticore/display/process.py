@@ -104,7 +104,7 @@ class DisplayProcess(multiprocessing.Process):
                 out[k] = v * eff if isinstance(v, (int, float)) else [c * eff for c in v]
             elif k in _SPATIAL_VERTEX_KEYS:
                 out[k] = [
-                    [vx * eff + offset[0], vy * eff + offset[1]]
+                    [vx * eff, vy * eff]
                     for vx, vy in v
                 ]
             else:

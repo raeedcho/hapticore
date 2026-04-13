@@ -143,17 +143,18 @@ class DisplayProcess(multiprocessing.Process):
                 state_receive_time = time.monotonic()
 
             if latest_state is not None:
-                position = latest_state.get("position", [0.0, 0.0, 0.0])
+                scale = self._display_config.display_scale
+                offset = self._display_config.display_offset
                 if interpolation_enabled:
                     dt = min(
                         time.monotonic() - state_receive_time,
                         self._MAX_INTERP_DT,
                     )
-                    cursor_pos = self._interpolate_position(latest_state, dt)
+                    raw = self._interpolate_position(latest_state, dt)
                 else:
-                    scale = self._display_config.display_scale
-                    offset = self._display_config.display_offset
-                    cursor_pos = [position[0] * scale + offset[0], position[1] * scale + offset[1]]
+                    raw = latest_state.get("position", [0.0, 0.0, 0.0])
+
+                cursor_pos = [raw[0] * scale + offset[0], raw[1] * scale + offset[1]]
                 scene.set_cursor_position(cursor_pos)
 
             # 3. Draw all stimuli

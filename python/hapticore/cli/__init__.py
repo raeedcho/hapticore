@@ -79,6 +79,8 @@ def _simulate(args: argparse.Namespace) -> None:
 
         from hapticore.hardware.mouse_haptic import MouseHapticInterface
 
+        # Buffer a few frames of mouse positions (~4 frames at 60 Hz).
+        # Consumer drains the queue and keeps only the latest value.
         mouse_queue = MpQueue(maxsize=4)
         haptic = MouseHapticInterface(mouse_queue=mouse_queue)
     else:

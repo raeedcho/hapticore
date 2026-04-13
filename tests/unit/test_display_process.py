@@ -332,28 +332,21 @@ class TestUpdateCartPendulum:
             "spilled": spilled,
         }
 
-    def test_creates_cup_ball_string_on_first_call(self) -> None:
-        """First call should create __cup, __ball, __string via scene.show()."""
+    def test_no_creation_when_stimuli_missing(self) -> None:
+        """When stimuli don't exist, renderer does nothing (no creation)."""
         proc = self._make_proc()
         scene = MagicMock()
         scene.has_stimulus.return_value = False
+        scene.get_stimulus.return_value = None
 
         state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state()
         proc._update_cart_pendulum(scene, state, fs)
 
-        # All three stimuli should be created via show()
-        show_calls = {call.args[0]: call.args[1] for call in scene.show.call_args_list}
-        assert "__cup" in show_calls
-        assert "__ball" in show_calls
-        assert "__string" in show_calls
-
-        # Cup should be a polygon
-        assert show_calls["__cup"]["type"] == "polygon"
-        # Ball should be a circle
-        assert show_calls["__ball"]["type"] == "circle"
-        # String should be a line
-        assert show_calls["__string"]["type"] == "line"
+        # No stimuli should be created via show()
+        scene.show.assert_not_called()
+        # No stimuli should be updated via update()
+        scene.update.assert_not_called()
 
     def test_updates_existing_stimuli_on_subsequent_calls(self) -> None:
         """Subsequent calls should update __cup and __ball via scene.update()."""
@@ -386,19 +379,21 @@ class TestUpdateCartPendulum:
         # eff_scale = 1.0 * 100 = 100, eff_offset = [5.0, 10.0] cm
         proc = self._make_proc(display_scale=1.0, offset=[0.05, 0.1])
         scene = MagicMock()
-        scene.has_stimulus.return_value = False
+        scene.has_stimulus.return_value = True
+        string_stim = MagicMock()
+        scene.get_stimulus.return_value = string_stim
 
         state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=-0.08)
         proc._update_cart_pendulum(scene, state, fs)
 
-        show_calls = {call.args[0]: call.args[1] for call in scene.show.call_args_list}
+        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
 
         eff = 1.0 * _METERS_TO_CM
         # Cup: cup_x * eff + offset_x * eff = 0.03*100 + 0.05*100 = 8.0
-        assert show_calls["__cup"]["position"] == [0.03 * eff + 0.05 * eff, 0.1 * eff]
+        assert update_calls["__cup"]["position"] == [0.03 * eff + 0.05 * eff, 0.1 * eff]
         # Ball: ball_x * eff + off_x, ball_y * eff + off_y
-        assert show_calls["__ball"]["position"] == [
+        assert update_calls["__ball"]["position"] == [
             0.05 * eff + 0.05 * eff,
             -0.08 * eff + 0.1 * eff,
         ]
@@ -409,14 +404,15 @@ class TestUpdateCartPendulum:
 
         proc = self._make_proc()
         scene = MagicMock()
-        scene.has_stimulus.return_value = False
+        scene.has_stimulus.return_value = True
+        scene.get_stimulus.return_value = MagicMock()
 
         state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state(spilled=False)
         proc._update_cart_pendulum(scene, state, fs)
 
-        show_calls = {call.args[0]: call.args[1] for call in scene.show.call_args_list}
-        assert show_calls["__ball"]["color"] == _BALL_COLOR
+        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
+        assert update_calls["__ball"]["color"] == _BALL_COLOR
 
     def test_ball_color_red_when_spilled(self) -> None:
         """Ball should turn red when spilled=True."""
@@ -424,14 +420,15 @@ class TestUpdateCartPendulum:
 
         proc = self._make_proc()
         scene = MagicMock()
-        scene.has_stimulus.return_value = False
+        scene.has_stimulus.return_value = True
+        scene.get_stimulus.return_value = MagicMock()
 
         state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state(spilled=True)
         proc._update_cart_pendulum(scene, state, fs)
 
-        show_calls = {call.args[0]: call.args[1] for call in scene.show.call_args_list}
-        assert show_calls["__ball"]["color"] == _SPILL_COLOR
+        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
+        assert update_calls["__ball"]["color"] == _SPILL_COLOR
 
     def test_spill_color_change_on_update(self) -> None:
         """When updating existing ball, spill color should be passed to update()."""

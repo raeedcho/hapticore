@@ -139,3 +139,148 @@ class TestGetFlipTimestamp:
                 client.get_flip_timestamp()
         finally:
             pub.close()
+
+
+class TestShowCartPendulum:
+    def test_creates_three_stimuli(self) -> None:
+        """show_cart_pendulum() should publish three show commands."""
+        addr = _unique_ipc()
+        bus = EventBus(addr)
+        pub = bus.create_publisher()
+        sub = bus.create_subscriber(topics=[TOPIC_DISPLAY])
+        time.sleep(0.1)
+
+        client = DisplayClient(pub)
+        client.show_cart_pendulum()
+
+        msgs: list[dict] = []
+        for _ in range(3):
+            result = sub.recv(timeout_ms=500)
+            assert result is not None
+            _topic, payload = result
+            msgs.append(msgpack.unpackb(payload, raw=False))
+
+        stim_ids = {m["stim_id"] for m in msgs}
+        assert stim_ids == {"__cup", "__ball", "__string"}
+
+        # Verify types
+        by_id = {m["stim_id"]: m for m in msgs}
+        assert by_id["__cup"]["params"]["type"] == "polygon"
+        assert by_id["__ball"]["params"]["type"] == "circle"
+        assert by_id["__string"]["params"]["type"] == "line"
+
+        # Verify default parameters
+        assert by_id["__ball"]["params"]["radius"] == 0.008
+        assert by_id["__cup"]["params"]["fill"] is False
+
+        pub.close()
+        sub.close()
+
+    def test_custom_colors(self) -> None:
+        """Custom cup_color should override the default."""
+        addr = _unique_ipc()
+        bus = EventBus(addr)
+        pub = bus.create_publisher()
+        sub = bus.create_subscriber(topics=[TOPIC_DISPLAY])
+        time.sleep(0.1)
+
+        custom_color = [1.0, 0.0, 0.0]
+        client = DisplayClient(pub)
+        client.show_cart_pendulum(cup_color=custom_color)
+
+        msgs: list[dict] = []
+        for _ in range(3):
+            result = sub.recv(timeout_ms=500)
+            assert result is not None
+            _topic, payload = result
+            msgs.append(msgpack.unpackb(payload, raw=False))
+
+        by_id = {m["stim_id"]: m for m in msgs}
+        assert by_id["__cup"]["params"]["color"] == custom_color
+
+        pub.close()
+        sub.close()
+
+
+class TestHideCartPendulum:
+    def test_hides_three_stimuli(self) -> None:
+        """hide_cart_pendulum() should publish three hide commands."""
+        addr = _unique_ipc()
+        bus = EventBus(addr)
+        pub = bus.create_publisher()
+        sub = bus.create_subscriber(topics=[TOPIC_DISPLAY])
+        time.sleep(0.1)
+
+        client = DisplayClient(pub)
+        client.hide_cart_pendulum()
+
+        stim_ids: set[str] = set()
+        for _ in range(3):
+            result = sub.recv(timeout_ms=500)
+            assert result is not None
+            _topic, payload = result
+            msg = msgpack.unpackb(payload, raw=False)
+            assert msg["action"] == "hide"
+            stim_ids.add(msg["stim_id"])
+
+        assert stim_ids == {"__cup", "__ball", "__string"}
+
+        pub.close()
+        sub.close()
+
+
+class TestShowPhysicsBodies:
+    def test_creates_prefixed_stimuli(self) -> None:
+        """show_physics_bodies() should create __body_<id> stimuli."""
+        addr = _unique_ipc()
+        bus = EventBus(addr)
+        pub = bus.create_publisher()
+        sub = bus.create_subscriber(topics=[TOPIC_DISPLAY])
+        time.sleep(0.1)
+
+        client = DisplayClient(pub)
+        client.show_physics_bodies({
+            "puck": {"type": "circle", "radius": 0.02},
+            "striker": {"type": "circle", "radius": 0.03},
+        })
+
+        stim_ids: set[str] = set()
+        for _ in range(2):
+            result = sub.recv(timeout_ms=500)
+            assert result is not None
+            _topic, payload = result
+            msg = msgpack.unpackb(payload, raw=False)
+            assert msg["action"] == "show"
+            stim_ids.add(msg["stim_id"])
+
+        assert stim_ids == {"__body_puck", "__body_striker"}
+
+        pub.close()
+        sub.close()
+
+
+class TestHidePhysicsBodies:
+    def test_hides_prefixed_stimuli(self) -> None:
+        """hide_physics_bodies() should hide __body_<id> stimuli."""
+        addr = _unique_ipc()
+        bus = EventBus(addr)
+        pub = bus.create_publisher()
+        sub = bus.create_subscriber(topics=[TOPIC_DISPLAY])
+        time.sleep(0.1)
+
+        client = DisplayClient(pub)
+        client.hide_physics_bodies(["puck", "striker"])
+
+        stim_ids: set[str] = set()
+        for _ in range(2):
+            result = sub.recv(timeout_ms=500)
+            assert result is not None
+            _topic, payload = result
+            msg = msgpack.unpackb(payload, raw=False)
+            assert msg["action"] == "hide"
+            stim_ids.add(msg["stim_id"])
+
+        assert stim_ids == {"__body_puck", "__body_striker"}
+
+        pub.close()
+        sub.close()

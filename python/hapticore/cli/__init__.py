@@ -10,6 +10,8 @@ import sys
 
 def _simulate(args: argparse.Namespace) -> None:
     """Run a task in simulation mode with mock hardware."""
+    import time
+
     import zmq
 
     from hapticore.core.config import load_config, load_session_config
@@ -63,13 +65,26 @@ def _simulate(args: argparse.Namespace) -> None:
 
     # Create mock hardware
     haptic = MockHapticInterface()
-    display = MockDisplay()
     sync = MockSync()
+
+    display_proc = None
+    if args.display:
+        from hapticore.display.display_client import DisplayClient
+        from hapticore.display.process import DisplayProcess
+
+        display_proc = DisplayProcess(config.display, config.zmq, headless=False)
+        display_proc.start()
+        time.sleep(1.5)  # let PsychoPy create the window (~1s on macOS)
 
     # Create event publisher
     ctx = zmq.Context()
     address = make_ipc_address("sim")
     publisher = EventPublisher(ctx, address)
+
+    if args.display:
+        display: MockDisplay | DisplayClient = DisplayClient(publisher)
+    else:
+        display = MockDisplay()
 
     # Create trial manager
     trial_manager = TrialManager(
@@ -103,6 +118,11 @@ def _simulate(args: argparse.Namespace) -> None:
         controller.run()
     finally:
         controller.teardown()
+        if display_proc is not None:
+            display_proc.request_shutdown()
+            display_proc.join(timeout=5.0)
+            if display_proc.is_alive():
+                display_proc.terminate()
         publisher.close()
         ctx.term()
 
@@ -207,6 +227,10 @@ def main() -> None:
     sim_parser.add_argument(
         "--fast", action="store_true",
         help="Override all timing parameters to 1ms for quick smoke-testing",
+    )
+    sim_parser.add_argument(
+        "--display", action="store_true",
+        help="Launch a real PsychoPy display process (requires display environment)",
     )
     sim_parser.set_defaults(func=_simulate)
 

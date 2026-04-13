@@ -75,6 +75,55 @@ class TestShowHideClear:
         with pytest.raises(ValueError, match="type"):
             scene.show("target", {"radius": 0.01})
 
+    def test_has_stimulus_true_after_show(self) -> None:
+        scene = self._make_scene()
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            mock_create.return_value = MagicMock()
+            scene.show("target", {"type": "circle"})
+            assert scene.has_stimulus("target") is True
+
+    def test_has_stimulus_false_after_hide(self) -> None:
+        scene = self._make_scene()
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            mock_create.return_value = MagicMock()
+            scene.show("target", {"type": "circle"})
+            scene.hide("target")
+            assert scene.has_stimulus("target") is False
+
+    def test_has_stimulus_false_for_unknown(self) -> None:
+        scene = self._make_scene()
+        assert scene.has_stimulus("nonexistent") is False
+
+    def test_get_stimulus_returns_object_after_show(self) -> None:
+        scene = self._make_scene()
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            mock_stim = MagicMock()
+            mock_create.return_value = mock_stim
+            scene.show("target", {"type": "circle"})
+            assert scene.get_stimulus("target") is mock_stim
+
+    def test_get_stimulus_returns_none_after_hide(self) -> None:
+        scene = self._make_scene()
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            mock_create.return_value = MagicMock()
+            scene.show("target", {"type": "circle"})
+            scene.hide("target")
+            assert scene.get_stimulus("target") is None
+
+    def test_get_stimulus_returns_none_for_unknown(self) -> None:
+        scene = self._make_scene()
+        assert scene.get_stimulus("nonexistent") is None
+
+    def test_clear_makes_has_stimulus_false_for_all(self) -> None:
+        scene = self._make_scene()
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            mock_create.return_value = MagicMock()
+            scene.show("a", {"type": "circle"})
+            scene.show("b", {"type": "rectangle"})
+            scene.clear()
+            assert scene.has_stimulus("a") is False
+            assert scene.has_stimulus("b") is False
+
 
 class TestDrawOrder:
     """Verify draw order: insertion order for stimuli, cursor always last."""

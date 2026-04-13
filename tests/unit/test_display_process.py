@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import time
+import unittest.mock
 from unittest.mock import MagicMock
 
 import msgpack
@@ -12,6 +13,9 @@ import zmq
 from hapticore.core.config import DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY
 from hapticore.core.messaging import make_ipc_address
+
+# Type alias used in TestUpdatePhysicsBodies
+from hapticore.display.process import DisplayProcess
 
 
 class TestImportSafety:
@@ -158,3 +162,127 @@ class TestPhotodiodeInFrameLoop:
         cmd = {"action": "clear"}
         result = DisplayProcess._handle_display_command(scene, cmd)
         assert result is None
+
+
+class TestUpdateFromFieldState:
+    """Verify _update_from_field_state dispatches based on active_field."""
+
+    def _make_proc(self) -> DisplayProcess:
+        from hapticore.display.process import DisplayProcess
+
+        return DisplayProcess(
+            display_config=DisplayConfig(),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+
+    def test_cart_pendulum_calls_update_cart_pendulum(self) -> None:
+        proc = self._make_proc()
+        scene = MagicMock()
+        state = {
+            "active_field": "cart_pendulum",
+            "field_state": {"cup_x": 0.0, "ball_x": 0.02, "ball_y": -0.1},
+        }
+        with unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp:
+            proc._update_from_field_state(scene, state)
+            mock_cp.assert_called_once_with(scene, state, state["field_state"])
+
+    def test_physics_world_calls_update_physics_bodies(self) -> None:
+        proc = self._make_proc()
+        scene = MagicMock()
+        state = {
+            "active_field": "physics_world",
+            "field_state": {"bodies": {"puck": {"position": [0, 0], "angle": 0.0}}},
+        }
+        with unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb:
+            proc._update_from_field_state(scene, state)
+            mock_pb.assert_called_once_with(scene, state["field_state"])
+
+    def test_null_field_calls_neither(self) -> None:
+        proc = self._make_proc()
+        scene = MagicMock()
+        state = {"active_field": "null", "field_state": {}}
+        with (
+            unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp,
+            unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb,
+        ):
+            proc._update_from_field_state(scene, state)
+            mock_cp.assert_not_called()
+            mock_pb.assert_not_called()
+
+    def test_spring_damper_field_calls_neither(self) -> None:
+        proc = self._make_proc()
+        scene = MagicMock()
+        state = {"active_field": "spring_damper", "field_state": {}}
+        with (
+            unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp,
+            unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb,
+        ):
+            proc._update_from_field_state(scene, state)
+            mock_cp.assert_not_called()
+            mock_pb.assert_not_called()
+
+
+class TestUpdatePhysicsBodies:
+    """Verify _update_physics_bodies scales positions and updates orientation."""
+
+    def _make_proc(self, scale: float = 100.0, offset: list[float] | None = None) -> DisplayProcess:
+        from hapticore.display.process import DisplayProcess
+
+        return DisplayProcess(
+            display_config=DisplayConfig(
+                display_scale=scale,
+                display_offset=offset or [0.0, 0.0],
+            ),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+
+    def test_updates_position_and_orientation(self) -> None:
+        import math
+
+        proc = self._make_proc(scale=100.0, offset=[1.0, 2.0])
+        scene = MagicMock()
+        scene.has_stimulus.return_value = True
+
+        field_state = {
+            "bodies": {
+                "puck": {"position": [0.05, 0.1], "angle": 1.5708},
+            },
+        }
+        proc._update_physics_bodies(scene, field_state)
+
+        scene.update.assert_called_once_with(
+            "__body_puck",
+            {
+                "position": [0.05 * 100.0 + 1.0, 0.1 * 100.0 + 2.0],
+                "orientation": 1.5708 * (180.0 / math.pi),
+            },
+        )
+
+    def test_skips_bodies_not_in_scene(self) -> None:
+        proc = self._make_proc()
+        scene = MagicMock()
+        scene.has_stimulus.return_value = False
+
+        field_state = {
+            "bodies": {
+                "puck": {"position": [0.05, 0.1], "angle": 0.0},
+            },
+        }
+        proc._update_physics_bodies(scene, field_state)
+        scene.update.assert_not_called()
+
+    def test_handles_multiple_bodies(self) -> None:
+        proc = self._make_proc(scale=100.0, offset=[0.0, 0.0])
+        scene = MagicMock()
+        scene.has_stimulus.return_value = True
+
+        field_state = {
+            "bodies": {
+                "puck": {"position": [0.01, 0.02], "angle": 0.0},
+                "striker": {"position": [0.03, 0.04], "angle": 0.5},
+            },
+        }
+        proc._update_physics_bodies(scene, field_state)
+        assert scene.update.call_count == 2

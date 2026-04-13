@@ -93,7 +93,27 @@ The `TaskController` process is the experiment orchestrator. It creates a `trans
 
 ### Display process
 
-PsychoPy runs in a dedicated process. OpenGL calls must happen in the main thread. The frame loop: drain ZMQ subscriber queue (non-blocking) → update stimulus positions → draw → `win.flip()`. Stimulus onset timestamps captured via `win.callOnFlip()`.
+PsychoPy runs in a dedicated process (`DisplayProcess`). OpenGL calls must happen in the main thread. The frame loop: drain ZMQ subscriber queue (non-blocking) → update stimulus positions → update from field state → draw → `win.flip()`. Stimulus onset timestamps captured via `win.callOnFlip()`.
+
+**Display command protocol:** The TaskController sends commands on the `b"display"` topic via the `EventPublisher`. Commands are msgpack-encoded dicts with an `"action"` key:
+- `"show"` — create/replace a stimulus (`stim_id`, `params` with `"type"` key)
+- `"hide"` — remove a stimulus (`stim_id`)
+- `"clear"` — remove all stimuli
+- `"update_scene"` — update properties of existing stimuli (`params` dict of `{stim_id: {property: value}}`)
+
+**Timing events:** On each `win.flip()` that follows a `"show"` command, a `stimulus_onset` event is published on the `b"event"` topic via the dedicated `display_event_address` PUB socket. This provides sub-frame onset timestamps for trial event logging.
+
+**Unit system:** The PsychoPy window uses `units="cm"`. A `Monitor` object is configured from `DisplayConfig.monitor_width_cm`, `monitor_distance_cm`, and `resolution`. Haptic positions arrive in meters (lab frame) and are converted to cm via `display_scale` (default 100.0) and `display_offset` (default `[0, 0]`).
+
+**Photodiode patch:** A corner patch toggles black/white on stimulus onset (`"show"` commands) for hardware timing verification. Drawn last, on top of all stimuli. Configured via `DisplayConfig.photodiode_enabled` and `photodiode_corner`.
+
+**Field-state rendering:** The frame loop dispatches to field-specific renderers based on `active_field` in the haptic state:
+
+- **`cart_pendulum`:** Renders cup (`__cup`, U-shaped polygon), ball (`__ball`, filled circle), and string (`__string`, line from cup to ball). Ball color changes to red when `spilled=True`. All positions from `field_state` are converted via `display_scale`/`display_offset`. Visual dimensions (cup width, ball radius) are defined in cm.
+- **`physics_world`:** Updates positions and angles of `__body_<id>` stimuli. The task controller creates the visual appearance during state entry callbacks; the renderer only updates positions (scaled) and orientations (radians→degrees).
+- Other field types (null, spring_damper, etc.): no continuous visual updates — the task controller manages discrete stimuli via show/hide commands.
+
+Reserved stimulus IDs (prefixed `__`): `__cup`, `__ball`, `__string` (cart_pendulum); `__body_<id>` (physics_world).
 
 For tasks using PhysicsField (Tetris, air hockey, rod navigation), the display process reads the full set of body positions and angles from the `field_state` dict in the published `HapticState`. It renders all bodies without knowing anything about the physics — just positions and shapes.
 

@@ -66,6 +66,19 @@ class SceneManager:
         self._stimuli[stim_id] = stim
         self._draw_order.append(stim_id)
 
+    def has_stimulus(self, stim_id: str) -> bool:
+        """Check whether a stimulus with the given ID is currently active."""
+        return stim_id in self._stimuli
+
+    def get_stimulus(self, stim_id: str) -> BaseVisualStim | None:
+        """Return the raw PsychoPy stimulus object, or None if not active.
+
+        Use sparingly — prefer show/hide/update for normal operations.
+        Needed for properties like Line.start/Line.end that aren't
+        covered by update_stimulus().
+        """
+        return self._stimuli.get(stim_id)
+
     def hide(self, stim_id: str) -> None:
         """Remove a stimulus. No-op if *stim_id* doesn't exist."""
         if stim_id not in self._stimuli:

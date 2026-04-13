@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import math
 import multiprocessing
 import signal
 import time
@@ -26,6 +27,18 @@ if TYPE_CHECKING:
     from hapticore.display.scene_manager import SceneManager
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Cup-and-ball visual constants (all in cm — the display uses units="cm")
+# ---------------------------------------------------------------------------
+_CUP_HALF_WIDTH_CM: float = 1.5
+_CUP_DEPTH_CM: float = 3.0
+_BALL_RADIUS_CM: float = 0.8
+_BALL_COLOR: list[float] = [0.2, 0.6, 1.0]
+_SPILL_COLOR: list[float] = [1.0, 0.3, 0.3]
+_CUP_COLOR: list[float] = [0.8, 0.8, 0.8]
+_STRING_COLOR: list[float] = [0.5, 0.5, 0.5]
+_STRING_WIDTH: float = 2.0  # pixels
 
 
 class DisplayProcess(multiprocessing.Process):
@@ -157,6 +170,10 @@ class DisplayProcess(multiprocessing.Process):
                 cursor_pos = [raw[0] * scale + offset[0], raw[1] * scale + offset[1]]
                 scene.set_cursor_position(cursor_pos)
 
+            # 2b. Update scene from field_state data
+            if latest_state is not None:
+                self._update_from_field_state(scene, latest_state)
+
             # 3. Draw all stimuli
             scene.draw_all()
 
@@ -238,6 +255,139 @@ class DisplayProcess(multiprocessing.Process):
         except Exception:
             logger.exception("Error handling display command: %r", cmd)
         return None
+
+    # ------------------------------------------------------------------
+    # Field-state rendering
+    # ------------------------------------------------------------------
+
+    def _update_from_field_state(self, scene: SceneManager, state: dict[str, Any]) -> None:
+        """Update scene from haptic field_state data."""
+        active_field = state.get("active_field", "")
+        field_state = state.get("field_state", {})
+
+        if active_field == "cart_pendulum":
+            self._update_cart_pendulum(scene, state, field_state)
+        elif active_field == "physics_world":
+            self._update_physics_bodies(scene, field_state)
+        # Other field types (null, spring_damper, constant, workspace_limit, channel):
+        # no continuous visual updates needed — task controller manages
+        # discrete stimuli via show/hide commands.
+
+    def _ensure_stimulus(
+        self, scene: SceneManager, stim_id: str,
+        create_params: dict[str, Any], update_params: dict[str, Any],
+    ) -> None:
+        """Create stimulus on first call, update on subsequent calls."""
+        if not scene.has_stimulus(stim_id):
+            scene.show(stim_id, create_params)
+        else:
+            scene.update(stim_id, update_params)
+
+    def _update_cart_pendulum(
+        self,
+        scene: SceneManager,
+        state: dict[str, Any],
+        field_state: dict[str, Any],
+    ) -> None:
+        """Render cup, ball, and string for the CartPendulumField."""
+        scale = self._display_config.display_scale
+        offset = self._display_config.display_offset
+
+        cup_x = field_state.get("cup_x", 0.0)
+        ball_x = field_state.get("ball_x", 0.0)
+        ball_y = field_state.get("ball_y", 0.0)
+        spilled = field_state.get("spilled", False)
+
+        # Convert meters → cm and apply offset
+        cup_cx = cup_x * scale + offset[0]
+        cup_cy = offset[1]
+        ball_cx = ball_x * scale + offset[0]
+        ball_cy = ball_y * scale + offset[1]
+
+        ball_color = _SPILL_COLOR if spilled else _BALL_COLOR
+
+        # --- Cup (U-shaped polygon) ---
+        hw = _CUP_HALF_WIDTH_CM
+        d = _CUP_DEPTH_CM
+        cup_vertices = [
+            [-hw, 0.0],
+            [-hw, -d],
+            [hw, -d],
+            [hw, 0.0],
+        ]
+        self._ensure_stimulus(
+            scene,
+            "__cup",
+            create_params={
+                "type": "polygon",
+                "vertices": cup_vertices,
+                "color": _CUP_COLOR,
+                "fill": False,
+                "position": [cup_cx, cup_cy],
+            },
+            update_params={"position": [cup_cx, cup_cy]},
+        )
+
+        # --- Ball (filled circle) ---
+        self._ensure_stimulus(
+            scene,
+            "__ball",
+            create_params={
+                "type": "circle",
+                "radius": _BALL_RADIUS_CM,
+                "color": ball_color,
+                "position": [ball_cx, ball_cy],
+            },
+            update_params={
+                "position": [ball_cx, ball_cy],
+                "color": ball_color,
+            },
+        )
+
+        # --- String (line from cup center to ball center) ---
+        # PsychoPy Line has start/end attributes not covered by
+        # update_stimulus(), so we access the raw stimulus directly.
+        if not scene.has_stimulus("__string"):
+            scene.show(
+                "__string",
+                {
+                    "type": "line",
+                    "start": [cup_cx, cup_cy],
+                    "end": [ball_cx, ball_cy],
+                    "color": _STRING_COLOR,
+                    "line_width": _STRING_WIDTH,
+                },
+            )
+        else:
+            string_stim = scene.get_stimulus("__string")
+            if string_stim is not None:
+                string_stim.start = [cup_cx, cup_cy]
+                string_stim.end = [ball_cx, ball_cy]
+
+    def _update_physics_bodies(
+        self, scene: SceneManager, field_state: dict[str, Any],
+    ) -> None:
+        """Update positions and angles of physics body stimuli.
+
+        The task controller creates visual stimuli for each body via
+        ``show_stimulus("__body_<id>", ...)``. This method only updates
+        positions and angles from the physics simulation.
+        """
+        scale = self._display_config.display_scale
+        offset = self._display_config.display_offset
+        bodies = field_state.get("bodies", {})
+        for body_id, body_state in bodies.items():
+            stim_id = f"__body_{body_id}"
+            if scene.has_stimulus(stim_id):
+                pos = body_state.get("position", [0, 0])
+                angle_rad = body_state.get("angle", 0.0)
+                scene.update(stim_id, {
+                    "position": [
+                        pos[0] * scale + offset[0],
+                        pos[1] * scale + offset[1],
+                    ],
+                    "orientation": angle_rad * (180.0 / math.pi),
+                })
 
     def _create_window(self, visual_module: Any) -> Window:
         """Create a PsychoPy Window from the display configuration."""

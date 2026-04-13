@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import time
+from unittest.mock import MagicMock
 
 import msgpack
 import zmq
@@ -123,3 +124,37 @@ class TestDrainMessages:
         pub.close()
         ctx.term()
 
+
+class TestPhotodiodeInFrameLoop:
+    """Verify _handle_display_command returns stim_id on show, None otherwise.
+
+    The frame loop uses the return value to decide whether to trigger
+    the photodiode: ``if shown_stim_ids and photodiode is not None``.
+    """
+
+    def test_show_returns_stim_id(self) -> None:
+        """'show' command returns stim_id, which causes photodiode.trigger()."""
+        from hapticore.display.process import DisplayProcess
+
+        scene = MagicMock()
+        cmd = {"action": "show", "stim_id": "target", "params": {"type": "circle"}}
+        result = DisplayProcess._handle_display_command(scene, cmd)
+        assert result == "target"
+
+    def test_hide_returns_none(self) -> None:
+        """'hide' command returns None — photodiode should not trigger."""
+        from hapticore.display.process import DisplayProcess
+
+        scene = MagicMock()
+        cmd = {"action": "hide", "stim_id": "target"}
+        result = DisplayProcess._handle_display_command(scene, cmd)
+        assert result is None
+
+    def test_clear_returns_none(self) -> None:
+        """'clear' command returns None — photodiode should not trigger."""
+        from hapticore.display.process import DisplayProcess
+
+        scene = MagicMock()
+        cmd = {"action": "clear"}
+        result = DisplayProcess._handle_display_command(scene, cmd)
+        assert result is None

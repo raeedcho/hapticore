@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "hapticore"
 version = "0.1.0"
 description = "Multi-process experimental control system for primate neurophysiology"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "pyzmq>=26.0",
     "msgpack>=1.0",

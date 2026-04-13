@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 import os
+import platform
 
 import pytest
 
 from hapticore.core.messaging import make_ipc_address
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip display-marked tests on macOS CI (no xvfb, unreliable display context)."""
+    if platform.system() == "Darwin" and os.environ.get("CI"):
+        skip_display = pytest.mark.skip(reason="Display tests skipped on macOS CI")
+        for item in items:
+            if "display" in item.keywords:
+                item.add_marker(skip_display)
 
 
 @pytest.fixture(autouse=True)

@@ -11,13 +11,19 @@ import logging
 import multiprocessing
 import signal
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import msgpack
 import zmq
 
 from hapticore.core.config import DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_EVENT, TOPIC_STATE, TrialEvent, serialize
+
+if TYPE_CHECKING:
+    from psychopy.visual import Window
+
+    from hapticore.display.photodiode import PhotodiodePatch
+    from hapticore.display.scene_manager import SceneManager
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +56,7 @@ class DisplayProcess(multiprocessing.Process):
         """Entry point executed in the child process."""
         from psychopy import visual  # noqa: F811 — import ONLY here
 
+        from hapticore.display.photodiode import PhotodiodePatch
         from hapticore.display.scene_manager import SceneManager
 
         signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -74,9 +81,14 @@ class DisplayProcess(multiprocessing.Process):
         timing_pub.bind(self._zmq_config.display_event_address)
 
         scene = SceneManager(win, self._display_config)
+        photodiode = PhotodiodePatch(
+            win,
+            corner=self._display_config.photodiode_corner,
+            enabled=self._display_config.photodiode_enabled,
+        )
 
         try:
-            self._frame_loop(win, display_sub, state_sub, timing_pub, scene)
+            self._frame_loop(win, display_sub, state_sub, timing_pub, scene, photodiode)
         finally:
             dropped = getattr(win, "nDroppedFrames", 0)
             if dropped:
@@ -87,15 +99,27 @@ class DisplayProcess(multiprocessing.Process):
             ctx.term()
             win.close()
 
+    # Cap dead-reckoning extrapolation to one haptic publish period (200 Hz).
+    # Prevents runaway cursor if the haptic server disconnects or stalls.
+    _MAX_INTERP_DT: float = 1.0 / 200.0
+
+    # Sleep duration for headless mode throttle (~60 Hz).
+    _HEADLESS_FRAME_SLEEP: float = 1.0 / 60.0
+
     def _frame_loop(
         self,
-        win: Any,
+        win: Window,
         display_sub: zmq.Socket[Any],
         state_sub: zmq.Socket[Any],
         timing_pub: zmq.Socket[Any],
-        scene: Any,
+        scene: SceneManager,
+        photodiode: PhotodiodePatch | None = None,
     ) -> None:
         """Main rendering loop — one iteration per vsync frame."""
+        latest_state: dict[str, Any] | None = None
+        state_receive_time: float = time.monotonic()
+        interpolation_enabled = self._display_config.cursor_interpolation
+
         while not self._shutdown.is_set():
             # 1. Drain display commands and dispatch
             display_msgs = self._drain_messages(display_sub)
@@ -108,16 +132,37 @@ class DisplayProcess(multiprocessing.Process):
                     if command_timestamp is None:
                         command_timestamp = cmd.get("timestamp", time.monotonic())
 
+            # Trigger photodiode on stimulus onset
+            if shown_stim_ids and photodiode is not None:
+                photodiode.trigger()
+
             # 2. Drain haptic state — keep only the latest
             state_msgs = self._drain_messages(state_sub)
             if state_msgs:
                 latest_state = state_msgs[-1]
-                position = latest_state.get("position", [0.0, 0.0, 0.0])
-                # X, Y only (ignore Z)
-                scene.set_cursor_position([position[0], position[1]])
+                state_receive_time = time.monotonic()
+
+            if latest_state is not None:
+                scale = self._display_config.display_scale
+                offset = self._display_config.display_offset
+                if interpolation_enabled:
+                    dt = min(
+                        time.monotonic() - state_receive_time,
+                        self._MAX_INTERP_DT,
+                    )
+                    raw = self._interpolate_position(latest_state, dt)
+                else:
+                    raw = latest_state.get("position", [0.0, 0.0, 0.0])
+
+                cursor_pos = [raw[0] * scale + offset[0], raw[1] * scale + offset[1]]
+                scene.set_cursor_position(cursor_pos)
 
             # 3. Draw all stimuli
             scene.draw_all()
+
+            # 3b. Draw photodiode on top of everything
+            if photodiode is not None:
+                photodiode.draw()
 
             # 4. Capture flip timestamp via callOnFlip
             flip_time: list[float] = []
@@ -125,6 +170,10 @@ class DisplayProcess(multiprocessing.Process):
 
             # 5. Flip — blocks until vsync
             win.flip()
+
+            # Throttle headless mode (no vsync → flip returns immediately)
+            if self._headless:
+                time.sleep(self._HEADLESS_FRAME_SLEEP)
 
             # 6. Publish stimulus_onset timing event if any "show" commands
             if shown_stim_ids and flip_time:
@@ -148,7 +197,24 @@ class DisplayProcess(multiprocessing.Process):
                     )
 
     @staticmethod
-    def _handle_display_command(scene: Any, cmd: dict[str, Any]) -> str | None:
+    def _interpolate_position(state: dict[str, Any], dt: float) -> list[float]:
+        """Extrapolate position using velocity for dead-reckoning interpolation.
+
+        Only used when ``cursor_interpolation=True``.
+
+        Parameters
+        ----------
+        state : dict
+            Haptic state dict with ``"position"`` and ``"velocity"`` keys.
+        dt : float
+            Time elapsed since the state was received (seconds).
+        """
+        pos = state.get("position", [0.0, 0.0, 0.0])
+        vel = state.get("velocity", [0.0, 0.0, 0.0])
+        return [pos[0] + vel[0] * dt, pos[1] + vel[1] * dt]
+
+    @staticmethod
+    def _handle_display_command(scene: SceneManager, cmd: dict[str, Any]) -> str | None:
         """Dispatch a single display command to the SceneManager.
 
         Returns the stim_id for successful ``"show"`` commands, ``None`` otherwise.
@@ -173,15 +239,23 @@ class DisplayProcess(multiprocessing.Process):
             logger.exception("Error handling display command: %r", cmd)
         return None
 
-    def _create_window(self, visual_module: Any) -> Any:
+    def _create_window(self, visual_module: Any) -> Window:
         """Create a PsychoPy Window from the display configuration."""
+        from psychopy import monitors  # noqa: F811 — import ONLY here
+
         cfg = self._display_config
+        mon = monitors.Monitor("hapticore")
+        mon.setWidth(cfg.monitor_width_cm)        # physical screen width
+        mon.setSizePix(list(cfg.resolution))       # pixel resolution
+        mon.setDistance(cfg.monitor_distance_cm)    # viewing distance
+
         effective_fullscr = cfg.fullscreen and not self._headless
         return visual_module.Window(
             size=list(cfg.resolution),
             fullscr=effective_fullscr,
             color=cfg.background_color,
-            units="m",
+            monitor=mon,
+            units="cm",
             allowGUI=not effective_fullscr,
             winType="pyglet",
             checkTiming=False,

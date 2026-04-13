@@ -61,6 +61,7 @@ class DisplayConfig(BaseModel):
     refresh_rate_hz: int = Field(default=60, gt=0, le=240)
     fullscreen: bool = True
     monitor_distance_cm: float = Field(default=50.0, gt=0)
+    monitor_width_cm: float = Field(default=53.0, gt=0, description="Physical screen width in cm")
     background_color: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
     photodiode_enabled: bool = Field(
         default=True, description="Enable photodiode timing patch"
@@ -77,6 +78,13 @@ class DisplayConfig(BaseModel):
     cursor_visible: bool = Field(default=True, description="Whether cursor is drawn")
     cursor_interpolation: bool = Field(
         default=False, description="Interpolate cursor position between haptic state updates"
+    )
+    display_scale: float = Field(
+        default=100.0, description="Haptic meters to display units (cm) scale factor"
+    )
+    display_offset: list[float] = Field(
+        default_factory=lambda: [0.0, 0.0],
+        description="Display offset in cm [x, y] for co-location calibration",
     )
 
 

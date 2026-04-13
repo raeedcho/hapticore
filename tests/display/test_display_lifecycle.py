@@ -42,12 +42,14 @@ class TestDisplayProcessLifecycle:
             headless=True,
         )
         proc.start()
-        time.sleep(0.5)
-        assert proc.is_alive()
 
-        proc.request_shutdown()
-        proc.join(timeout=2.0)
-        assert not proc.is_alive()
+        try:
+            time.sleep(0.5)
+            assert proc.is_alive()
+        finally:
+            proc.request_shutdown()
+            proc.join(timeout=2.0)
+            assert not proc.is_alive()
 
     def test_survives_display_commands(self) -> None:
         """Send 5 valid display commands; verify process does not crash."""
@@ -70,26 +72,27 @@ class TestDisplayProcessLifecycle:
         pub = ctx.socket(zmq.PUB)
         pub.setsockopt(zmq.LINGER, 0)
         pub.bind(zmq_config.event_pub_address)
-        time.sleep(0.5)
 
-        for i in range(5):
-            payload = msgpack.packb(
-                {
-                    "action": "show",
-                    "stim_id": f"s{i}",
-                    "params": {"type": "circle", "radius": 0.01},
-                    "timestamp": time.monotonic(),
-                },
-                use_bin_type=True,
-            )
-            pub.send_multipart([TOPIC_DISPLAY, payload])
+        try:
+            time.sleep(0.5)
 
-        time.sleep(0.5)
-        assert proc.is_alive()
+            for i in range(5):
+                payload = msgpack.packb(
+                    {
+                        "action": "show",
+                        "stim_id": f"s{i}",
+                        "params": {"type": "circle", "radius": 0.01},
+                        "timestamp": time.monotonic(),
+                    },
+                    use_bin_type=True,
+                )
+                pub.send_multipart([TOPIC_DISPLAY, payload])
 
-        proc.request_shutdown()
-        proc.join(timeout=2.0)
-        assert not proc.is_alive()
-
-        pub.close()
-        ctx.term()
+            time.sleep(0.5)
+            assert proc.is_alive()
+        finally:
+            proc.request_shutdown()
+            proc.join(timeout=2.0)
+            assert not proc.is_alive()
+            pub.close()
+            ctx.term()

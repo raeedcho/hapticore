@@ -10,9 +10,9 @@ import contextlib
 import logging
 import math
 import multiprocessing
+import multiprocessing.queues
 import signal
 import time
-from multiprocessing import Queue
 from queue import Full
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +23,7 @@ from hapticore.core.config import DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_EVENT, TOPIC_STATE, TrialEvent, serialize
 
 if TYPE_CHECKING:
+    from psychopy.event import Mouse as _PsychoPyMouse
     from psychopy.visual import Window
 
     from hapticore.display.photodiode import PhotodiodePatch
@@ -63,7 +64,7 @@ class DisplayProcess(multiprocessing.Process):
         zmq_config: ZMQConfig,
         *,
         headless: bool = False,
-        mouse_queue: Queue[tuple[float, float]] | None = None,
+        mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None,
     ) -> None:
         super().__init__(name="DisplayProcess", daemon=True)
         self._display_config = display_config
@@ -187,7 +188,7 @@ class DisplayProcess(multiprocessing.Process):
         timing_pub: zmq.Socket[Any],
         scene: SceneManager,
         photodiode: PhotodiodePatch | None = None,
-        mouse: Any = None,
+        mouse: _PsychoPyMouse | None = None,
     ) -> None:
         """Main rendering loop — one iteration per vsync frame."""
         latest_state: dict[str, Any] | None = None

@@ -11,6 +11,7 @@ import sys
 def _simulate(args: argparse.Namespace) -> None:
     """Run a task in simulation mode with mock hardware."""
     import multiprocessing
+    import multiprocessing.queues
     import time
 
     import zmq
@@ -65,7 +66,7 @@ def _simulate(args: argparse.Namespace) -> None:
     task = task_cls()
 
     # Create hardware for simulation
-    mouse_queue: multiprocessing.Queue[tuple[float, float]] | None = None
+    mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None
     if args.input == "mouse":
         if not args.display:
             print(

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import multiprocessing
+import multiprocessing.queues
 import time
-from multiprocessing import Queue
+from typing import TYPE_CHECKING
 
 from hapticore.core.interfaces import HapticInterface
 from hapticore.core.messages import Command
 from hapticore.hardware.mouse_haptic import MouseHapticInterface
+
+if TYPE_CHECKING:
+    _MouseQueue = multiprocessing.queues.Queue[tuple[float, float]]
 
 # multiprocessing.Queue uses a feeder thread; put() returns before data is
 # available to get_nowait().  A short sleep lets the feeder flush.
@@ -15,13 +20,13 @@ _QUEUE_SETTLE: float = 0.05
 
 
 def test_satisfies_protocol() -> None:
-    q: Queue[tuple[float, float]] = Queue()
+    q: _MouseQueue = multiprocessing.Queue()
     iface = MouseHapticInterface(mouse_queue=q)
     assert isinstance(iface, HapticInterface)
 
 
 def test_position_updates_from_queue() -> None:
-    q: Queue[tuple[float, float]] = Queue()
+    q: _MouseQueue = multiprocessing.Queue()
     iface = MouseHapticInterface(mouse_queue=q)
 
     q.put((0.05, -0.03))
@@ -35,7 +40,7 @@ def test_position_updates_from_queue() -> None:
 
 
 def test_stale_queue_holds_last_position() -> None:
-    q: Queue[tuple[float, float]] = Queue()
+    q: _MouseQueue = multiprocessing.Queue()
     iface = MouseHapticInterface(mouse_queue=q)
 
     q.put((0.02, 0.01))
@@ -50,7 +55,7 @@ def test_stale_queue_holds_last_position() -> None:
 
 
 def test_sequence_increments() -> None:
-    q: Queue[tuple[float, float]] = Queue()
+    q: _MouseQueue = multiprocessing.Queue()
     iface = MouseHapticInterface(mouse_queue=q)
 
     s1 = iface.get_latest_state()
@@ -60,7 +65,7 @@ def test_sequence_increments() -> None:
 
 
 def test_send_command_returns_success() -> None:
-    q: Queue[tuple[float, float]] = Queue()
+    q: _MouseQueue = multiprocessing.Queue()
     iface = MouseHapticInterface(mouse_queue=q)
     cmd = Command(command_id="test-1", method="set_field", params={"field": "null"})
     resp = iface.send_command(cmd)
@@ -69,7 +74,7 @@ def test_send_command_returns_success() -> None:
 
 
 def test_active_field_is_null() -> None:
-    q: Queue[tuple[float, float]] = Queue()
+    q: _MouseQueue = multiprocessing.Queue()
     iface = MouseHapticInterface(mouse_queue=q)
     state = iface.get_latest_state()
     assert state is not None
@@ -78,7 +83,7 @@ def test_active_field_is_null() -> None:
 
 
 def test_subscribe_state_fires_callback() -> None:
-    q: Queue[tuple[float, float]] = Queue()
+    q: _MouseQueue = multiprocessing.Queue()
     iface = MouseHapticInterface(mouse_queue=q)
     received: list[object] = []
     iface.subscribe_state(lambda s: received.append(s))
@@ -92,7 +97,7 @@ def test_subscribe_state_fires_callback() -> None:
 
 
 def test_unsubscribe_stops_callback() -> None:
-    q: Queue[tuple[float, float]] = Queue()
+    q: _MouseQueue = multiprocessing.Queue()
     iface = MouseHapticInterface(mouse_queue=q)
     received: list[object] = []
     iface.subscribe_state(lambda s: received.append(s))
@@ -100,3 +105,35 @@ def test_unsubscribe_stops_callback() -> None:
 
     iface.get_latest_state()
     assert len(received) == 0
+
+
+def test_velocity_uses_position_update_interval() -> None:
+    """Velocity denominator must be the time between position updates,
+    not between get_latest_state() polls (1 kHz vs ~60 Hz mouse rate).
+    """
+    q: _MouseQueue = multiprocessing.Queue()
+    iface = MouseHapticInterface(mouse_queue=q)
+
+    # Establish baseline at origin
+    q.put((0.0, 0.0))
+    time.sleep(_QUEUE_SETTLE)
+    iface.get_latest_state()
+
+    # Simulate several empty polls (as the 1 kHz TaskController would do),
+    # accumulating ~10 ms of time since the last real update.
+    for _ in range(10):
+        iface.get_latest_state()
+        time.sleep(0.001)
+
+    # New position arrives after ~10 ms of empty polls
+    q.put((0.01, 0.0))  # 1 cm displacement
+    time.sleep(_QUEUE_SETTLE)
+    state = iface.get_latest_state()
+    assert state is not None
+
+    # With the correct fix, dt ≈ 60 ms → velocity ≈ 0.17 m/s.
+    # Without the fix, dt ≈ 1 ms (poll interval) → velocity ≈ 10 m/s.
+    assert abs(state.velocity[0]) < 2.0, (
+        f"Velocity {state.velocity[0]:.2f} m/s is implausibly high — "
+        "dt is probably using poll interval instead of position-update interval"
+    )

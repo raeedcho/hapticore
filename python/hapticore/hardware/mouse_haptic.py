@@ -10,9 +10,10 @@ never imports PsychoPy.
 
 from __future__ import annotations
 
+import multiprocessing
+import multiprocessing.queues
 import time
 from collections.abc import Callable
-from multiprocessing import Queue
 from queue import Empty
 
 from hapticore.core.messages import (
@@ -36,19 +37,18 @@ class MouseHapticInterface:
 
     def __init__(
         self,
-        mouse_queue: Queue[tuple[float, float]],
+        mouse_queue: multiprocessing.queues.Queue[tuple[float, float]],
     ) -> None:
         self._queue = mouse_queue
         self._position: list[float] = [0.0, 0.0, 0.0]
         self._velocity: list[float] = [0.0, 0.0, 0.0]
-        self._prev_time: float = time.monotonic()
+        self._position_time: float = time.monotonic()
         self._sequence: int = 0
         self._callback: Callable[[HapticState], None] | None = None
 
     def get_latest_state(self) -> HapticState | None:
         """Return the latest mouse-derived haptic state."""
         now = time.monotonic()
-        dt = max(now - self._prev_time, 1e-6)
 
         # Drain queue, keep only the latest reading
         latest: tuple[float, float] | None = None
@@ -61,14 +61,15 @@ class MouseHapticInterface:
         if latest is not None:
             x, y = latest
             new_pos = [x, y, 0.0]
+            dt = max(now - self._position_time, 1e-6)
             self._velocity = [
                 (new_pos[i] - self._position[i]) / dt for i in range(3)
             ]
             self._position = new_pos
+            self._position_time = now   # only advance when data arrives
         else:
             self._velocity = [0.0, 0.0, 0.0]
 
-        self._prev_time = now
         self._sequence += 1
 
         state = make_haptic_state(

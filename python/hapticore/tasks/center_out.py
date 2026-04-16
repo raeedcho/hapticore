@@ -14,7 +14,6 @@ from typing import Any
 
 from hapticore.core.messages import Command, HapticState
 from hapticore.tasks.base import BaseTask, ParamSpec
-import numpy as np
 
 
 class CenterOutTask(BaseTask):

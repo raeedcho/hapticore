@@ -24,13 +24,13 @@ class TestLoadConfig:
     """Tests for loading configuration from YAML."""
 
     def test_example_config_loads(self) -> None:
-        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        config = load_config(CONFIGS_DIR / "example_flat_config.yaml")
         assert config.experiment_name == "center_out_reaching"
         assert config.subject.subject_id == "monkey_M"
         assert config.task.task_class == "hapticore.tasks.center_out.CenterOutTask"
 
     def test_round_trip(self) -> None:
-        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        config = load_config(CONFIGS_DIR / "example_flat_config.yaml")
         dumped = config.model_dump()
         restored = ExperimentConfig.model_validate(dumped)
         assert restored.model_dump() == config.model_dump()
@@ -148,9 +148,9 @@ class TestLayeredMerge:
             FIXTURES_DIR / "subject.yaml",
             FIXTURES_DIR / "task.yaml",
             FIXTURES_DIR / "experiment.yaml",
-            CONFIGS_DIR / "example_config.yaml",  # sets force_limit_n=20.0
+            CONFIGS_DIR / "example_flat_config.yaml",  # sets force_limit_n=20.0
         )
-        assert config.haptic.force_limit_n == 20.0  # example_config overrides rig's 15.0
+        assert config.haptic.force_limit_n == 20.0  # example_flat_config overrides rig's 15.0
 
     def test_deep_merge_preserves_other_fields(self) -> None:
         """Rig sets workspace_bounds and force_limit_n; task file overrides publish_rate_hz.
@@ -186,7 +186,7 @@ class TestLayeredMerge:
     def test_overrides_take_priority(self) -> None:
         """Constructor overrides take priority over YAML values."""
         config = load_config(
-            CONFIGS_DIR / "example_config.yaml",
+            CONFIGS_DIR / "example_flat_config.yaml",
             overrides={"experiment_name": "overridden"},
         )
         assert config.experiment_name == "overridden"
@@ -198,13 +198,13 @@ class TestEnvVarOverride:
     def test_env_overrides_yaml(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """HAPTICORE_ env vars override YAML values."""
         monkeypatch.setenv("HAPTICORE_HAPTIC__FORCE_LIMIT_N", "15.0")
-        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        config = load_config(CONFIGS_DIR / "example_flat_config.yaml")
         assert config.haptic.force_limit_n == 15.0
 
     def test_env_nested_delimiter(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Double-underscore delimiter works for nested fields."""
         monkeypatch.setenv("HAPTICORE_DISPLAY__REFRESH_RATE_HZ", "120")
-        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        config = load_config(CONFIGS_DIR / "example_flat_config.yaml")
         assert config.display.refresh_rate_hz == 120
 
     def test_env_does_not_wipe_other_nested_fields(
@@ -212,7 +212,7 @@ class TestEnvVarOverride:
     ) -> None:
         """Setting one nested env var preserves other nested defaults."""
         monkeypatch.setenv("HAPTICORE_HAPTIC__FORCE_LIMIT_N", "10.0")
-        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        config = load_config(CONFIGS_DIR / "example_flat_config.yaml")
         assert config.haptic.force_limit_n == 10.0
         assert config.haptic.publish_rate_hz == 200.0  # preserved from YAML
 
@@ -222,7 +222,7 @@ class TestSerializationCompatibility:
 
     def test_model_dump_json_round_trip(self) -> None:
         """model_dump_json() produces valid JSON that reconstructs the config."""
-        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        config = load_config(CONFIGS_DIR / "example_flat_config.yaml")
         json_str = config.model_dump_json()
         restored = ExperimentConfig.model_validate_json(json_str)
         assert restored.model_dump() == config.model_dump()
@@ -241,7 +241,7 @@ class TestSerializationCompatibility:
 
     def test_model_dump_contains_all_sections(self) -> None:
         """model_dump() output contains all expected top-level keys."""
-        config = load_config(CONFIGS_DIR / "example_config.yaml")
+        config = load_config(CONFIGS_DIR / "example_flat_config.yaml")
         dumped = config.model_dump()
         expected_keys = {
             "experiment_name", "subject", "haptic", "display",
@@ -256,7 +256,7 @@ class TestCliOverride:
     def test_cli_overrides_yaml(self) -> None:
         """CLI arguments override YAML values."""
         config = load_config(
-            CONFIGS_DIR / "example_config.yaml",
+            CONFIGS_DIR / "example_flat_config.yaml",
             cli_parse_args=["--haptic.force_limit_n=30.0"],
         )
         assert config.haptic.force_limit_n == 30.0
@@ -265,7 +265,7 @@ class TestCliOverride:
         """CLI arguments take precedence over environment variables."""
         monkeypatch.setenv("HAPTICORE_HAPTIC__FORCE_LIMIT_N", "10.0")
         config = load_config(
-            CONFIGS_DIR / "example_config.yaml",
+            CONFIGS_DIR / "example_flat_config.yaml",
             cli_parse_args=["--haptic.force_limit_n=30.0"],
         )
         assert config.haptic.force_limit_n == 30.0

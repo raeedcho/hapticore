@@ -62,7 +62,7 @@ class TestCLISimulate:
         """End-to-end: _simulate with --fast and --config finishes in seconds."""
         from hapticore.cli import _simulate
 
-        config_path = Path(__file__).parents[2] / "configs" / "example_config.yaml"
+        config_path = Path(__file__).parents[2] / "configs" / "example_flat_config.yaml"
         args = Namespace(
             config=str(config_path),
             rig=None, subject=None, task=None, extra_config=[],
@@ -107,7 +107,7 @@ class TestCLISimulate:
         """--input mouse requires --display; running without it must exit(1)."""
         from hapticore.cli import _simulate
 
-        config_path = Path(__file__).parents[2] / "configs" / "example_config.yaml"
+        config_path = Path(__file__).parents[2] / "configs" / "example_flat_config.yaml"
         args = Namespace(
             config=str(config_path),
             rig=None, subject=None, task=None, extra_config=[],

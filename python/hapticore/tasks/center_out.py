@@ -128,6 +128,7 @@ class CenterOutTask(BaseTask):
             "radius": self.params["target_radius"],
             "color": [0.0, 1.0, 0.0],
         })
+        self.display.hide_stimulus("center_target")
         self.timer.set("time_expired", self.params["reach_timeout"])
         self.sync.send_event_code(20)
 

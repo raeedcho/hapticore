@@ -10,8 +10,10 @@ import contextlib
 import logging
 import math
 import multiprocessing
+import multiprocessing.queues
 import signal
 import time
+from queue import Full
 from typing import TYPE_CHECKING, Any
 
 import msgpack
@@ -21,6 +23,7 @@ from hapticore.core.config import DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_EVENT, TOPIC_STATE, TrialEvent, serialize
 
 if TYPE_CHECKING:
+    from psychopy.event import Mouse as _PsychoPyMouse
     from psychopy.visual import Window
 
     from hapticore.display.photodiode import PhotodiodePatch
@@ -61,12 +64,14 @@ class DisplayProcess(multiprocessing.Process):
         zmq_config: ZMQConfig,
         *,
         headless: bool = False,
+        mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None,
     ) -> None:
         super().__init__(name="DisplayProcess", daemon=True)
         self._display_config = display_config
         self._zmq_config = zmq_config
         self._headless = headless
         self._shutdown = multiprocessing.Event()
+        self._mouse_queue = mouse_queue
 
     # ------------------------------------------------------------------
     # Spatial conversion helpers
@@ -120,6 +125,13 @@ class DisplayProcess(multiprocessing.Process):
 
         win = self._create_window(visual)
 
+        # In mouse mode, create a PsychoPy Mouse bound to the window.
+        mouse = None
+        if self._mouse_queue is not None:
+            from psychopy import event as psychopy_event
+
+            mouse = psychopy_event.Mouse(win=win)
+
         ctx = zmq.Context()
         display_sub = ctx.socket(zmq.SUB)
         display_sub.setsockopt(zmq.LINGER, 0)
@@ -147,7 +159,10 @@ class DisplayProcess(multiprocessing.Process):
         )
 
         try:
-            self._frame_loop(win, display_sub, state_sub, timing_pub, scene, photodiode)
+            self._frame_loop(
+                win, display_sub, state_sub, timing_pub, scene, photodiode,
+                mouse=mouse,
+            )
         finally:
             dropped = getattr(win, "nDroppedFrames", 0)
             if dropped:
@@ -173,6 +188,7 @@ class DisplayProcess(multiprocessing.Process):
         timing_pub: zmq.Socket[Any],
         scene: SceneManager,
         photodiode: PhotodiodePatch | None = None,
+        mouse: _PsychoPyMouse | None = None,
     ) -> None:
         """Main rendering loop — one iteration per vsync frame."""
         latest_state: dict[str, Any] | None = None
@@ -201,7 +217,17 @@ class DisplayProcess(multiprocessing.Process):
                 latest_state = state_msgs[-1]
                 state_receive_time = time.monotonic()
 
-            if latest_state is not None:
+            # 2a. Mouse mode: read mouse, push to queue, drive cursor directly
+            if mouse is not None and self._mouse_queue is not None:
+                mx_cm, my_cm = mouse.getPos()
+                eff = self._effective_scale()
+                offset = self._effective_offset_cm()
+                x_m = (mx_cm - offset[0]) / eff
+                y_m = (my_cm - offset[1]) / eff
+                with contextlib.suppress(Full):
+                    self._mouse_queue.put_nowait((x_m, y_m))
+                scene.set_cursor_position([mx_cm, my_cm])
+            elif latest_state is not None:
                 eff_scale = self._effective_scale()
                 eff_offset = self._effective_offset_cm()
                 if interpolation_enabled:
@@ -219,8 +245,8 @@ class DisplayProcess(multiprocessing.Process):
                 ]
                 scene.set_cursor_position(cursor_pos)
 
-            # 2b. Update scene from field_state data
-            if latest_state is not None:
+            # 2b. Update scene from field_state data (skip in mouse mode)
+            if mouse is None and latest_state is not None:
                 self._update_from_field_state(scene, latest_state)
 
             # 3. Draw all stimuli

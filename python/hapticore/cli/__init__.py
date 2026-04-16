@@ -10,6 +10,8 @@ import sys
 
 def _simulate(args: argparse.Namespace) -> None:
     """Run a task in simulation mode with mock hardware."""
+    import multiprocessing
+    import multiprocessing.queues
     import time
 
     import zmq
@@ -63,8 +65,27 @@ def _simulate(args: argparse.Namespace) -> None:
     task_cls = getattr(module, class_name)
     task = task_cls()
 
-    # Create mock hardware
-    haptic = MockHapticInterface()
+    # Create hardware for simulation
+    mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None
+    if args.input == "mouse":
+        if not args.display:
+            print(
+                "Error: --input mouse requires --display (mouse position "
+                "comes from the PsychoPy window)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        from multiprocessing import Queue as MpQueue
+
+        from hapticore.hardware.mouse_haptic import MouseHapticInterface
+
+        # Buffer a few frames of mouse positions (~4 frames at 60 Hz).
+        # Consumer drains the queue and keeps only the latest value.
+        mouse_queue = MpQueue(maxsize=4)
+        haptic = MouseHapticInterface(mouse_queue=mouse_queue)
+    else:
+        haptic = MockHapticInterface()
     sync = MockSync()
 
     display_proc = None
@@ -81,7 +102,9 @@ def _simulate(args: argparse.Namespace) -> None:
             haptic_state_address=make_ipc_address("sim_state"),
             display_event_address=make_ipc_address("sim_disp"),
         )
-        display_proc = DisplayProcess(config.display, session_zmq, headless=False)
+        display_proc = DisplayProcess(
+            config.display, session_zmq, headless=False, mouse_queue=mouse_queue,
+        )
         display_proc.start()
         time.sleep(1.5)  # let PsychoPy create the window (~1s on macOS)
 
@@ -243,6 +266,13 @@ def main() -> None:
     sim_parser.add_argument(
         "--display", action="store_true",
         help="Launch a real PsychoPy display process (requires display environment)",
+    )
+    sim_parser.add_argument(
+        "--input",
+        choices=["mock", "mouse"],
+        default="mock",
+        help="Position source for simulation. 'mock' = stationary origin, "
+             "'mouse' = live mouse cursor (requires --display)",
     )
     sim_parser.set_defaults(func=_simulate)
 

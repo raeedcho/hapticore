@@ -8,6 +8,8 @@ import time
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 
 class TestCLIGraphTask:
     """Tests for the graph-task subcommand."""
@@ -58,16 +60,13 @@ class TestCLISimulate:
 
     def test_fast_simulation_completes_quickly(self) -> None:
         """End-to-end: _simulate with --fast and --config finishes in seconds."""
-        from argparse import Namespace
-        from pathlib import Path
-
         from hapticore.cli import _simulate
 
         config_path = Path(__file__).parents[2] / "configs" / "example_config.yaml"
         args = Namespace(
             config=str(config_path),
             rig=None, subject=None, task=None, extra_config=[],
-            experiment_name=None, fast=True, display=False,
+            experiment_name=None, fast=True, display=False, input="mock",
         )
 
         start = time.monotonic()
@@ -81,9 +80,6 @@ class TestCLISimulate:
 
     def test_fast_simulation_layered_mode(self) -> None:
         """End-to-end: _simulate with --rig/--subject/--task layered configs."""
-        from argparse import Namespace
-        from pathlib import Path
-
         from hapticore.cli import _simulate
 
         configs = Path(__file__).parents[2] / "configs"
@@ -93,7 +89,7 @@ class TestCLISimulate:
             subject=str(configs / "subject" / "example_subject.yaml"),
             task=str(configs / "task" / "center_out.yaml"),
             extra_config=[str(configs / "example_experiment.yaml")],
-            experiment_name=None, fast=True, display=False,
+            experiment_name=None, fast=True, display=False, input="mock",
         )
 
         start = time.monotonic()
@@ -104,3 +100,21 @@ class TestCLISimulate:
             f"Fast simulation took {elapsed:.1f}s — timing overrides "
             f"are probably not being applied"
         )
+
+    def test_simulate_mouse_without_display_fails(
+        self, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--input mouse requires --display; running without it must exit(1)."""
+        from hapticore.cli import _simulate
+
+        config_path = Path(__file__).parents[2] / "configs" / "example_config.yaml"
+        args = Namespace(
+            config=str(config_path),
+            rig=None, subject=None, task=None, extra_config=[],
+            experiment_name=None, fast=False, display=False, input="mouse",
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            _simulate(args)
+        assert exc_info.value.code == 1
+        assert "requires --display" in capsys.readouterr().err
+

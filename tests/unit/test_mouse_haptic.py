@@ -119,21 +119,22 @@ def test_velocity_uses_position_update_interval() -> None:
     time.sleep(_QUEUE_SETTLE)
     iface.get_latest_state()
 
-    # Simulate several empty polls (as the 1 kHz TaskController would do),
-    # accumulating ~10 ms of time since the last real update.
-    for _ in range(10):
+    # Poll empty for ~300 ms (300 iterations × 1 ms sleep).
+    # Before fix: _prev_time advances to T0 + 300ms.
+    # After fix:  _position_time stays at T0.
+    for _ in range(300):
         iface.get_latest_state()
         time.sleep(0.001)
 
-    # New position arrives after ~10 ms of empty polls
+    # New position arrives after ~300 ms of empty polls
     q.put((0.01, 0.0))  # 1 cm displacement
     time.sleep(_QUEUE_SETTLE)
     state = iface.get_latest_state()
     assert state is not None
 
-    # With the correct fix, dt ≈ 60 ms → velocity ≈ 0.17 m/s.
-    # Without the fix, dt ≈ 1 ms (poll interval) → velocity ≈ 10 m/s.
-    assert abs(state.velocity[0]) < 2.0, (
+    # With fix:   dt ≈ 350 ms → velocity ≈ 0.029 m/s  → passes
+    # Before fix: dt ≈  50 ms → velocity ≈ 0.20  m/s  → fails
+    assert abs(state.velocity[0]) < 0.1, (
         f"Velocity {state.velocity[0]:.2f} m/s is implausibly high — "
         "dt is probably using poll interval instead of position-update interval"
     )

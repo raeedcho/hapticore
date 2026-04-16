@@ -36,28 +36,31 @@ recording:
 task:  # required
   task_class: "hapticore.tasks.center_out.CenterOutTask"  # required
   params:
-    target_radius: 0.02
+    num_targets: 8
+    target_distance: 0.08
+    target_radius: 0.010
     hold_time: 0.5
     reach_timeout: 2.0
+    iti_duration: 1.0
   conditions:
-    - target_angle: 0
-      target_distance: 0.08
-    - target_angle: 45
-      target_distance: 0.08
-    - target_angle: 90
-      target_distance: 0.08
-    - target_angle: 135
-      target_distance: 0.08
-    - target_angle: 180
-      target_distance: 0.08
-    - target_angle: 225
-      target_distance: 0.08
-    - target_angle: 270
-      target_distance: 0.08
-    - target_angle: 315
-      target_distance: 0.08
+    - target_id: 0
+      target_position: [0.08, 0.0]
+    - target_id: 1
+      target_position: [0.0566, 0.0566]
+    - target_id: 2
+      target_position: [0.0, 0.08]
+    - target_id: 3
+      target_position: [-0.0566, 0.0566]
+    - target_id: 4
+      target_position: [-0.08, 0.0]
+    - target_id: 5
+      target_position: [-0.0566, -0.0566]
+    - target_id: 6
+      target_position: [0.0, -0.08]
+    - target_id: 7
+      target_position: [0.0566, -0.0566]
   block_size: 8
-  num_blocks: 20
+  num_blocks: 1
   randomization: "pseudorandom"
 
 sync:

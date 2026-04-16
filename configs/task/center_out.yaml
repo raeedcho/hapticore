@@ -6,7 +6,7 @@ task:
   params:
     num_targets: 8
     target_distance: 0.08
-    target_radius: 0.015
+    target_radius: 0.010
     hold_time: 0.5
     reach_timeout: 2.0
     iti_duration: 1.0

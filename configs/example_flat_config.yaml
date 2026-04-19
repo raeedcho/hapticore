@@ -28,10 +28,15 @@ display:
   background_color: [0.0, 0.0, 0.0]
 
 recording:
-  ripple_enabled: false
-  spikeglx_enabled: false
-  lsl_enabled: true
   save_dir: "data"
+  lsl_enabled: true
+
+sync:
+  transport: "mock"
+  sync_pulse_rate_hz: 1.0
+  code_map:
+    state_codes: {}
+    event_codes: {}
 
 task:  # required
   task_class: "hapticore.tasks.center_out.CenterOutTask"  # required
@@ -62,11 +67,6 @@ task:  # required
   block_size: 8
   num_blocks: 1
   randomization: "pseudorandom"
-
-sync:
-  teensy_port: "/dev/ttyACM0"
-  sync_pulse_rate_hz: 1.0
-  event_code_bits: 8
 
 zmq:
   event_pub_address: "ipc:///tmp/hapticore_events"

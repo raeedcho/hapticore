@@ -18,15 +18,25 @@ display:
   background_color: [0.0, 0.0, 0.0]
 
 recording:
-  ripple_enabled: false
-  spikeglx_enabled: false
-  lsl_enabled: true
   save_dir: "data"
+  lsl_enabled: true
+  # ripple:  # enable Ripple recording by adding a block like:
+  #   use_tcp: true
+  #   operator_id: 129
+  #   auto_increment: true
 
 sync:
-  teensy_port: "/dev/ttyACM0"
+  transport: "mock"  # one of: mock | ripple_scout | teensy
   sync_pulse_rate_hz: 1.0
-  event_code_bits: 8
+  code_map:
+    state_codes: {}
+    event_codes: {}
+  # ripple:
+  #   sync_pulse_sma_index: 0
+  #   event_code_digout_index: 4
+  # teensy:
+  #   port: "/dev/ttyACM0"
+  #   baud: 115200
 
 zmq:
   event_pub_address: "ipc:///tmp/hapticore_events"

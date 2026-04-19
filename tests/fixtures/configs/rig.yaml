@@ -14,9 +14,8 @@ display:
   monitor_distance_cm: 45.0
 
 sync:
-  teensy_port: "/dev/ttyACM0"
+  transport: "mock"
   sync_pulse_rate_hz: 1.0
-  event_code_bits: 8
 
 zmq:
   event_pub_address: "ipc:///tmp/hapticore_events"

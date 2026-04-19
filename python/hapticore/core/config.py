@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_settings import (
@@ -91,13 +91,32 @@ class DisplayConfig(BaseModel):
     )
 
 
-class RecordingConfig(BaseModel):
-    """Neural recording configuration."""
+class RippleRecordingConfig(BaseModel):
+    """Ripple Grapevine recording settings.
 
-    ripple_enabled: bool = False
-    spikeglx_enabled: bool = False
-    lsl_enabled: bool = True
+    Used when ``RecordingConfig.ripple is not None``. Controls the xipppy
+    TCP connection and Trellis ``trial()`` calls made by ``RippleProcess``.
+    """
+
+    use_tcp: bool = True
+    operator_id: int = Field(
+        default=129, ge=0, le=255,
+        description="Trellis operator address (last octet of Trellis IPv4).",
+    )
+    auto_increment: bool = True
+
+
+class RecordingConfig(BaseModel):
+    """Neural recording configuration.
+
+    Presence of a nested block indicates the corresponding system is in use
+    for this session; ``None`` (default) means not in use. ``spikeglx`` is
+    reserved for Phase 5B.
+    """
+
     save_dir: Path = Field(default=Path("data"))
+    lsl_enabled: bool = True
+    ripple: RippleRecordingConfig | None = None
 
 
 class TaskConfig(BaseModel):
@@ -118,12 +137,77 @@ class TaskConfig(BaseModel):
     )
 
 
-class SyncConfig(BaseModel):
-    """Teensy sync pulse configuration."""
+class EventCodeMap(BaseModel):
+    """Mapping from state/event names to integer digital event codes.
 
-    teensy_port: str = "/dev/ttyACM0"
+    Used transport-agnostically by both Ripple Scout DIO (Phase 5A) and the
+    Teensy sync hub (Phase 5B). The recording process (e.g. ``RippleProcess``)
+    consumes this to translate semantic events into hardware digout calls:
+
+    - ``state_codes`` — emitted automatically by the recording process when a
+      ``StateTransition`` message is published whose ``new_state`` is listed
+      here. Default empty so existing tasks that call ``send_event_code(int)``
+      explicitly are not double-fired.
+    - ``event_codes`` — looked up when an explicit ``send_event_code(name)``
+      is published over the bus. Forward-facing; existing tasks still pass
+      raw ints and are unaffected.
+
+    Codes ``0`` and ``65535`` should be avoided (they collide with Ripple's
+    bus-idle and all-ones states respectively) but are not rejected here —
+    bit-width validation is the responsibility of the transport.
+    """
+
+    state_codes: dict[str, int] = Field(default_factory=dict)
+    event_codes: dict[str, int] = Field(default_factory=dict)
+
+
+class TeensyConfig(BaseModel):
+    """Teensy sync-hub settings (Phase 5B).
+
+    Used when ``SyncConfig.transport == 'teensy'``. Ignored in Phase 5A.
+    """
+
+    port: str = "/dev/ttyACM0"
+    baud: int = Field(default=115200, gt=0)
+
+
+class RippleSyncConfig(BaseModel):
+    """Ripple Scout DIO settings for 1 Hz sync pulse and event codes.
+
+    Used when ``SyncConfig.transport == 'ripple_scout'``. Consumed by
+    ``RippleProcess`` (Phase 5A.2).
+    """
+
+    sync_pulse_sma_index: int = Field(
+        default=0, ge=0, le=3,
+        description="SMA output index 0-3 used for the 1 Hz sync pulse.",
+    )
+    event_code_digout_index: int = Field(
+        default=4, ge=0, le=4,
+        description=(
+            "xipppy digout index used for event codes. 4 selects the "
+            "16-bit parallel port (recommended). 0-3 would restrict codes "
+            "to binary on a single SMA line."
+        ),
+    )
+
+
+class SyncConfig(BaseModel):
+    """Sync transport + event code map.
+
+    Transport-specific knobs are nested under ``ripple`` / ``teensy``. The
+    ``transport`` field selects which nested block is used at runtime; the
+    other is ignored. Runtime wiring (which process is spawned for a given
+    transport) is the responsibility of the CLI in Phase 5A.3 — this model
+    intentionally does not validate that the selected transport's nested
+    block is non-None.
+    """
+
+    transport: Literal["mock", "ripple_scout", "teensy"] = "mock"
     sync_pulse_rate_hz: float = Field(default=1.0, gt=0, le=10.0)
-    event_code_bits: int = Field(default=8, ge=1, le=16)
+    code_map: EventCodeMap = Field(default_factory=EventCodeMap)
+    ripple: RippleSyncConfig | None = None
+    teensy: TeensyConfig | None = None
 
 
 class ExperimentConfig(BaseSettings):

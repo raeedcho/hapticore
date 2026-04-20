@@ -18,7 +18,7 @@ The components are tightly coupled through shared message schemas and coordinate
 hapticore/
 ├── python/hapticore/     # pip-installable Python package
 ├── cpp/haptic_server/    # CMake C++ project
-├── firmware/teensy_sync/ # Arduino/PlatformIO project
+├── firmware/teensy/      # Arduino/PlatformIO project
 ├── configs/              # YAML experiment configs
 ├── tests/                # Python tests (C++ tests live in cpp/)
 ├── docs/                 # architecture, guides, ADRs

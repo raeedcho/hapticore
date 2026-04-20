@@ -2,11 +2,11 @@
 
 ## What this project is
 
-Hapticore is a multi-process experimental control system for primate neurophysiology experiments coordinating a Force Dimensions delta.3 haptic robot, Ripple Grapevine neural recording/stimulation, Neuropixels/SpikeGLX recording, and visual stimulus display. The system runs behavioral tasks where monkeys interact with virtual haptic environments while neural activity is recorded.
+Hapticore is a multi-process experimental control system for primate neurophysiology experiments coordinating a Force Dimension delta.3 haptic robot, Ripple Grapevine neural recording/stimulation, Neuropixels/SpikeGLX recording, and visual stimulus display. The system runs behavioral tasks where monkeys interact with virtual haptic environments while neural activity is recorded.
 
 ## Architecture (three tiers — read `docs/architecture.md` for full detail)
 
-- **Tier 1 (C++, hard real-time):** Haptic server runs at 4 kHz using Force Dimension DHD SDK. Evaluates parameterized force fields, publishes state via ZeroMQ PUB, accepts commands via ZeroMQ ROUTER. Python never sends raw forces — it sets field parameters. Box2D v3.0 provides 2D collision detection and rigid-body dynamics for tasks with physical interactions.
+- **Tier 1 (C++, hard real-time):** Haptic server runs at 4 kHz using Force Dimension DHD SDK. Evaluates parameterized force fields, publishes state via ZeroMQ PUB, accepts commands via ZeroMQ ROUTER. Python never sends raw forces — it sets field parameters. Box2D v3.0 provides 2D collision detection and rigid-body dynamics for tasks with physical interactions. A beam-break sensor on an FTDI FT232H provides a separate safety-critical GPIO read path directly into the C++ server — see docs/rig-setup.md § FTDI FT232H.
 - **Tier 2 (Python, soft real-time):** Task controller uses `transitions` state machine library. PsychoPy renders visual stimuli in a separate process. Each hardware interface runs in its own process. ZeroMQ PUB-SUB distributes events between all processes, with msgpack serialization.
 - **Tier 3 (Python, recording/analysis):** Wrappers around SpikeGLX Python SDK, Ripple xipppy, and LSL/pylsl. Teensy generates hardware sync pulses and event codes.
 
@@ -210,3 +210,6 @@ Before proposing alternatives to a settled decision, check `docs/adr/` for conte
 - `008`: Lab coordinate convention (DHD SDK remap in `DhdReal`)
 - `009`: pydantic-settings with layered YAML composition
 - `010`: Virtual coupling for stable mass rendering on impedance-type device
+- `011`: SI units (meters) for all spatial values in code and configs--display process handles conversion to cm for PsychoPy
+- `012`: Separate repository for video capture of behavior
+- `013`: Teensy-based hardware sync hub, separate from the haptic server

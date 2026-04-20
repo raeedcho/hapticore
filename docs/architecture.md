@@ -11,10 +11,9 @@ Hapticore is a three-tier system for primate neurophysiology experiments involvi
 │  - Force Dimension DHD SDK         - TTL event codes          │
 │  - Parameterized force fields      - 1 Hz sync square wave    │
 │  - Box2D physics for collisions    - Serial from Python       │
-│  - Safety field (beam break+FTDI)  - Serial from Python       │
-│  - ZMQ PUB: state at 200 Hz        - To Ripple + SpikeGLX     │
-│  - ZMQ ROUTER: commands            - Reward TTL               │
-│                                    - 30-120 Hz Camera trigger │
+│  - Safety field (beam break+FTDI)  - To Ripple + SpikeGLX     │
+│  - ZMQ PUB: state at 200 Hz        - Reward TTL               │
+│  - ZMQ ROUTER: commands            - 30-120 Hz Camera trigger │
 │                                                               │
 │  Ripple Code-on-the-Box (optional)                            │
 │  - Closed-loop stim on NIP RT Linux                           │
@@ -79,7 +78,7 @@ The haptic server is a standalone C++ executable with three threads.
 - `PhysicsField`: wraps a Box2D world for rigid-body dynamics and collision (see ADR-007). Supports polygons, circles, revolute/prismatic joints, and static obstacles. Used for tasks involving collisions (e.g., Tetris-like block placement, air hockey) and underactuated dynamics (e.g., pivoted rod navigation). The monkey controls a kinematic body; Box2D computes reaction forces from contacts and constraints.
 - `CompositeField`: sum of multiple fields
 
-**Safety**: force clamping every tick, communication timeout (revert to NullField + damping if no heartbeat in 500 ms), maximum stiffness enforcement, auto-calibration at startup (with `--no-calibrate` override). Beam break sensor triggering safety field when handle is let go.
+**Safety**: force clamping every tick, communication timeout (revert to NullField + damping if no heartbeat in 500 ms), maximum stiffness enforcement, auto-calibration at startup (with `--no-calibrate` override). Beam break sensor to optionally revert to safety field on handle release (to be implemented).
 
 **Key design principle**: Python never sends raw force values. Python sends *field parameters* (spring constant, target position, pendulum length, or a full physics world specification). The C++ thread evaluates forces at 4 kHz using these parameters. This decouples the 4 kHz control rate from the ~100 Hz Python rate. See ADR-002 for rationale.
 
@@ -112,7 +111,7 @@ The 1 Hz sync and event strobe each use a single Teensy output pin split to both
 - `S1` / `S0` — start/stop 1 Hz sync pulse generation
 - `C<rate>` — set camera trigger rate (e.g., `C60` for 60 Hz)
 - `T1` / `T0` — start/stop camera trigger generation
-- `E<code>` — emit a behavioral event code (set parallel data lines, pulse strobe)
+- `E<code>` — emit a behavioral event code (protocol to be determined)
 - `R<duration_ms>` — pulse reward TTL for specified duration
 
 #### Firmware location
@@ -127,7 +126,7 @@ Teensy firmware lives in `hapticore/firmware/teensy/` and builds via PlatformIO 
 
 ### Camera subsystem (separate repository)
  
-Five synchronized Blackfly S cameras capture markerless motion data for 3D pose estimation. The camera system runs on a **dedicated camera PC** and is maintained in a separate repository (see ADR-009). It has no runtime coupling to Hapticore — the integration is purely through hardware sync signals and post-hoc file alignment.
+Five synchronized Blackfly S cameras capture markerless motion data for 3D pose estimation. The camera system runs on a **dedicated camera PC** and is maintained in a separate repository (see ADR-012). It has no runtime coupling to Hapticore — the integration is purely through hardware sync signals and post-hoc file alignment.
  
 #### Hardware trigger architecture
  
@@ -198,7 +197,7 @@ See `docs/task_authoring_guide.md` for the full task creation workflow.
 
 ### Timestamp alignment
 
-A Teensy 4.1 generates a continuous 1 Hz sync square wave routed to both Ripple's Digital I/O and SpikeGLX's NI-DAQ digital input. The same Teensy outputs event codes (8–16 bit parallel GPIO + strobe) to both systems. Offline alignment extracts sync edges from each system and builds pairwise linear time mappings, achieving < 0.1 ms cross-system accuracy.
+Offline alignment extracts sync edges from each system (sent from the Teensy sync hub to the Ripple and SpikeGLX systems) and builds pairwise linear time mappings, achieving < 0.1 ms cross-system accuracy.
 
 ### Data directory structure
 

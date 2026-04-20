@@ -15,7 +15,7 @@ sudo apt update
 sudo apt install -y \
     build-essential g++ \
     libzmq3-dev \
-    libusb-1.0-0-dev \
+    libusb-1.0-0-dev
 ```
 
 ### Install pixi
@@ -92,11 +92,7 @@ pixi run test-unit
 
 ## Teensy 4.1 sync hub
  
-The Teensy 4.1 serves as the centralized timing hub for the rig, generating camera frame triggers, cross-system sync pulses, behavioral event codes, and reward TTL signals.
- 
-### Why Teensy 4.1 over Arduino Uno
- 
-The Arduino Uno (ATmega328P, 16 MHz, 3 hardware timers) cannot reliably generate multiple independent timing signals simultaneously. ISR jitter reaches 4–10 µs when timers interact, and the 8-bit Timer2 cannot produce exact 30/60/120 Hz frequencies. The Teensy 4.1 (NXP i.MX RT1062, 600 MHz) provides 4 independent IntervalTimers with ~6.67 ns resolution, 32 FlexPWM channels, and sub-microsecond ISR jitter. Cost difference is negligible (~$30 vs ~$15).
+The Teensy 4.1 serves as the centralized timing hub for the rig, generating camera frame triggers, cross-system sync pulses, behavioral event codes, and reward TTL signals. See ADR-013 for the reasoning behind this choice.
  
 ### Voltage levels
  
@@ -129,22 +125,22 @@ Option 2 — Arduino IDE:
 ```
 Teensy 4.1 pin assignments (defined in firmware header):
  
-Pin X  → Camera frame trigger (30-120 Hz)
+Pin A  → Camera frame trigger (30-120 Hz)
          Wire to all 5 Blackfly S cameras' Line 3 (Pin 1, green wire)
          on 6-pin Hirose connector. Parallel wire — all cameras share
          the same physical signal. Share ground via Pin 6 (brown wire).
  
-Pin Y  → 1 Hz cross-system sync (50% duty cycle)
+Pin B  → 1 Hz cross-system sync (50% duty cycle)
          Wire to BNC, T-split to:
            - Ripple Scout SMA digital input 1
            - SpikeGLX NI-DAQ digital input (for Neuropixels sync)
  
-Pin Z  → Event strobe
+Pin C  → Event strobe
          Wire to BNC, T-split to:
            - Ripple Scout SMA digital input 2
            - SpikeGLX NI-DAQ digital input
  
-Pin W  → Reward TTL
+Pin D  → Reward TTL
          Wire to solenoid driver circuit TTL input
  
 GND    → Common ground shared with all connected devices

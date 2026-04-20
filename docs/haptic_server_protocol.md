@@ -179,7 +179,7 @@ Force: for each axis, if `pos[i] < min[i]`, apply `K * (min[i] - pos[i]) - B * v
 | `spill_threshold` | float | 1.5708 | > 0 | Ball spill angle in radians (π/2) |
 | `coupling_stiffness` | float | 800.0 | > 0, ≤ 3000 | Virtual coupler stiffness in N/m |
 | `coupling_damping` | float | 2.0 | ≥ 0, ≤ 50 | Virtual coupler damping in N·s/m |
-| `initial_phi` | float | 0.0 | |initial_phi| ≤ π | Optional. Initial ball angle in radians. Commits to `phi_` and triggers a cup position re-sync on the next `compute()` tick so coupling force is zero at t=0. |
+| `initial_phi` | float | 0.0 | abs(initial_phi) ≤ π | Optional. Initial ball angle in radians. Commits to `phi_` and triggers a cup position re-sync on the next `compute()` tick so coupling force is zero at t=0. |
 | `initial_phi_dot` | float | 0.0 | — | Optional. Initial ball angular velocity in rad/s. Also triggers a cup position re-sync on the next `compute()` tick. |
 
 > **Trial-start usage.** Because both `set_force_field` and `set_params` construct a fresh field instance internally, `initial_phi` / `initial_phi_dot` function as per-trial initial conditions: the task controller sends them in the params map at the start of each trial, and the new instance begins integration from that state. The simulated cup re-syncs to the device's x position on the first `compute()` tick, so the coupling force is zero at t=0 regardless of where the device was at the end of the previous trial.

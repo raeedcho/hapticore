@@ -645,9 +645,9 @@ TEST(CartPendulumFieldTest, InitialPhiValidatesRange) {
     });
     EXPECT_FALSE(field.update_params(oh.get()));
 
-    // ball_mass must not have been committed
-    Vec3 pos{0.0, 0.0, 0.0}, vel{0.0, 0.0, 0.0};
-    field.compute(pos, vel, 0.00025);  // sync first_tick_
+    // Atomicity: initial_phi_dot must not have been committed despite being valid.
+    EXPECT_DOUBLE_EQ(field.phi_dot(), 0.0);
+    EXPECT_DOUBLE_EQ(field.phi(), 0.0);
 }
 
 TEST(CartPendulumFieldTest, InitialPhiOptionalKeysIndependent) {

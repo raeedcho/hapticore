@@ -90,7 +90,69 @@ To verify:
 pixi run test-unit
 ```
 
-## Building the haptic server
+## Teensy 4.1 sync hub
+ 
+The Teensy 4.1 serves as the centralized timing hub for the rig, generating camera frame triggers, cross-system sync pulses, behavioral event codes, and reward TTL signals.
+ 
+### Why Teensy 4.1 over Arduino Uno
+ 
+The Arduino Uno (ATmega328P, 16 MHz, 3 hardware timers) cannot reliably generate multiple independent timing signals simultaneously. ISR jitter reaches 4–10 µs when timers interact, and the 8-bit Timer2 cannot produce exact 30/60/120 Hz frequencies. The Teensy 4.1 (NXP i.MX RT1062, 600 MHz) provides 4 independent IntervalTimers with ~6.67 ns resolution, 32 FlexPWM channels, and sub-microsecond ISR jitter. Cost difference is negligible (~$30 vs ~$15).
+ 
+### Voltage levels
+ 
+Teensy 4.1 outputs **3.3V logic** and is **not 5V tolerant** on any pin.
+ 
+- **Blackfly S cameras:** Line 3 non-isolated input threshold is 2.6V. Direct 3.3V connection works.
+- **Ripple Scout DIO:** SMA inputs accept LVTTL (high threshold 2.0V). Direct 3.3V works.
+- **NI-DAQ digital inputs:** TTL-compatible (high threshold 2.0V). Direct 3.3V works.
+- **Solenoid driver circuit:** Check input threshold. If the existing circuit expects 5V TTL, add a 74AHCT125 buffer (~$1, <10 ns propagation delay) between the Teensy output and the driver input.
+
+### Firmware build
+ 
+Firmware source: `hapticore/firmware/teensy/`
+ 
+Option 1 — PlatformIO (preferred for CI):
+```bash
+cd firmware/teensy
+pio run              # build
+pio run -t upload    # flash
+```
+ 
+Option 2 — Arduino IDE:
+1. Install Teensyduino addon
+2. Select board: Teensy 4.1
+3. Open `firmware/teensy/teensy_sync.ino`
+4. Upload
+
+### Wiring
+ 
+```
+Teensy 4.1 pin assignments (defined in firmware header):
+ 
+Pin X  → Camera frame trigger (30-120 Hz)
+         Wire to all 5 Blackfly S cameras' Line 3 (Pin 1, green wire)
+         on 6-pin Hirose connector. Parallel wire — all cameras share
+         the same physical signal. Share ground via Pin 6 (brown wire).
+ 
+Pin Y  → 1 Hz cross-system sync (50% duty cycle)
+         Wire to BNC, T-split to:
+           - Ripple Scout SMA digital input 1
+           - SpikeGLX NI-DAQ digital input (for Neuropixels sync)
+ 
+Pin Z  → Event strobe
+         Wire to BNC, T-split to:
+           - Ripple Scout SMA digital input 2
+           - SpikeGLX NI-DAQ digital input
+ 
+Pin W  → Reward TTL
+         Wire to solenoid driver circuit TTL input
+ 
+GND    → Common ground shared with all connected devices
+```
+ 
+> Pin assignments are placeholders — update with actual pin numbers once firmware is finalized.
+
+## Haptic server
 
 Enter the pixi environment, then build:
 
@@ -137,8 +199,6 @@ You can verify the capability is set:
 getcap build/dev-real/haptic_server
 # Expected: build/dev-real/haptic_server cap_sys_nice=eip
 ```
-
-## Running the haptic server
 
 ### First run
 
@@ -208,7 +268,7 @@ export HAPTICORE_CMD_ADDRESS=tcp://rigmachine:5556
 | `--cpu-core` | `1` | CPU core to pin the haptic thread to |
 | `--no-calibrate` | off | Skip auto-calibration on startup |
 
-## Running hardware tests
+### Running hardware tests
 
 Hardware tests connect to a running haptic server and exercise the real device. They are tagged with `@pytest.mark.hardware` and excluded from CI.
 
@@ -230,7 +290,7 @@ HAPTICORE_CMD_ADDRESS=tcp://rigmachine:5556 \
 pixi run test-hardware
 ```
 
-### What the tests verify
+#### What the tests verify
 
 **Stage 2 — State stream:**
 - State messages arrive and deserialize to `HapticState`
@@ -274,7 +334,7 @@ Adjust timing for your environment:
 pixi run test-interactive --countdown=8 --duration=15
 ```
 
-## Troubleshooting
+### Troubleshooting
 
 **"Error: failed to open haptic device"**
 - Is the delta.3 powered on?
@@ -307,3 +367,51 @@ pixi run test-interactive --countdown=8 --duration=15
 - Make sure the device arms can move freely — obstructions prevent calibration.
 - If the device was calibrated externally this power cycle, use `--no-calibrate` to skip.
 - Power-cycle the device and restart the server to retry auto-calibration.
+
+## FTDI FT232H beam break sensor
+ 
+The beam break sensor (Adafruit 3mm IR through-beam) connects to the C++ haptic server via an FTDI FT232H USB-to-GPIO adapter. This is the safety-critical read path — the C++ server reads beam break state directly at sub-0.5 ms latency, independent of the Python layer.
+ 
+The FTDI FT232H is a separate device from the Teensy. The Teensy handles timing/sync; the FTDI handles safety-critical GPIO into the C++ process.
+ 
+### Why separate from Teensy
+ 
+The beam break must be read by the C++ haptic server process, which runs a 4 kHz SCHED_FIFO loop. The Teensy communicates via USB serial to the Python `SyncProcess` — routing beam break data through Python would add unacceptable latency. The FTDI FT232H provides direct GPIO access from C++ via libftdi or libusb, staying in the real-time path.
+ 
+## Camera PC
+ 
+A dedicated computer runs camera acquisition, separate from the haptic control rig. See ADR-012 for rationale.
+ 
+### Recommended specs
+ 
+| Component | Recommendation | Rationale |
+|---|---|---|
+| CPU | Intel i7/i9 or AMD Ryzen 7/9 | PySpin acquisition threads + FFMPEG encoding |
+| RAM | 32 GB+ | Frame buffering for 5 cameras |
+| GPU | NVIDIA RTX 3060+ | NVENC hardware video encoding |
+| USB3 | 2× PCIe quad-channel USB3 controller cards | Independent bandwidth per camera; split cameras 3+2 across controllers |
+| Storage | 2–4 TB NVMe SSD | Raw recording buffer; ~35 GB/hour compressed at 5 cameras × 1280×1024 × 30 fps |
+| Network | Gigabit Ethernet | Post-session transfer to NAS |
+ 
+### USB3 controller cards
+ 
+Verified chipsets for Blackfly S cameras: Fresco Logic FL1100, Renesas µPD720202. Teledyne sells the ACC-01-1203 quad-channel card. Each camera port must have independent bandwidth — hubs that share a single upstream link will cause frame drops.
+ 
+Rule of thumb: each Blackfly S at 1280×1024 @ 30 fps Mono8 uses ~39 MB/s. Five cameras total ~197 MB/s, within a single controller's ~450 MB/s effective bandwidth, but two controllers provide headroom for higher frame rates and prevent contention.
+ 
+### Software
+ 
+Camera acquisition software lives in a separate repository. Install Spinnaker SDK (includes PySpin) from Teledyne's download portal. The acquisition pipeline uses PySpin for camera control and FFMPEG with NVENC for real-time H.264 compression.
+ 
+### Camera strobe feedback wiring
+ 
+Each Blackfly S camera outputs an exposure-active strobe on Line 1 or Line 2 (configure in Spinnaker). Route these signals to neural recording systems for frame-accurate timestamps:
+ 
+```
+Camera 1 strobe → BNC T-split → Ripple Scout SMA input 3 + NI-DAQ digital input
+Camera 2 strobe → BNC T-split → Ripple Scout SMA input 4 + NI-DAQ digital input
+Cameras 3-5 strobe → NI-DAQ digital inputs (Scout has only 4 SMA inputs)
+```
+ 
+If all 5 camera strobes need Ripple timestamps, use the Scout's 25-pin D-sub parallel input connector via a BNC breakout adapter (Ripple PN: R01396).
+ 

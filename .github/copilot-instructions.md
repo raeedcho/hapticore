@@ -38,7 +38,7 @@ hapticore/
 │   ├── src/            # source files (main, threads, force fields, DHD interface)
 │   ├── tests/          # Google Test unit and integration tests
 │   └── CMakeLists.txt
-├── firmware/teensy_sync/  # Arduino/Teensy firmware
+├── firmware/teensy/    # Arduino/Teensy firmware
 ├── configs/            # YAML experiment configuration templates
 ├── tests/              # Python tests: unit/, integration/, hardware/ subdirectories
 ├── docs/               # architecture.md, task_authoring_guide.md, haptic_server_protocol.md, ADRs in docs/adr/
@@ -101,6 +101,27 @@ The Copilot setup steps install both `default` and `display` pixi environments. 
 xvfb-run -a -s "-screen 0 1920x1080x24" pixi run -e display test-display
 pixi run -e display test-unit
 ```
+
+## Teensy firmware (`firmware/teensy/`)
+ 
+The Teensy 4.1 sync hub firmware lives in `firmware/teensy/`. It generates hardware-timed TTL signals for camera frame triggering, cross-system sync, behavioral event codes, and reward delivery. The firmware accepts ASCII serial commands from the Python `SyncProcess`.
+ 
+### Build
+ 
+The firmware builds with PlatformIO or Arduino IDE + Teensyduino. The CI job does not flash hardware but does compile-check the firmware:
+ 
+```bash
+cd firmware/teensy
+pio run  # compile only
+```
+ 
+### Key constraints
+ 
+- **3.3V output logic.** All GPIO outputs are 3.3V. Do not assume 5V TTL compatibility with downstream devices.
+- **IntervalTimers for timing-critical signals.** The camera trigger and 1 Hz sync must use Teensy's PIT-based IntervalTimers (`IntervalTimer` class), not `delay()` or `millis()` loops. This ensures jitter-free pulse generation independent of serial command processing.
+- **Serial command parsing must be non-blocking.** The main loop checks `Serial.available()` and processes commands without blocking timer ISRs. Never use `Serial.readString()` or other blocking reads.
+- **Event code timing.** The event strobe sequence (set data lines → 500 µs settle → 1 ms strobe → 500 µs clear) totals ~2 ms. This is handled in the main loop, not in an ISR.
+- **Pin assignments are defined in a single header** (`pins.h` or equivalent). Do not scatter magic pin numbers through the code.
 
 ## Common pitfalls an agent should avoid
 

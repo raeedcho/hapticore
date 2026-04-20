@@ -11,8 +11,10 @@ Hapticore is a three-tier system for primate neurophysiology experiments involvi
 │  - Force Dimension DHD SDK         - TTL event codes          │
 │  - Parameterized force fields      - 1 Hz sync square wave    │
 │  - Box2D physics for collisions    - Serial from Python       │
-│  - ZMQ PUB: state at 200 Hz       - To Ripple + SpikeGLX     │
-│  - ZMQ ROUTER: commands                                       │
+│  - Safety field (beam break+FTDI)  - Serial from Python       │
+│  - ZMQ PUB: state at 200 Hz        - To Ripple + SpikeGLX     │
+│  - ZMQ ROUTER: commands            - Reward TTL               │
+│                                    - 30-120 Hz Camera trigger │
 │                                                               │
 │  Ripple Code-on-the-Box (optional)                            │
 │  - Closed-loop stim on NIP RT Linux                           │
@@ -43,10 +45,22 @@ Hapticore is a three-tier system for primate neurophysiology experiments involvi
 │  - xipppy API            - SpikeGLX SDK       - LSL streams   │
 │  - Start/stop recording  - Start/stop run     - XDF files     │
 │  - NEV/NS* files         - Binary files       - Sync markers  │
+│                                                               │
+│  Camera recording                                             │
+│  - separate repository                                        │
+│  - H.264 video                                                │
+│  - Timestamp CSVs                                             │
+│                                                               │
+│  All systems record the shared 1 Hz sync signal.              │
+│  Camera strobe outputs feed Ripple + NI-DAQ for               │
+│  frame-accurate timestamps in both neural streams.            │
+│                                                               │
 └───────────────────────────────────────────────────────────────┘
 ```
 
-## Tier 1: C++ haptic server
+## Tier 1: Hardware
+
+### C++ haptic server
 
 The haptic server is a standalone C++ executable with three threads.
 
@@ -65,17 +79,69 @@ The haptic server is a standalone C++ executable with three threads.
 - `PhysicsField`: wraps a Box2D world for rigid-body dynamics and collision (see ADR-007). Supports polygons, circles, revolute/prismatic joints, and static obstacles. Used for tasks involving collisions (e.g., Tetris-like block placement, air hockey) and underactuated dynamics (e.g., pivoted rod navigation). The monkey controls a kinematic body; Box2D computes reaction forces from contacts and constraints.
 - `CompositeField`: sum of multiple fields
 
-**Safety**: force clamping every tick, communication timeout (revert to NullField + damping if no heartbeat in 500 ms), maximum stiffness enforcement, auto-calibration at startup (with `--no-calibrate` override).
+**Safety**: force clamping every tick, communication timeout (revert to NullField + damping if no heartbeat in 500 ms), maximum stiffness enforcement, auto-calibration at startup (with `--no-calibrate` override). Beam break sensor triggering safety field when handle is let go.
 
 **Key design principle**: Python never sends raw force values. Python sends *field parameters* (spring constant, target position, pendulum length, or a full physics world specification). The C++ thread evaluates forces at 4 kHz using these parameters. This decouples the 4 kHz control rate from the ~100 Hz Python rate. See ADR-002 for rationale.
 
 **Dependencies**: Force Dimension SDK (DHD for haptic control, DRD for startup calibration), Box2D v3.0 (via CPM.cmake), cppzmq, msgpack-cxx, pthreads/rt.
 
-### Device type and mass rendering constraint
+#### Device type and mass rendering constraint
  
 The Force Dimension delta.3 is an **impedance-type** haptic device: it measures position/velocity (via encoders) and commands force (via back-drivable actuators). This contrasts with **admittance-type** devices (e.g., the FCS HapticMaster used for the original cart-pendulum task), which measure force and command position. Impedance devices excel at rendering springs, dampers, and free-space motion but cannot stably render large virtual masses through direct `F = M·a` feedback — double-differentiating sampled position data to estimate acceleration amplifies noise catastrophically at 4 kHz, and the passivity-guaranteed renderable mass is orders of magnitude below what tasks like the cart-pendulum require.
  
 This constraint is why force fields that involve virtual inertia (e.g., `CartPendulumField`) use a **virtual coupling** architecture: the dynamics are simulated internally and connected to the physical device through a spring-damper coupler. The device only ever renders spring and damper forces, which are well within its stability envelope. See ADR-010 for the full rationale and literature references.
+
+### Teensy 4.1 sync hub
+ 
+A Teensy 4.1 microcontroller serves as the centralized timing hub for the entire rig, generating all TTL sync and trigger signals from a single crystal oscillator. It is connected to the haptic control rig via USB serial and controlled by Hapticore's `SyncProcess`.
+ 
+#### Output signals
+ 
+| Teensy pin | Signal | Frequency | Destination |
+|---|---|---|---|
+| Pin A | Camera frame trigger | 30–120 Hz | All 5 cameras, Line 3 (parallel wired) |
+| Pin B | Cross-system sync | 1 Hz, 50% duty cycle | BNC T-split → Ripple Scout SMA input + SpikeGLX NI-DAQ digital input |
+| Pin C | Behavioral event strobe | On-demand | BNC T-split → Ripple Scout SMA input + SpikeGLX NI-DAQ digital input |
+| Pin D | Reward TTL | On-demand | Solenoid driver circuit |
+ 
+The 1 Hz sync and event strobe each use a single Teensy output pin split to both recording systems via BNC T-connectors. This guarantees both systems see identical edge timing with zero inter-pin skew.
+ 
+#### Serial protocol
+ 
+`SyncProcess` sends ASCII commands over USB serial:
+- `S1` / `S0` — start/stop 1 Hz sync pulse generation
+- `C<rate>` — set camera trigger rate (e.g., `C60` for 60 Hz)
+- `T1` / `T0` — start/stop camera trigger generation
+- `E<code>` — emit a behavioral event code (set parallel data lines, pulse strobe)
+- `R<duration_ms>` — pulse reward TTL for specified duration
+
+#### Firmware location
+ 
+Teensy firmware lives in `hapticore/firmware/teensy/` and builds via PlatformIO or Arduino IDE + Teensyduino. The firmware, event code definitions, and `SyncProcess` are maintained together in the monorepo because they share message schemas and must evolve atomically (see ADR-006, ADR-012).
+ 
+#### Hardware notes
+ 
+- Teensy 4.1 outputs 3.3V logic. Blackfly S Line 3 input threshold is 2.6V — direct connection works. Ripple Scout and NI-DAQ LVTTL inputs accept 3.3V (TTL high threshold is 2.0V). If any downstream device requires 5V, add a 74AHCT125 level-shifting buffer.
+- Camera trigger uses a hardware IntervalTimer (PIT-based, ~6.67 ns resolution) for jitter-free pulse generation independent of serial command processing.
+- The 1 Hz sync also uses a hardware timer, not a software delay loop.
+
+### Camera subsystem (separate repository)
+ 
+Five synchronized Blackfly S cameras capture markerless motion data for 3D pose estimation. The camera system runs on a **dedicated camera PC** and is maintained in a separate repository (see ADR-009). It has no runtime coupling to Hapticore — the integration is purely through hardware sync signals and post-hoc file alignment.
+ 
+#### Hardware trigger architecture
+ 
+All five cameras operate in external trigger mode. Each camera's Line 3 (non-isolated GPIO input, <1 µs propagation delay) receives a TTL pulse from the Teensy sync hub at the desired frame rate (typically 30–120 Hz). Every rising edge triggers one frame capture. This guarantees sub-microsecond inter-camera synchronization because all cameras receive the same physical edge.
+ 
+Each camera also outputs an exposure-active strobe signal on Line 1 or Line 2 during sensor integration. These strobe signals are routed (via BNC T-splitters where needed) to digital inputs on both the Ripple Scout and SpikeGLX's NI-DAQ, providing frame-accurate timestamps in both neural data streams. Dropped frames are detectable by comparing Spinnaker's hardware frame counter against the pulse count in the neural recording.
+ 
+#### Interface contract
+ 
+The camera system writes:
+- Per-camera compressed video files (H.264 NVENC)
+- Per-camera timestamp CSVs with columns: `frame_number`, `hardware_timestamp`, `system_timestamp`, `exposure_time_us`
+- A session metadata JSON with camera serial numbers, resolution, frame rate, trigger source, and Spinnaker SDK version
+These files are placed in a session directory following the same naming convention as Hapticore's session data. Post-hoc alignment uses the shared 1 Hz sync signal recorded by all systems.
 
 ## Tier 2: Python task control
 

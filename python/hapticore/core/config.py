@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import (
     BaseSettings,
     CliSettingsSource,
@@ -110,8 +110,7 @@ class RecordingConfig(BaseModel):
     """Neural recording configuration.
 
     Presence of a nested block indicates the corresponding system is in use
-    for this session; ``None`` (default) means not in use. ``spikeglx`` is
-    reserved for Phase 5B.
+    for this session; ``None`` (default) means not in use.
     """
 
     save_dir: Path = Field(default=Path("data"))
@@ -195,12 +194,10 @@ class RippleSyncConfig(BaseModel):
 class SyncConfig(BaseModel):
     """Sync transport + event code map.
 
-    Transport-specific knobs are nested under ``ripple`` / ``teensy``. The
-    ``transport`` field selects which nested block is used at runtime; the
-    other is ignored. Runtime wiring (which process is spawned for a given
-    transport) is the responsibility of the CLI in Phase 5A.3 — this model
-    intentionally does not validate that the selected transport's nested
-    block is non-None.
+    Transport-specific knobs are nested under ``ripple`` / ``teensy``. When a
+    transport is selected, the corresponding nested block is auto-populated
+    with defaults if not provided explicitly, so the config is always
+    internally consistent after validation.
     """
 
     transport: Literal["mock", "ripple_scout", "teensy"] = "mock"
@@ -208,6 +205,14 @@ class SyncConfig(BaseModel):
     code_map: EventCodeMap = Field(default_factory=EventCodeMap)
     ripple: RippleSyncConfig | None = None
     teensy: TeensyConfig | None = None
+
+    @model_validator(mode="after")
+    def _populate_selected_transport(self) -> Self:
+        if self.transport == "ripple_scout" and self.ripple is None:
+            self.ripple = RippleSyncConfig()
+        elif self.transport == "teensy" and self.teensy is None:
+            self.teensy = TeensyConfig()
+        return self
 
 
 class ExperimentConfig(BaseSettings):

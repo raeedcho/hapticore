@@ -1,9 +1,7 @@
 # ADR-012: Separate repository for camera acquisition
 
-## Status
-
-Proposed
-
+**Status:** Proposed
+**Date:** 2025-04-20
 ## Context
 
 Hapticore integrates five synchronized Blackfly S cameras for markerless motion capture of primate kinematics. The camera system requires the Spinnaker SDK (PySpin), GPU-accelerated video encoding (NVENC), and dedicated USB3 controller hardware. It runs on a dedicated camera PC, separate from the haptic control rig.

@@ -636,12 +636,12 @@ TEST(CartPendulumFieldTest, InitialPhiSetsPendulumAngle) {
     EXPECT_NEAR(force[0], 0.0, 0.01);
 }
 
-TEST(CartPendulumFieldTest, InitialPhiValidatesRange) {
+TEST(CartPendulumFieldTest, InitialPhiValidatesRangeAtomically) {
     CartPendulumField field;
     auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
         pk.pack_map(2);
-        pk.pack("ball_mass");   pk.pack(1.0);
         pk.pack("initial_phi"); pk.pack(4.0);  // > pi, invalid
+        pk.pack("initial_phi_dot");   pk.pack(2.0); // valid, should be rolled back atomically
     });
     EXPECT_FALSE(field.update_params(oh.get()));
 

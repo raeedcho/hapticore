@@ -19,6 +19,7 @@ TOPIC_STATE = b"state"
 TOPIC_EVENT = b"event"
 TOPIC_DISPLAY = b"display"
 TOPIC_TRIAL = b"trial"
+TOPIC_SESSION = b"session"
 
 
 def _msgpack_default(obj: object) -> Any:
@@ -87,8 +88,26 @@ class CommandResponse:
     error: str | None = None
 
 
+@dataclasses.dataclass(slots=True)
+class SessionControl:
+    """Request to start/stop recording or sync pulses.
+
+    Published by ``SessionManager`` (Phase 5A.3) and consumed by
+    ``RippleProcess`` / future ``LSLMarkerProcess``. ``action`` is one of
+    ``"start_recording"``, ``"stop_recording"``, ``"start_sync"``,
+    ``"stop_sync"``. ``params`` carries action-specific data such as
+    ``file_name_base`` on ``start_recording``.
+    """
+
+    timestamp: float
+    action: str
+    params: dict[str, Any]
+
+
 # Type alias for all message types
-MessageType = HapticState | StateTransition | TrialEvent | Command | CommandResponse
+MessageType = (
+    HapticState | StateTransition | TrialEvent | Command | CommandResponse | SessionControl
+)
 
 # Map class names to classes for deserialization
 _MSG_TYPE_KEY = "__msg_type__"
@@ -108,7 +127,8 @@ def deserialize(
     | type[StateTransition]
     | type[TrialEvent]
     | type[Command]
-    | type[CommandResponse],
+    | type[CommandResponse]
+    | type[SessionControl],
 ) -> MessageType:
     """Deserialize msgpack bytes to a message dataclass."""
     unpacked = msgpack.unpackb(data, raw=False)

@@ -8,10 +8,16 @@ import pytest
 from pydantic import ValidationError
 
 from hapticore.core.config import (
+    EventCodeMap,
     ExperimentConfig,
     HapticConfig,
+    RecordingConfig,
+    RippleRecordingConfig,
+    RippleSyncConfig,
     SubjectConfig,
+    SyncConfig,
     TaskConfig,
+    TeensyConfig,
     load_config,
     load_session_config,
 )
@@ -127,7 +133,8 @@ class TestLayeredMerge:
         assert config.subject.subject_id == "test_monkey"
         assert config.task.task_class == "hapticore.tasks.center_out.CenterOutTask"
         assert config.haptic.force_limit_n == 15.0
-        assert config.sync.teensy_port == "/dev/ttyACM0"
+        assert config.sync.transport == "mock"
+        assert config.sync.teensy is None
 
     def test_rig_task_no_subject(self) -> None:
         """Load rig + task (no subject YAML), subject from overrides."""
@@ -309,3 +316,143 @@ class TestLoadSessionConfig:
                 rig=CONFIGS_DIR / "rig" / "default.yaml",
                 subject=CONFIGS_DIR / "subject" / "example_subject.yaml",
             )
+
+
+class TestEventCodeMap:
+    def test_defaults_to_empty_maps(self) -> None:
+        m = EventCodeMap()
+        assert m.state_codes == {}
+        assert m.event_codes == {}
+
+    def test_populated_maps_load_from_dict(self) -> None:
+        m = EventCodeMap.model_validate({
+            "state_codes": {"reach": 10, "hold": 20},
+            "event_codes": {"reward": 100},
+        })
+        assert m.state_codes == {"reach": 10, "hold": 20}
+        assert m.event_codes == {"reward": 100}
+
+    def test_rejects_non_int_state_code_value(self) -> None:
+        with pytest.raises(ValidationError):
+            EventCodeMap(state_codes={"reach": "ten"})  # type: ignore[dict-item]
+
+    def test_rejects_non_int_event_code_value(self) -> None:
+        with pytest.raises(ValidationError):
+            EventCodeMap(event_codes={"reward": "one hundred"})  # type: ignore[dict-item]
+
+
+class TestSyncConfigTransports:
+    def test_default_transport_is_mock(self) -> None:
+        cfg = SyncConfig()
+        assert cfg.transport == "mock"
+
+    def test_default_nested_blocks_are_none(self) -> None:
+        cfg = SyncConfig()
+        assert cfg.ripple is None
+        assert cfg.teensy is None
+
+    def test_ripple_scout_transport_with_populated_ripple_block(self) -> None:
+        cfg = SyncConfig(
+            transport="ripple_scout",
+            ripple=RippleSyncConfig(sync_pulse_sma_index=2, event_code_digout_index=4),
+        )
+        assert cfg.transport == "ripple_scout"
+        assert cfg.ripple is not None
+        assert cfg.ripple.sync_pulse_sma_index == 2
+        assert cfg.ripple.event_code_digout_index == 4
+
+    def test_teensy_transport_with_populated_teensy_block(self) -> None:
+        cfg = SyncConfig(
+            transport="teensy",
+            teensy=TeensyConfig(port="/dev/ttyUSB0", baud=9600),
+        )
+        assert cfg.transport == "teensy"
+        assert cfg.teensy is not None
+        assert cfg.teensy.port == "/dev/ttyUSB0"
+        assert cfg.teensy.baud == 9600
+
+    def test_invalid_transport_string_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            SyncConfig(transport="bluetooth")  # type: ignore[arg-type]
+
+    def test_code_map_round_trips_through_model(self) -> None:
+        cfg = SyncConfig(
+            code_map=EventCodeMap(
+                state_codes={"reach": 10}, event_codes={"reward": 100},
+            ),
+        )
+        dumped = cfg.model_dump()
+        restored = SyncConfig.model_validate(dumped)
+        assert restored.code_map.state_codes == {"reach": 10}
+        assert restored.code_map.event_codes == {"reward": 100}
+
+    def test_ripple_scout_auto_populates_ripple_block(self) -> None:
+        cfg = SyncConfig(transport="ripple_scout")
+        assert cfg.ripple is not None
+        assert cfg.ripple.sync_pulse_sma_index == 0  # default
+        assert cfg.teensy is None
+
+    def test_teensy_auto_populates_teensy_block(self) -> None:
+        cfg = SyncConfig(transport="teensy")
+        assert cfg.teensy is not None
+        assert cfg.teensy.port == "/dev/ttyACM0"  # default
+        assert cfg.ripple is None
+
+    def test_mock_transport_leaves_both_blocks_none(self) -> None:
+        cfg = SyncConfig(transport="mock")
+        assert cfg.ripple is None
+        assert cfg.teensy is None
+
+    def test_explicit_ripple_block_preserved(self) -> None:
+        cfg = SyncConfig(
+            transport="ripple_scout",
+            ripple=RippleSyncConfig(sync_pulse_sma_index=2),
+        )
+        assert cfg.ripple is not None
+        assert cfg.ripple.sync_pulse_sma_index == 2  # not overwritten to default
+
+
+class TestRippleSyncConfig:
+    def test_defaults(self) -> None:
+        cfg = RippleSyncConfig()
+        assert cfg.sync_pulse_sma_index == 0
+        assert cfg.event_code_digout_index == 4
+
+    def test_sma_index_upper_bound(self) -> None:
+        with pytest.raises(ValidationError):
+            RippleSyncConfig(sync_pulse_sma_index=4)
+
+    def test_sma_index_lower_bound(self) -> None:
+        with pytest.raises(ValidationError):
+            RippleSyncConfig(sync_pulse_sma_index=-1)
+
+    def test_digout_index_upper_bound(self) -> None:
+        with pytest.raises(ValidationError):
+            RippleSyncConfig(event_code_digout_index=5)
+
+    def test_digout_index_lower_bound(self) -> None:
+        with pytest.raises(ValidationError):
+            RippleSyncConfig(event_code_digout_index=-1)
+
+
+class TestRecordingConfigRipple:
+    def test_ripple_none_by_default(self) -> None:
+        cfg = RecordingConfig()
+        assert cfg.ripple is None
+
+    def test_populated_ripple_block(self) -> None:
+        cfg = RecordingConfig(
+            ripple=RippleRecordingConfig(use_tcp=False, operator_id=200),
+        )
+        assert cfg.ripple is not None
+        assert cfg.ripple.use_tcp is False
+        assert cfg.ripple.operator_id == 200
+        assert cfg.ripple.auto_increment is True
+
+    def test_operator_id_upper_bound(self) -> None:
+        with pytest.raises(ValidationError):
+            RippleRecordingConfig(operator_id=256)
+
+    def test_operator_id_lower_bound(self) -> None:
+        with pytest.raises(ValidationError):
+            RippleRecordingConfig(operator_id=-1)

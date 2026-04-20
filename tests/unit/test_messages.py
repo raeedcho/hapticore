@@ -9,6 +9,7 @@ from hapticore.core.messages import (
     Command,
     CommandResponse,
     HapticState,
+    SessionControl,
     StateTransition,
     TrialEvent,
     deserialize,
@@ -244,3 +245,18 @@ class TestSerialization:
             deserialize(serialize(msg), HapticState)
         elapsed = (time.perf_counter() - start) / num_iterations
         assert elapsed < 50e-6, f"Round-trip {elapsed * 1e6:.1f} µs exceeds 50 µs"
+
+
+class TestSessionControl:
+    def test_serialize_round_trip(self) -> None:
+        msg = SessionControl(
+            timestamp=500.0,
+            action="start_recording",
+            params={"file_name_base": "session_001"},
+        )
+        data = serialize(msg)
+        restored = deserialize(data, SessionControl)
+        assert isinstance(restored, SessionControl)
+        assert restored.timestamp == msg.timestamp
+        assert restored.action == msg.action
+        assert restored.params == msg.params

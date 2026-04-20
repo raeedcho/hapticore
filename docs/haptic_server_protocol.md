@@ -95,7 +95,7 @@ Switch the active force field. Atomically swaps the field pointer seen by the ha
 
 #### `set_params`
 
-Update the active force field's parameters without replacing the field instance. Use for mid-trial parameter changes (e.g., changing pendulum length between conditions).
+Replace the active field with a fresh instance of the same type, constructed with the supplied parameters. This discards any accumulated internal state (e.g., `CartPendulumField`'s pendulum angle, `PhysicsField`'s body poses). Use this to change field parameters mid-session when starting a fresh integration from defaults is acceptable; otherwise use `set_force_field` with a full parameter map.
 
 **params:** The field-specific parameter map (same format as the `params` key inside `set_force_field`).
 
@@ -179,6 +179,10 @@ Force: for each axis, if `pos[i] < min[i]`, apply `K * (min[i] - pos[i]) - B * v
 | `spill_threshold` | float | 1.5708 | > 0 | Ball spill angle in radians (π/2) |
 | `coupling_stiffness` | float | 800.0 | > 0, ≤ 3000 | Virtual coupler stiffness in N/m |
 | `coupling_damping` | float | 2.0 | ≥ 0, ≤ 50 | Virtual coupler damping in N·s/m |
+| `initial_phi` | float | 0.0 | |initial_phi| ≤ π | Optional. Initial ball angle in radians. Commits to `phi_` and triggers a cup position re-sync on the next `compute()` tick so coupling force is zero at t=0. |
+| `initial_phi_dot` | float | 0.0 | — | Optional. Initial ball angular velocity in rad/s. Also triggers a cup position re-sync on the next `compute()` tick. |
+
+> **Trial-start usage.** Because both `set_force_field` and `set_params` construct a fresh field instance internally, `initial_phi` / `initial_phi_dot` function as per-trial initial conditions: the task controller sends them in the params map at the start of each trial, and the new instance begins integration from that state. The simulated cup re-syncs to the device's x position on the first `compute()` tick, so the coupling force is zero at t=0 regardless of where the device was at the end of the previous trial.
 
 Dynamics: 2D cart-pendulum with virtual coupling. The device connects to a simulated cart through a spring-damper coupler (K_vc, B_vc). The cart-pendulum ODE is integrated internally with RK4. Virtual mass lives entirely in the simulation; the device only feels the coupling spring-damper.
 

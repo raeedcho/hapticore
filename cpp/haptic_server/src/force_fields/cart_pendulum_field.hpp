@@ -17,12 +17,6 @@ public:
     double x_sim() const { return x_sim_; }
     double v_sim() const { return v_sim_; }
 
-    // Test-only setters for initial conditions
-    void set_initial_state(double phi, double phi_dot) {
-        phi_ = phi;
-        phi_dot_ = phi_dot;
-    }
-
 private:
     // Pendulum state
     double phi_ = 0.0;        // angle (0 = hanging straight down)

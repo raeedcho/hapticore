@@ -369,7 +369,11 @@ TEST(CartPendulumFieldTest, PendulumPeriodWithStationaryDevice) {
     });
     ASSERT_TRUE(field.update_params(oh.get()));
 
-    field.set_initial_state(0.01, 0.0);
+    auto oh_init = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("initial_phi"); pk.pack(0.01);
+    });
+    ASSERT_TRUE(field.update_params(oh_init.get()));
 
     constexpr double dt = 0.00025;
     double T_expected = 2.0 * M_PI * std::sqrt(L / 9.81);
@@ -412,7 +416,11 @@ TEST(CartPendulumFieldTest, PendulumForceTransmitsThroughCoupling) {
     });
     ASSERT_TRUE(field.update_params(oh.get()));
 
-    field.set_initial_state(0.3, 0.0);
+    auto oh_init = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("initial_phi"); pk.pack(0.3);
+    });
+    ASSERT_TRUE(field.update_params(oh_init.get()));
 
     constexpr double dt = 0.00025;
     double T_pend = 2.0 * M_PI * std::sqrt(L / 9.81);
@@ -447,7 +455,12 @@ TEST(CartPendulumFieldTest, SpillDetection) {
     });
     ASSERT_TRUE(field.update_params(oh.get()));
 
-    field.set_initial_state(1.5, 5.0);
+    auto oh_init = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(2);
+        pk.pack("initial_phi"); pk.pack(1.5);
+        pk.pack("initial_phi_dot"); pk.pack(5.0);
+    });
+    ASSERT_TRUE(field.update_params(oh_init.get()));
 
     Vec3 pos = {0.0, 0.0, 0.0};
     Vec3 vel = {0.0, 0.0, 0.0};
@@ -478,7 +491,11 @@ TEST(CartPendulumFieldTest, EnergyConservationCoupledSystem) {
     ASSERT_TRUE(field.update_params(oh.get()));
 
     double phi_0 = 0.5;
-    field.set_initial_state(phi_0, 0.0);
+    auto oh_init = pack_and_unpack([&](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(1);
+        pk.pack("initial_phi"); pk.pack(phi_0);
+    });
+    ASSERT_TRUE(field.update_params(oh_init.get()));
 
     constexpr double dt = 0.00025;
     constexpr int num_ticks = 10000;
@@ -602,6 +619,60 @@ TEST(CartPendulumFieldTest, ParameterValidation) {
     EXPECT_FALSE(field.update_params(oh5.get()));
 }
 
+TEST(CartPendulumFieldTest, InitialPhiSetsPendulumAngle) {
+    CartPendulumField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(2);
+        pk.pack("initial_phi");     pk.pack(0.3);
+        pk.pack("initial_phi_dot"); pk.pack(1.5);
+    });
+    ASSERT_TRUE(field.update_params(oh.get()));
+    EXPECT_DOUBLE_EQ(field.phi(), 0.3);
+    EXPECT_DOUBLE_EQ(field.phi_dot(), 1.5);
+
+    // First tick should produce near-zero coupling force because first_tick_
+    // causes x_sim to snap to device x.
+    Vec3 force = field.compute({0.05, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.00025);
+    EXPECT_NEAR(force[0], 0.0, 0.01);
+}
+
+TEST(CartPendulumFieldTest, InitialPhiValidatesRangeAtomically) {
+    CartPendulumField field;
+    auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(2);
+        pk.pack("initial_phi"); pk.pack(4.0);  // > pi, invalid
+        pk.pack("initial_phi_dot");   pk.pack(2.0); // valid, should be rolled back atomically
+    });
+    EXPECT_FALSE(field.update_params(oh.get()));
+
+    // Atomicity: initial_phi_dot must not have been committed despite being valid.
+    EXPECT_DOUBLE_EQ(field.phi_dot(), 0.0);
+    EXPECT_DOUBLE_EQ(field.phi(), 0.0);
+}
+
+TEST(CartPendulumFieldTest, InitialPhiOptionalKeysIndependent) {
+    {
+        CartPendulumField field;
+        auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+            pk.pack_map(1);
+            pk.pack("initial_phi"); pk.pack(0.5);
+        });
+        ASSERT_TRUE(field.update_params(oh.get()));
+        EXPECT_DOUBLE_EQ(field.phi(), 0.5);
+        EXPECT_DOUBLE_EQ(field.phi_dot(), 0.0);
+    }
+    {
+        CartPendulumField field;
+        auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+            pk.pack_map(1);
+            pk.pack("initial_phi_dot"); pk.pack(2.0);
+        });
+        ASSERT_TRUE(field.update_params(oh.get()));
+        EXPECT_DOUBLE_EQ(field.phi(), 0.0);
+        EXPECT_DOUBLE_EQ(field.phi_dot(), 2.0);
+    }
+}
+
 TEST(CartPendulumFieldTest, ResetClearsState) {
     CartPendulumField field;
     auto oh = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
@@ -613,7 +684,12 @@ TEST(CartPendulumFieldTest, ResetClearsState) {
     });
     ASSERT_TRUE(field.update_params(oh.get()));
 
-    field.set_initial_state(0.5, 1.0);
+    auto oh_init = pack_and_unpack([](msgpack::packer<msgpack::sbuffer>& pk) {
+        pk.pack_map(2);
+        pk.pack("initial_phi"); pk.pack(0.5);
+        pk.pack("initial_phi_dot"); pk.pack(1.0);
+    });
+    ASSERT_TRUE(field.update_params(oh_init.get()));
 
     Vec3 pos = {0.1, 0.0, 0.0};
     Vec3 vel = {1.0, 0.0, 0.0};

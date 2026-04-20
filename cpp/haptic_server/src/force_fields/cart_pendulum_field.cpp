@@ -93,6 +93,10 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     double new_threshold = spill_threshold_;
     double new_coupling_stiffness = coupling_stiffness_;
     double new_coupling_damping = coupling_damping_;
+    double new_initial_phi = 0.0;      // only committed when has_initial_phi
+    double new_initial_phi_dot = 0.0;  // only committed when has_initial_phi_dot
+    bool has_initial_phi = false;
+    bool has_initial_phi_dot = false;
     bool has_any = false;
 
     for (uint32_t i = 0; i < map.size; ++i) {
@@ -126,6 +130,14 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
         } else if (key_str == "coupling_damping") {
             if (!haptic::try_get_double(val, new_coupling_damping)) return false;
             has_any = true;
+        } else if (key_str == "initial_phi") {
+            if (!haptic::try_get_double(val, new_initial_phi)) return false;
+            has_initial_phi = true;
+            has_any = true;
+        } else if (key_str == "initial_phi_dot") {
+            if (!haptic::try_get_double(val, new_initial_phi_dot)) return false;
+            has_initial_phi_dot = true;
+            has_any = true;
         }
     }
 
@@ -140,6 +152,7 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     if (new_threshold <= 0.0) return false;
     if (new_coupling_stiffness <= 0.0 || new_coupling_stiffness > 3000.0) return false;
     if (new_coupling_damping < 0.0 || new_coupling_damping > 50.0) return false;
+    if (has_initial_phi && std::abs(new_initial_phi) > M_PI) return false;
 
     ball_mass_ = new_ball_mass;
     cup_mass_ = new_cup_mass;
@@ -149,6 +162,15 @@ bool CartPendulumField::update_params(const msgpack::object& params) {
     spill_threshold_ = new_threshold;
     coupling_stiffness_ = new_coupling_stiffness;
     coupling_damping_ = new_coupling_damping;
+    if (has_initial_phi) {
+        phi_ = new_initial_phi;
+    }
+    if (has_initial_phi_dot) {
+        phi_dot_ = new_initial_phi_dot;
+    }
+    if (has_initial_phi || has_initial_phi_dot) {
+        first_tick_ = true;  // re-sync simulated cup to device on next compute()
+    }
     return true;
 }
 

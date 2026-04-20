@@ -309,8 +309,8 @@ Sets file save selection.
 Select a preset filter.
 
 ```python
-xp.filter_set(2, 'hires', 1)    # set hires to 1-175 Hz on electrode 3
-xp.filter_set(129, 'lfp', 3)    # set lfp to 15-375 EMG on electrode 130
+xp.filter_set(2, 'hires', 1)    # set hires to 1-175 Hz on electrode 3 (2 in zero-index)
+xp.filter_set(129, 'lfp', 3)    # set lfp to 15-375 EMG on electrode 130 (129 in zero-index)
 ```
 
 ### `xipppy.filter_set_custom(elec, filter_type, filt_desc)`

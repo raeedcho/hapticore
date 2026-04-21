@@ -92,9 +92,11 @@ For each state, you can implement `on_enter_<state>()` and `on_exit_<state>()` m
             method="set_force_field",
             params={
                 "type": "spring_damper",
-                "center": [0.0, 0.0, 0.0],
-                "stiffness": 200.0,  # N/m
-                "damping": 5.0,      # N·s/m
+                "params": {
+                    "center": [0.0, 0.0, 0.0],
+                    "stiffness": 200.0,  # N/m
+                    "damping": 5.0,      # N·s/m
+                }
             }
         ))
         # Show the center target on display
@@ -245,7 +247,7 @@ self.haptic.send_command(Command(
             "pendulum_length": 0.6,
             "ball_mass": 0.6,
             "cup_mass": 2.4,
-            "damping": 0.05,
+            "angular_damping": 0.05,
         }
     }
 ))

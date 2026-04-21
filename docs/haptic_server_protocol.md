@@ -302,3 +302,4 @@ These must hold on **every haptic tick** regardless of command state:
 2. **Heartbeat timeout:** If no `heartbeat` command received within 500 ms, atomically swap to NullField with damping (`B = 10 N·s/m`) and log a warning. Resume normal operation when the next heartbeat arrives.
 3. **Stiffness limit:** ForceField `update_params` must reject stiffness values > 3000 N/m.
 4. **Gravity compensation:** Call `dhdSetEffectorMass()` at startup with the configured effector mass so the DHD SDK provides gravity compensation.
+5. **Beam break safety field:** (spec pending)

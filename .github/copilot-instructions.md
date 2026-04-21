@@ -2,11 +2,11 @@
 
 ## What this project is
 
-Hapticore is a multi-process experimental control system for primate neurophysiology experiments coordinating a Force Dimensions delta.3 haptic robot, Ripple Grapevine neural recording/stimulation, Neuropixels/SpikeGLX recording, and visual stimulus display. The system runs behavioral tasks where monkeys interact with virtual haptic environments while neural activity is recorded.
+Hapticore is a multi-process experimental control system for primate neurophysiology experiments coordinating a Force Dimension delta.3 haptic robot, Ripple Grapevine neural recording/stimulation, Neuropixels/SpikeGLX recording, and visual stimulus display. The system runs behavioral tasks where monkeys interact with virtual haptic environments while neural activity is recorded.
 
 ## Architecture (three tiers — read `docs/architecture.md` for full detail)
 
-- **Tier 1 (C++, hard real-time):** Haptic server runs at 4 kHz using Force Dimension DHD SDK. Evaluates parameterized force fields, publishes state via ZeroMQ PUB, accepts commands via ZeroMQ ROUTER. Python never sends raw forces — it sets field parameters. Box2D v3.0 provides 2D collision detection and rigid-body dynamics for tasks with physical interactions.
+- **Tier 1 (C++, hard real-time):** Haptic server runs at 4 kHz using Force Dimension DHD SDK. Evaluates parameterized force fields, publishes state via ZeroMQ PUB, accepts commands via ZeroMQ ROUTER. Python never sends raw forces — it sets field parameters. Box2D v3.0 provides 2D collision detection and rigid-body dynamics for tasks with physical interactions. A beam-break sensor on an FTDI FT232H provides a separate safety-critical GPIO read path directly into the C++ server — see docs/rig-setup.md § FTDI FT232H.
 - **Tier 2 (Python, soft real-time):** Task controller uses `transitions` state machine library. PsychoPy renders visual stimuli in a separate process. Each hardware interface runs in its own process. ZeroMQ PUB-SUB distributes events between all processes, with msgpack serialization.
 - **Tier 3 (Python, recording/analysis):** Wrappers around SpikeGLX Python SDK, Ripple xipppy, and LSL/pylsl. Teensy generates hardware sync pulses and event codes.
 
@@ -38,7 +38,7 @@ hapticore/
 │   ├── src/            # source files (main, threads, force fields, DHD interface)
 │   ├── tests/          # Google Test unit and integration tests
 │   └── CMakeLists.txt
-├── firmware/teensy_sync/  # Arduino/Teensy firmware
+├── firmware/teensy/    # Arduino/Teensy firmware
 ├── configs/            # YAML experiment configuration templates
 ├── tests/              # Python tests: unit/, integration/, hardware/ subdirectories
 ├── docs/               # architecture.md, task_authoring_guide.md, haptic_server_protocol.md, ADRs in docs/adr/
@@ -101,6 +101,27 @@ The Copilot setup steps install both `default` and `display` pixi environments. 
 xvfb-run -a -s "-screen 0 1920x1080x24" pixi run -e display test-display
 pixi run -e display test-unit
 ```
+
+## Teensy firmware (`firmware/teensy/`)
+ 
+The Teensy 4.1 sync hub firmware lives in `firmware/teensy/`. It generates hardware-timed TTL signals for camera frame triggering, cross-system sync, behavioral event codes, and reward delivery. The firmware accepts ASCII serial commands from the Python `SyncProcess`.
+ 
+### Build
+ 
+The firmware builds with PlatformIO or Arduino IDE + Teensyduino. The CI job does not flash hardware but does compile-check the firmware:
+ 
+```bash
+cd firmware/teensy
+pio run  # compile only
+```
+ 
+### Key constraints
+ 
+- **3.3V output logic.** All GPIO outputs are 3.3V. Do not assume 5V TTL compatibility with downstream devices.
+- **IntervalTimers for timing-critical signals.** The camera trigger and 1 Hz sync must use Teensy's PIT-based IntervalTimers (`IntervalTimer` class), not `delay()` or `millis()` loops. This ensures jitter-free pulse generation independent of serial command processing.
+- **Serial command parsing must be non-blocking.** The main loop checks `Serial.available()` and processes commands without blocking timer ISRs. Never use `Serial.readString()` or other blocking reads.
+- **Event code timing.** The event strobe sequence (set data lines → 500 µs settle → 1 ms strobe → 500 µs clear) totals ~2 ms. This is handled in the main loop, not in an ISR.
+- **Pin assignments are defined in a single header** (`pins.h` or equivalent). Do not scatter magic pin numbers through the code.
 
 ## Common pitfalls an agent should avoid
 
@@ -189,3 +210,7 @@ Before proposing alternatives to a settled decision, check `docs/adr/` for conte
 - `008`: Lab coordinate convention (DHD SDK remap in `DhdReal`)
 - `009`: pydantic-settings with layered YAML composition
 - `010`: Virtual coupling for stable mass rendering on impedance-type device
+- `011`: SI units (meters) for all spatial values in code and configs--display process handles conversion to cm for PsychoPy
+- `012`: Separate repository for video capture of behavior
+- `013`: Teensy 4.1 as centralized sync hub (supersedes xipppy-DIO sync plan)
+- `014`: 8-bit parallel event codes via the Scout D-sub port

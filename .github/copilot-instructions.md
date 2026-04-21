@@ -212,4 +212,5 @@ Before proposing alternatives to a settled decision, check `docs/adr/` for conte
 - `010`: Virtual coupling for stable mass rendering on impedance-type device
 - `011`: SI units (meters) for all spatial values in code and configs--display process handles conversion to cm for PsychoPy
 - `012`: Separate repository for video capture of behavior
-- `013`: Teensy-based hardware sync hub, separate from the haptic server
+- `013`: Teensy 4.1 as centralized sync hub (supersedes xipppy-DIO sync plan)
+- `014`: 8-bit parallel event codes via the Scout D-sub port

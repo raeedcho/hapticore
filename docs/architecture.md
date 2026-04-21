@@ -50,9 +50,9 @@ Hapticore is a three-tier system for primate neurophysiology experiments involvi
 │  - H.264 video                                                │
 │  - Timestamp CSVs                                             │
 │                                                               │
-│  All systems record the shared 1 Hz sync signal.              │
-│  Camera strobe outputs feed Ripple + NI-DAQ for               │
-│  frame-accurate timestamps in both neural streams.            │
+│  Ripple + SpikeGLX record the Teensy 1 Hz sync.               │
+│  Camera 1 strobe feeds Ripple for frame-to-neural alignment.  │
+│  8-bit event codes land in both neural streams (ADR-014).     │
 │                                                               │
 └───────────────────────────────────────────────────────────────┘
 ```
@@ -78,7 +78,7 @@ The haptic server is a standalone C++ executable with three threads.
 - `PhysicsField`: wraps a Box2D world for rigid-body dynamics and collision (see ADR-007). Supports polygons, circles, revolute/prismatic joints, and static obstacles. Used for tasks involving collisions (e.g., Tetris-like block placement, air hockey) and underactuated dynamics (e.g., pivoted rod navigation). The monkey controls a kinematic body; Box2D computes reaction forces from contacts and constraints.
 - `CompositeField`: sum of multiple fields
 
-**Safety**: force clamping every tick, communication timeout (revert to NullField + damping if no heartbeat in 500 ms), maximum stiffness enforcement, auto-calibration at startup (with `--no-calibrate` override). Beam break sensor to optionally revert to safety field on handle release (to be implemented).
+**Safety**: force clamping every tick, communication timeout (revert to NullField + damping if no heartbeat in 500 ms), maximum stiffness enforcement, auto-calibration at startup (with `--no-calibrate` override). Beam-break-triggered safety field engagement on handle release is planned; see issue/spec TBD.
 
 **Key design principle**: Python never sends raw force values. Python sends *field parameters* (spring constant, target position, pendulum length, or a full physics world specification). The C++ thread evaluates forces at 4 kHz using these parameters. This decouples the 4 kHz control rate from the ~100 Hz Python rate. See ADR-002 for rationale.
 
@@ -111,12 +111,12 @@ The 1 Hz sync and event strobe each use a single Teensy output pin split to both
 - `S1` / `S0` — start/stop 1 Hz sync pulse generation
 - `C<rate>` — set camera trigger rate (e.g., `C60` for 60 Hz)
 - `T1` / `T0` — start/stop camera trigger generation
-- `E<code>` — emit a behavioral event code (protocol to be determined)
+- `E<code>` — emit a behavioral event code (8-bit parallel, per ADR-014)
 - `R<duration_ms>` — pulse reward TTL for specified duration
 
 #### Firmware location
  
-Teensy firmware lives in `hapticore/firmware/teensy/` and builds via PlatformIO or Arduino IDE + Teensyduino. The firmware, event code definitions, and `SyncProcess` are maintained together in the monorepo because they share message schemas and must evolve atomically (see ADR-006, ADR-012).
+Teensy firmware lives in `hapticore/firmware/teensy/` and builds via PlatformIO or Arduino IDE + Teensyduino. The firmware, event code definitions, and `SyncProcess` are maintained together in the monorepo because they share message schemas and must evolve atomically (see ADR-006, ADR-013).
  
 #### Hardware notes
  
@@ -142,7 +142,7 @@ The camera system writes:
 - Per-camera compressed video files (H.264 NVENC)
 - Per-camera timestamp CSVs with columns: `frame_number`, `hardware_timestamp`, `system_timestamp`, `exposure_time_us`
 - A session metadata JSON with camera serial numbers, resolution, frame rate, trigger source, and Spinnaker SDK version
-These files are placed in a session directory following the same naming convention as Hapticore's session data. Post-hoc alignment uses the shared 1 Hz sync signal recorded by all systems.
+These files are placed in a session directory following the same naming convention as Hapticore's session data. Post-hoc alignment pairs each camera frame's Spinnaker timestamp with its strobe edge on Ripple, producing a linear map between the camera PC's clock and neural time.
 
 ## Tier 2: Python task control
 
@@ -199,7 +199,7 @@ See `docs/task_authoring_guide.md` for the full task creation workflow.
 
 ### Timestamp alignment
 
-Offline alignment extracts sync edges from each system (sent from the Teensy sync hub to the Ripple and SpikeGLX systems) and builds pairwise linear time mappings, achieving < 0.1 ms cross-system accuracy.
+Offline alignment extracts sync edges from each system (emitted by the Teensy sync hub per ADR-013) and builds pairwise linear time mappings, achieving < 0.1 ms cross-system accuracy. Behavioral event codes (ADR-014) provide additional time anchors.
 
 ### Data directory structure
 

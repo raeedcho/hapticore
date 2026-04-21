@@ -130,9 +130,11 @@ Five synchronized Blackfly S cameras capture markerless motion data for 3D pose 
  
 #### Hardware trigger architecture
  
-All five cameras operate in external trigger mode. Each camera's Line 3 (non-isolated GPIO input, <1 µs propagation delay) receives a TTL pulse from the Teensy sync hub at the desired frame rate (typically 30–120 Hz). Every rising edge triggers one frame capture. This guarantees sub-microsecond inter-camera synchronization because all cameras receive the same physical edge.
- 
-Each camera also outputs an exposure-active strobe signal on Line 1 or Line 2 during sensor integration. These strobe signals are routed (via BNC T-splitters where needed) to digital inputs on both the Ripple Scout and SpikeGLX's NI-DAQ, providing frame-accurate timestamps in both neural data streams. Dropped frames are detectable by comparing Spinnaker's hardware frame counter against the pulse count in the neural recording.
+All five Blackfly S cameras operate in external trigger mode. The Teensy sync hub emits a single frame-trigger signal (30–120 Hz, configurable per session) that is wired in parallel to Line 3 of every camera. Every rising edge captures one frame on all five cameras simultaneously. Inter-camera synchronization is therefore a hardware property — sub-microsecond by construction, because all cameras receive the same physical edge.
+
+Because the five cameras are hardware-locked by the shared trigger, one return signal to the neural recording is sufficient to anchor camera timing in neural time. Camera 1's exposure-active strobe (Line 1 or Line 2, configured in Spinnaker) is wired back to a Ripple Scout SMA input and produces one neural-side pulse per captured frame. The Spinnaker hardware frame counter on the camera PC remains the authoritative source for per-camera drop detection; the neural-side strobe loopback provides alignment, not redundant drop detection.
+
+Camera-PC clock to neural-clock alignment uses the strobe loopback itself: each captured frame has a Spinnaker timestamp on the camera PC and a strobe edge on Ripple, and a linear fit of paired timestamps maps between the two clocks. The 1 Hz cross-system sync is not separately wired to the camera PC — it does not need to be, because the per-frame strobe pairs already over-determine the clock mapping at 30–120 Hz.
  
 #### Interface contract
  

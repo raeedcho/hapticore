@@ -401,13 +401,21 @@ Camera acquisition software lives in a separate repository. Install Spinnaker SD
  
 ### Camera strobe feedback wiring
  
-Each Blackfly S camera outputs an exposure-active strobe on Line 1 or Line 2 (configure in Spinnaker). Route these signals to neural recording systems for frame-accurate timestamps:
- 
+Only one camera strobe is wired back to the neural recording system. The five cameras are hardware-triggered in lockstep by the Teensy (see `architecture.md` § Camera subsystem), so every camera exposes on the same physical edge — additional strobes would carry no extra alignment information. Per-camera drop detection is handled by Spinnaker's hardware frame counter on the camera PC, not by neural-side pulse counting.
+
 ```
-Camera 1 strobe → BNC T-split → Ripple Scout SMA input 3 + NI-DAQ digital input
-Camera 2 strobe → BNC T-split → Ripple Scout SMA input 4 + NI-DAQ digital input
-Cameras 3-5 strobe → NI-DAQ digital inputs (Scout has only 4 SMA inputs)
+Camera 1 Line 1 (or Line 2) strobe output → BNC cable → Ripple Scout SMA input 2
 ```
- 
-If all 5 camera strobes need Ripple timestamps, use the Scout's 25-pin D-sub parallel input connector via a BNC breakout adapter (Ripple PN: R01396).
- 
+
+Configure camera 1's strobe output in Spinnaker (`LineSelector = Line 1` or `Line 2`, `LineMode = Output`, `LineSource = ExposureActive`). Leave the other four cameras' strobes unwired on the neural side — they still need to be configured if downstream analysis wants per-camera exposure timing in the camera PC's own log.
+
+The Scout's remaining SMA inputs under this plan:
+
+| SMA input | Signal |
+|---|---|
+| 1 | Teensy 1 Hz cross-system sync |
+| 2 | Camera 1 exposure strobe |
+| 3 | Unused (reserved for future analog/event signals) |
+| 4 | Unused (reserved) |
+
+Event codes are carried on the 25-pin D-sub parallel input port, not on an SMA, per ADR-014.

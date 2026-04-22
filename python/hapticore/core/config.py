@@ -92,10 +92,13 @@ class DisplayConfig(BaseModel):
 
 
 class RippleRecordingConfig(BaseModel):
-    """Ripple Grapevine recording settings.
+    """Ripple Grapevine recording-control settings.
 
-    Used when ``RecordingConfig.ripple is not None``. Controls the xipppy
-    TCP connection and Trellis ``trial()`` calls made by ``RippleProcess``.
+    Controls the xipppy TCP connection used to start and stop Trellis
+    recording via ``trial()`` and to read digital inputs (where the
+    Teensy's event strobe and sync pulses land). Sync-pulse and event-code
+    *generation* are the Teensy's responsibility (ADR-013); this config
+    covers only the recording side.
     """
 
     use_tcp: bool = True
@@ -137,23 +140,23 @@ class TaskConfig(BaseModel):
 
 
 class EventCodeMap(BaseModel):
-    """Mapping from state/event names to integer digital event codes.
+    """Mapping from state/event names to 8-bit digital event codes.
 
-    Used transport-agnostically by both Ripple Scout DIO (Phase 5A) and the
-    Teensy sync hub (Phase 5B). The recording process (e.g. ``RippleProcess``)
-    consumes this to translate semantic events into hardware digout calls:
+    Event codes are emitted by the Teensy sync hub on an 8-bit parallel
+    bus + strobe line wired to both recording systems (see ADR-014). The
+    ``SyncProcess`` (Phase 5A.4) consumes this map to translate semantic
+    events into ``E<code>`` commands to the Teensy firmware:
 
-    - ``state_codes`` — emitted automatically by the recording process when a
-      ``StateTransition`` message is published whose ``new_state`` is listed
-      here. Default empty so existing tasks that call ``send_event_code(int)``
-      explicitly are not double-fired.
-    - ``event_codes`` — looked up when an explicit ``send_event_code(name)``
-      is published over the bus. Forward-facing; existing tasks still pass
-      raw ints and are unaffected.
+    - ``state_codes`` — emitted automatically by ``SyncProcess`` when a
+      ``StateTransition`` message is published whose ``new_state`` is
+      listed here. Default empty so existing tasks that call
+      ``send_event_code(int)`` explicitly are not double-fired.
+    - ``event_codes`` — looked up when an explicit named event is
+      published over the bus. Forward-facing; existing tasks pass raw
+      ints via ``SyncInterface.send_event_code`` and are unaffected.
 
-    Codes ``0`` and ``65535`` should be avoided (they collide with Ripple's
-    bus-idle and all-ones states respectively) but are not rejected here —
-    bit-width validation is the responsibility of the transport.
+    Codes are 8 bits (0–255). Code ``0`` should generally be avoided
+    (bus-idle state); the value space is otherwise open.
     """
 
     state_codes: dict[str, int] = Field(default_factory=dict)
@@ -161,56 +164,35 @@ class EventCodeMap(BaseModel):
 
 
 class TeensyConfig(BaseModel):
-    """Teensy sync-hub settings (Phase 5B).
+    """Teensy 4.1 sync hub settings.
 
-    Used when ``SyncConfig.transport == 'teensy'``. Ignored in Phase 5A.
+    Used when ``SyncConfig.transport == 'teensy'``. The Teensy 4.1 is
+    the centralized hardware timing source for all rig TTL signals —
+    sync pulse, camera trigger, event codes, and reward. See ADR-013.
     """
 
     port: str = "/dev/ttyACM0"
     baud: int = Field(default=115200, gt=0)
 
 
-class RippleSyncConfig(BaseModel):
-    """Ripple Scout DIO settings for 1 Hz sync pulse and event codes.
-
-    Used when ``SyncConfig.transport == 'ripple_scout'``. Consumed by
-    ``RippleProcess`` (Phase 5A.2).
-    """
-
-    sync_pulse_sma_index: int = Field(
-        default=0, ge=0, le=3,
-        description="SMA output index 0-3 used for the 1 Hz sync pulse.",
-    )
-    event_code_digout_index: int = Field(
-        default=4, ge=0, le=4,
-        description=(
-            "xipppy digout index used for event codes. 4 selects the "
-            "16-bit parallel port (recommended). 0-3 would restrict codes "
-            "to binary on a single SMA line."
-        ),
-    )
-
-
 class SyncConfig(BaseModel):
     """Sync transport + event code map.
 
-    Transport-specific knobs are nested under ``ripple`` / ``teensy``. When a
-    transport is selected, the corresponding nested block is auto-populated
+    Transport-specific knobs are nested under ``teensy``. When the
+    ``teensy`` transport is selected, the nested block is auto-populated
     with defaults if not provided explicitly, so the config is always
-    internally consistent after validation.
+    internally consistent after validation. See ADR-013 (Teensy sync hub)
+    for why Teensy is the sole hardware sync source.
     """
 
-    transport: Literal["mock", "ripple_scout", "teensy"] = "mock"
+    transport: Literal["mock", "teensy"] = "mock"
     sync_pulse_rate_hz: float = Field(default=1.0, gt=0, le=10.0)
     code_map: EventCodeMap = Field(default_factory=EventCodeMap)
-    ripple: RippleSyncConfig | None = None
     teensy: TeensyConfig | None = None
 
     @model_validator(mode="after")
     def _populate_selected_transport(self) -> Self:
-        if self.transport == "ripple_scout" and self.ripple is None:
-            self.ripple = RippleSyncConfig()
-        elif self.transport == "teensy" and self.teensy is None:
+        if self.transport == "teensy" and self.teensy is None:
             self.teensy = TeensyConfig()
         return self
 

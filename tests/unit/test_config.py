@@ -13,7 +13,6 @@ from hapticore.core.config import (
     HapticConfig,
     RecordingConfig,
     RippleRecordingConfig,
-    RippleSyncConfig,
     SubjectConfig,
     SyncConfig,
     TaskConfig,
@@ -348,18 +347,7 @@ class TestSyncConfigTransports:
 
     def test_default_nested_blocks_are_none(self) -> None:
         cfg = SyncConfig()
-        assert cfg.ripple is None
         assert cfg.teensy is None
-
-    def test_ripple_scout_transport_with_populated_ripple_block(self) -> None:
-        cfg = SyncConfig(
-            transport="ripple_scout",
-            ripple=RippleSyncConfig(sync_pulse_sma_index=2, event_code_digout_index=4),
-        )
-        assert cfg.transport == "ripple_scout"
-        assert cfg.ripple is not None
-        assert cfg.ripple.sync_pulse_sma_index == 2
-        assert cfg.ripple.event_code_digout_index == 4
 
     def test_teensy_transport_with_populated_teensy_block(self) -> None:
         cfg = SyncConfig(
@@ -386,53 +374,14 @@ class TestSyncConfigTransports:
         assert restored.code_map.state_codes == {"reach": 10}
         assert restored.code_map.event_codes == {"reward": 100}
 
-    def test_ripple_scout_auto_populates_ripple_block(self) -> None:
-        cfg = SyncConfig(transport="ripple_scout")
-        assert cfg.ripple is not None
-        assert cfg.ripple.sync_pulse_sma_index == 0  # default
-        assert cfg.teensy is None
-
     def test_teensy_auto_populates_teensy_block(self) -> None:
         cfg = SyncConfig(transport="teensy")
         assert cfg.teensy is not None
         assert cfg.teensy.port == "/dev/ttyACM0"  # default
-        assert cfg.ripple is None
 
-    def test_mock_transport_leaves_both_blocks_none(self) -> None:
+    def test_mock_transport_leaves_teensy_block_none(self) -> None:
         cfg = SyncConfig(transport="mock")
-        assert cfg.ripple is None
         assert cfg.teensy is None
-
-    def test_explicit_ripple_block_preserved(self) -> None:
-        cfg = SyncConfig(
-            transport="ripple_scout",
-            ripple=RippleSyncConfig(sync_pulse_sma_index=2),
-        )
-        assert cfg.ripple is not None
-        assert cfg.ripple.sync_pulse_sma_index == 2  # not overwritten to default
-
-
-class TestRippleSyncConfig:
-    def test_defaults(self) -> None:
-        cfg = RippleSyncConfig()
-        assert cfg.sync_pulse_sma_index == 0
-        assert cfg.event_code_digout_index == 4
-
-    def test_sma_index_upper_bound(self) -> None:
-        with pytest.raises(ValidationError):
-            RippleSyncConfig(sync_pulse_sma_index=4)
-
-    def test_sma_index_lower_bound(self) -> None:
-        with pytest.raises(ValidationError):
-            RippleSyncConfig(sync_pulse_sma_index=-1)
-
-    def test_digout_index_upper_bound(self) -> None:
-        with pytest.raises(ValidationError):
-            RippleSyncConfig(event_code_digout_index=5)
-
-    def test_digout_index_lower_bound(self) -> None:
-        with pytest.raises(ValidationError):
-            RippleSyncConfig(event_code_digout_index=-1)
 
 
 class TestRecordingConfigRipple:

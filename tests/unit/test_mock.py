@@ -96,17 +96,50 @@ class TestMockNeuralRecording:
 class TestMockSync:
     def test_sync_lifecycle(self) -> None:
         mock = MockSync()
-        assert not mock.is_running()
+        assert not mock.is_sync_running()
         mock.start_sync_pulses()
-        assert mock.is_running()
+        assert mock.is_sync_running()
         mock.stop_sync_pulses()
-        assert not mock.is_running()
+        assert not mock.is_sync_running()
 
     def test_event_codes(self) -> None:
         mock = MockSync()
         mock.send_event_code(42)
         mock.send_event_code(99)
         assert mock._event_codes == [42, 99]
+
+    def test_reward_delivery(self) -> None:
+        mock = MockSync()
+        mock.deliver_reward(100)
+        mock.deliver_reward(150)
+        assert mock._reward_durations_ms == [100, 150]
+        assert mock._call_log[-2:] == [
+            ("deliver_reward", 100),
+            ("deliver_reward", 150),
+        ]
+
+    def test_camera_trigger_lifecycle(self) -> None:
+        mock = MockSync()
+        assert not mock.is_camera_trigger_running()
+        mock.set_camera_trigger_rate(60.0)
+        assert mock._camera_trigger_rate_hz == 60.0
+        mock.start_camera_trigger()
+        assert mock.is_camera_trigger_running()
+        mock.stop_camera_trigger()
+        assert not mock.is_camera_trigger_running()
+
+    def test_camera_trigger_independent_from_sync_pulse(self) -> None:
+        """Sync pulse and camera trigger track independently."""
+        mock = MockSync()
+        mock.start_sync_pulses()
+        assert mock.is_sync_running()
+        assert not mock.is_camera_trigger_running()
+        mock.start_camera_trigger()
+        assert mock.is_sync_running()
+        assert mock.is_camera_trigger_running()
+        mock.stop_sync_pulses()
+        assert not mock.is_sync_running()
+        assert mock.is_camera_trigger_running()
 
 
 class TestMockDisplay:

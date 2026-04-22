@@ -121,11 +121,6 @@ class BaseTask(ABC):
         )
         self.event_bus.publish(TOPIC_TRIAL, serialize(event))
 
-    def reward(self) -> None:
-        """Deliver a reward (juice) via the sync interface."""
-        if self.sync is not None:
-            self.sync.send_event_code(1)
-
     def new_command_id(self) -> str:
         """Generate a unique command ID."""
         return uuid.uuid4().hex[:12]

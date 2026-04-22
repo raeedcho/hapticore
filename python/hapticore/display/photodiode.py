@@ -40,6 +40,48 @@ _BLACK: list[float] = [-1.0, -1.0, -1.0]
 _WHITE: list[float] = [1.0, 1.0, 1.0]
 
 
+def remap_corner_for_mirror(
+    physical_corner: str,
+    *,
+    mirror_horizontal: bool,
+    mirror_vertical: bool,
+) -> str:
+    """Map a physical screen corner to the render-frame corner that draws there.
+
+    ``photodiode_corner`` in config is the physical location of the sensor.
+    When the window is mirrored, the render-frame corner that reaches that
+    physical location is swapped. This helper does the swap.
+
+    Parameters
+    ----------
+    physical_corner : str
+        Physical location of the photodiode sensor on the monitor.
+        One of ``'bottom_left'``, ``'bottom_right'``, ``'top_left'``,
+        ``'top_right'``.
+    mirror_horizontal : bool
+        Whether the rendered image is flipped left-right.
+    mirror_vertical : bool
+        Whether the rendered image is flipped top-bottom.
+
+    Returns
+    -------
+    str
+        The render-frame corner to draw the patch in so it ends up at the
+        physical sensor location.
+    """
+    if physical_corner not in _VALID_CORNERS:
+        raise ValueError(
+            f"Invalid corner {physical_corner!r}. "
+            f"Must be one of {sorted(_VALID_CORNERS)}"
+        )
+    vert, horiz = physical_corner.split("_")  # "bottom_left" -> ("bottom", "left")
+    if mirror_horizontal:
+        horiz = "right" if horiz == "left" else "left"
+    if mirror_vertical:
+        vert = "top" if vert == "bottom" else "bottom"
+    return f"{vert}_{horiz}"
+
+
 class PhotodiodePatch:
     """High-contrast square that toggles on stimulus onset for timing verification.
 

@@ -16,6 +16,13 @@ display:
   fullscreen: true
   monitor_distance_cm: 50.0
   background_color: [0.0, 0.0, 0.0]
+  # Multi-monitor rig: pick the monitor the subject views.
+  # Run 'pixi run -e display hapticore list-screens' to enumerate.
+  screen: 0
+  # Horizontal mirror compensates for a canted mirror that reflects
+  # the image left-right before it reaches the subject's eyes.
+  mirror_horizontal: false
+  mirror_vertical: false
 
 recording:
   save_dir: "data"

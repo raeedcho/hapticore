@@ -130,3 +130,105 @@ class TestCursorInterpolation:
         }
         result = DisplayProcess._interpolate_position(state, 0.1)
         assert result == [0.5, 0.3]
+
+
+class TestRemapCornerForMirror:
+    """Pure-logic tests for remap_corner_for_mirror (no PsychoPy needed)."""
+
+    @pytest.mark.parametrize("corner", sorted(_VALID_CORNERS))
+    def test_no_mirror_is_identity(self, corner: str) -> None:
+        from hapticore.display.photodiode import remap_corner_for_mirror
+
+        result = remap_corner_for_mirror(
+            corner, mirror_horizontal=False, mirror_vertical=False
+        )
+        assert result == corner
+
+    @pytest.mark.parametrize("corner,expected", [
+        ("bottom_left",  "bottom_right"),
+        ("bottom_right", "bottom_left"),
+        ("top_left",     "top_right"),
+        ("top_right",    "top_left"),
+    ])
+    def test_mirror_horizontal_swaps_horiz(self, corner: str, expected: str) -> None:
+        from hapticore.display.photodiode import remap_corner_for_mirror
+
+        result = remap_corner_for_mirror(
+            corner, mirror_horizontal=True, mirror_vertical=False
+        )
+        assert result == expected
+
+    @pytest.mark.parametrize("corner,expected", [
+        ("bottom_left",  "top_left"),
+        ("bottom_right", "top_right"),
+        ("top_left",     "bottom_left"),
+        ("top_right",    "bottom_right"),
+    ])
+    def test_mirror_vertical_swaps_vert(self, corner: str, expected: str) -> None:
+        from hapticore.display.photodiode import remap_corner_for_mirror
+
+        result = remap_corner_for_mirror(
+            corner, mirror_horizontal=False, mirror_vertical=True
+        )
+        assert result == expected
+
+    @pytest.mark.parametrize("corner,expected", [
+        ("bottom_left",  "top_right"),
+        ("bottom_right", "top_left"),
+        ("top_left",     "bottom_right"),
+        ("top_right",    "bottom_left"),
+    ])
+    def test_both_mirrors_swaps_both(self, corner: str, expected: str) -> None:
+        from hapticore.display.photodiode import remap_corner_for_mirror
+
+        result = remap_corner_for_mirror(
+            corner, mirror_horizontal=True, mirror_vertical=True
+        )
+        assert result == expected
+
+    @pytest.mark.parametrize("corner", sorted(_VALID_CORNERS))
+    def test_horizontal_mirror_is_involutive(self, corner: str) -> None:
+        """Applying mirror_horizontal twice returns the original corner."""
+        from hapticore.display.photodiode import remap_corner_for_mirror
+
+        once = remap_corner_for_mirror(
+            corner, mirror_horizontal=True, mirror_vertical=False
+        )
+        twice = remap_corner_for_mirror(
+            once, mirror_horizontal=True, mirror_vertical=False
+        )
+        assert twice == corner
+
+    @pytest.mark.parametrize("corner", sorted(_VALID_CORNERS))
+    def test_vertical_mirror_is_involutive(self, corner: str) -> None:
+        """Applying mirror_vertical twice returns the original corner."""
+        from hapticore.display.photodiode import remap_corner_for_mirror
+
+        once = remap_corner_for_mirror(
+            corner, mirror_horizontal=False, mirror_vertical=True
+        )
+        twice = remap_corner_for_mirror(
+            once, mirror_horizontal=False, mirror_vertical=True
+        )
+        assert twice == corner
+
+    @pytest.mark.parametrize("corner", sorted(_VALID_CORNERS))
+    def test_both_mirrors_is_involutive(self, corner: str) -> None:
+        """Applying both mirrors twice returns the original corner."""
+        from hapticore.display.photodiode import remap_corner_for_mirror
+
+        once = remap_corner_for_mirror(
+            corner, mirror_horizontal=True, mirror_vertical=True
+        )
+        twice = remap_corner_for_mirror(
+            once, mirror_horizontal=True, mirror_vertical=True
+        )
+        assert twice == corner
+
+    def test_invalid_corner_raises(self) -> None:
+        from hapticore.display.photodiode import remap_corner_for_mirror
+
+        with pytest.raises(ValueError, match="Invalid corner"):
+            remap_corner_for_mirror(
+                "center", mirror_horizontal=False, mirror_vertical=False
+            )

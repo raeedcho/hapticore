@@ -118,7 +118,7 @@ class DisplayProcess(multiprocessing.Process):
         """Entry point executed in the child process."""
         from psychopy import visual  # noqa: F811 — import ONLY here
 
-        from hapticore.display.photodiode import PhotodiodePatch
+        from hapticore.display.photodiode import PhotodiodePatch, remap_corner_for_mirror
         from hapticore.display.scene_manager import SceneManager
 
         signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -152,9 +152,14 @@ class DisplayProcess(multiprocessing.Process):
         scene = SceneManager(
             win, self._display_config, spatial_scale=self._effective_scale(),
         )
+        photodiode_render_corner = remap_corner_for_mirror(
+            self._display_config.photodiode_corner,
+            mirror_horizontal=self._display_config.mirror_horizontal,
+            mirror_vertical=self._display_config.mirror_vertical,
+        )
         photodiode = PhotodiodePatch(
             win,
-            corner=self._display_config.photodiode_corner,
+            corner=photodiode_render_corner,
             enabled=self._display_config.photodiode_enabled,
         )
 
@@ -220,6 +225,13 @@ class DisplayProcess(multiprocessing.Process):
             # 2a. Mouse mode: read mouse, push to queue, drive cursor directly
             if mouse is not None and self._mouse_queue is not None:
                 mx_cm, my_cm = mouse.getPos()
+                # Mouse returns raw screen coords; PsychoPy's viewScale does not
+                # transform them. If we mirrored the rendered frame, flip the
+                # mouse reading to match so the cursor tracks the monkey's hand.
+                if self._display_config.mirror_horizontal:
+                    mx_cm = -mx_cm
+                if self._display_config.mirror_vertical:
+                    my_cm = -my_cm
                 eff = self._effective_scale()
                 offset = self._effective_offset_cm()
                 x_m = (mx_cm - offset[0]) / eff
@@ -430,6 +442,14 @@ class DisplayProcess(multiprocessing.Process):
         mon.setDistance(cfg.monitor_distance_cm)    # viewing distance
 
         effective_fullscr = cfg.fullscreen and not self._headless
+
+        view_scale: list[float] | None = None
+        if cfg.mirror_horizontal or cfg.mirror_vertical:
+            view_scale = [
+                -1.0 if cfg.mirror_horizontal else 1.0,
+                -1.0 if cfg.mirror_vertical else 1.0,
+            ]
+
         return visual_module.Window(
             size=list(cfg.resolution),
             fullscr=effective_fullscr,
@@ -439,6 +459,8 @@ class DisplayProcess(multiprocessing.Process):
             allowGUI=not effective_fullscr,
             winType="pyglet",
             checkTiming=False,
+            screen=cfg.screen,
+            viewScale=view_scale,
         )
 
     @staticmethod

@@ -77,6 +77,12 @@ class TestValueConstraints:
         with pytest.raises(ValidationError):
             DisplayConfig(refresh_rate_hz=-1)
 
+    def test_display_screen_negative_raises(self) -> None:
+        from hapticore.core.config import DisplayConfig
+
+        with pytest.raises(ValidationError):
+            DisplayConfig(screen=-1)
+
     def test_invalid_randomization(self) -> None:
         with pytest.raises(ValidationError):
             TaskConfig(task_class="hapticore.tasks.example.Task", randomization="invalid")
@@ -115,6 +121,19 @@ class TestDefaults:
     def test_subject_species_default(self) -> None:
         config = SubjectConfig(subject_id="test")
         assert config.species == "macaque"
+
+    def test_display_screen_default_is_zero(self) -> None:
+        from hapticore.core.config import DisplayConfig
+
+        config = DisplayConfig()
+        assert config.screen == 0
+
+    def test_display_mirror_flags_default_false(self) -> None:
+        from hapticore.core.config import DisplayConfig
+
+        config = DisplayConfig()
+        assert config.mirror_horizontal is False
+        assert config.mirror_vertical is False
 
 
 class TestLayeredMerge:

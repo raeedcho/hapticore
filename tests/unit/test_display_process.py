@@ -675,28 +675,25 @@ class TestCreateWindowKwargs:
         _, kwargs = visual.Window.call_args
         return kwargs
 
+    def _call_create_window(
+        self, proc: DisplayProcess, visual: MagicMock,
+    ) -> dict[str, Any]:
+        """Call _create_window with mocked psychopy.monitors; return Window kwargs."""
+        mock_monitors = MagicMock()
+        mock_monitors.Monitor.return_value = MagicMock()
+        sys_modules_patch = {
+            "psychopy": MagicMock(),
+            "psychopy.monitors": mock_monitors,
+        }
+        with unittest.mock.patch.dict("sys.modules", sys_modules_patch):
+            proc._create_window(visual)
+        return self._get_window_kwargs(visual)
+
     def test_default_config_screen_zero_viewscale_none(self) -> None:
         """Default config → screen=0, viewScale=None."""
         proc = self._make_proc()
         visual = self._make_visual_mock()
-
-        # Mock the monitors import inside _create_window
-        with unittest.mock.patch("hapticore.display.process.monitors", create=True):
-            import sys
-            mock_monitors = MagicMock()
-            mock_monitors.Monitor.return_value = MagicMock()
-            orig = sys.modules.get("psychopy.monitors")
-            sys.modules["psychopy.monitors"] = mock_monitors
-            try:
-                from psychopy import monitors as _mon  # noqa: F401
-            except ImportError:
-                pass
-            sys.modules["psychopy"] = MagicMock()
-            sys.modules["psychopy.monitors"] = mock_monitors
-
-            proc._create_window(visual)
-
-        kwargs = self._get_window_kwargs(visual)
+        kwargs = self._call_create_window(proc, visual)
         assert kwargs["screen"] == 0
         assert kwargs["viewScale"] is None
 
@@ -704,62 +701,26 @@ class TestCreateWindowKwargs:
         """screen=1 is passed verbatim to visual.Window."""
         proc = self._make_proc(screen=1)
         visual = self._make_visual_mock()
-
-        sys_modules_patch = {
-            "psychopy": MagicMock(),
-            "psychopy.monitors": MagicMock(),
-        }
-        sys_modules_patch["psychopy.monitors"].Monitor.return_value = MagicMock()
-        with unittest.mock.patch.dict("sys.modules", sys_modules_patch):
-            proc._create_window(visual)
-
-        kwargs = self._get_window_kwargs(visual)
+        kwargs = self._call_create_window(proc, visual)
         assert kwargs["screen"] == 1
 
     def test_mirror_horizontal_only(self) -> None:
         """mirror_horizontal=True → viewScale=[-1.0, 1.0]."""
         proc = self._make_proc(mirror_horizontal=True)
         visual = self._make_visual_mock()
-
-        sys_modules_patch = {
-            "psychopy": MagicMock(),
-            "psychopy.monitors": MagicMock(),
-        }
-        sys_modules_patch["psychopy.monitors"].Monitor.return_value = MagicMock()
-        with unittest.mock.patch.dict("sys.modules", sys_modules_patch):
-            proc._create_window(visual)
-
-        kwargs = self._get_window_kwargs(visual)
+        kwargs = self._call_create_window(proc, visual)
         assert kwargs["viewScale"] == [-1.0, 1.0]
 
     def test_mirror_vertical_only(self) -> None:
         """mirror_vertical=True → viewScale=[1.0, -1.0]."""
         proc = self._make_proc(mirror_vertical=True)
         visual = self._make_visual_mock()
-
-        sys_modules_patch = {
-            "psychopy": MagicMock(),
-            "psychopy.monitors": MagicMock(),
-        }
-        sys_modules_patch["psychopy.monitors"].Monitor.return_value = MagicMock()
-        with unittest.mock.patch.dict("sys.modules", sys_modules_patch):
-            proc._create_window(visual)
-
-        kwargs = self._get_window_kwargs(visual)
+        kwargs = self._call_create_window(proc, visual)
         assert kwargs["viewScale"] == [1.0, -1.0]
 
     def test_both_mirrors(self) -> None:
         """Both mirror flags → viewScale=[-1.0, -1.0]."""
         proc = self._make_proc(mirror_horizontal=True, mirror_vertical=True)
         visual = self._make_visual_mock()
-
-        sys_modules_patch = {
-            "psychopy": MagicMock(),
-            "psychopy.monitors": MagicMock(),
-        }
-        sys_modules_patch["psychopy.monitors"].Monitor.return_value = MagicMock()
-        with unittest.mock.patch.dict("sys.modules", sys_modules_patch):
-            proc._create_window(visual)
-
-        kwargs = self._get_window_kwargs(visual)
+        kwargs = self._call_create_window(proc, visual)
         assert kwargs["viewScale"] == [-1.0, -1.0]

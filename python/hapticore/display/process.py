@@ -227,7 +227,7 @@ class DisplayProcess(multiprocessing.Process):
                 mx_cm, my_cm = mouse.getPos()
                 # Mouse returns raw screen coords; PsychoPy's viewScale does not
                 # transform them. If we mirrored the rendered frame, flip the
-                # mouse reading to match so the cursor tracks the monkey's hand.
+                # mouse reading to match so the cursor tracks the subject's hand.
                 if self._display_config.mirror_horizontal:
                     mx_cm = -mx_cm
                 if self._display_config.mirror_vertical:

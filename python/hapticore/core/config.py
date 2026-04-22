@@ -91,8 +91,8 @@ class DisplayConfig(BaseModel):
     )
     screen: int = Field(
         default=0, ge=0,
-        description="Monitor index (0 = primary). Run 'hapticore list-screens' "
-                    "to enumerate available monitors.",
+        description="Monitor index (0 = first monitor in enumeration order). "
+                    "Run 'hapticore list-screens' to enumerate available monitors.",
     )
     mirror_horizontal: bool = Field(
         default=False,

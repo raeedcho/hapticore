@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Generator
 from typing import Any
 
 import pytest
 import zmq
 
-from .conftest import send_command
-from .heartbeat_keeper import heartbeat_keeper
+from hapticore.core.messages import Command
+from hapticore.hardware.haptic_client import HapticClient
 
 
 # ---------------------------------------------------------------------------
@@ -75,9 +76,7 @@ def _wait_for_enter_or_skip(msg: str) -> None:
 
 
 def run_timed_evaluation(
-    dealer: zmq.Socket[bytes],
-    cmd_address: str,
-    zmq_context: zmq.Context[Any],
+    client: HapticClient,
     field_params: dict[str, Any],
     description: str,
     feel_instructions: str,
@@ -89,9 +88,9 @@ def run_timed_evaluation(
 
     1. Show instructions and wait for the operator to press Enter.
     2. Countdown so the operator can walk to the device and grab the handle.
-    3. Activate the field with a heartbeat for *duration* seconds.
-    4. Revert to NullField while heartbeat is still active (handle goes free).
-    _wait_for_enter_or_skip("\nPress Enter to start countdown (or 's'/'q' to skip)... ")
+    3. Activate the field for *duration* seconds (heartbeat is kept alive by
+       the HapticClient for the full fixture lifetime).
+    4. Revert to NullField so the handle goes free.
     """
     print(f"\n--- {description} ---")
     print("What to feel for:")
@@ -104,22 +103,23 @@ def run_timed_evaluation(
         time.sleep(1)
     print("  GO — field is active\n")
 
-    # Activate field with heartbeat, revert to NullField before stopping heartbeat
-    with heartbeat_keeper(cmd_address, ctx=zmq_context):
-        resp = send_command(dealer, "set_force_field", field_params)
-        assert resp["success"], f"set_force_field failed: {resp}"
+    resp = client.send_command(Command(
+        command_id="", method="set_force_field", params=field_params,
+    ))
+    assert resp.success, f"set_force_field failed: {resp}"
 
-        for remaining in range(duration, 0, -1):
-            print(f"  {remaining}s remaining...", end="\r", flush=True)
-            time.sleep(1)
+    for remaining in range(duration, 0, -1):
+        print(f"  {remaining}s remaining...", end="\r", flush=True)
+        time.sleep(1)
 
-        # Revert to NullField while heartbeat is still active so handle goes free cleanly
-        revert_resp = send_command(dealer, "set_force_field", {"type": "null", "params": {}})
-        if not revert_resp.get("success"):
-            print(f"\n  Warning: NullField revert returned {revert_resp}")
+    revert = client.send_command(Command(
+        command_id="", method="set_force_field",
+        params={"type": "null", "params": {}},
+    ))
+    if not revert.success:
+        print(f"\n  Warning: NullField revert returned {revert}")
 
     print("  Field deactivated, handle is free.            ")
-
     return user_confirms(prompt)
 
 
@@ -129,23 +129,32 @@ def run_timed_evaluation(
 
 
 @pytest.fixture
-def dealer(cmd_address: str, zmq_context: zmq.Context) -> zmq.Socket:  # type: ignore[type-arg]
-    """Function-scoped DEALER socket for interactive tests."""
-    sock = zmq_context.socket(zmq.DEALER)
-    sock.setsockopt(zmq.RCVTIMEO, 3000)
-    sock.connect(cmd_address)
-    time.sleep(0.1)
-    try:
-        yield sock  # type: ignore[misc]
-    finally:
-        # Best-effort revert to NullField on teardown so handle is free.
-        # If the server is down/unresponsive, send_command may raise TimeoutError
-        # or ZMQError; we ignore this so teardown errors don't mask real test failures.
+def client(
+    pub_address: str,
+    cmd_address: str,
+    zmq_context: zmq.Context,  # type: ignore[type-arg]
+) -> Generator[HapticClient, None, None]:
+    """Function-scoped HapticClient for interactive tests.
+
+    On teardown, best-effort revert to NullField so the handle is free.
+    The client's background heartbeat thread keeps the server's watchdog
+    satisfied for the full duration of each test.
+    """
+    with HapticClient(
+        pub_address, cmd_address, context=zmq_context,
+    ) as c:
         try:
-            send_command(sock, "set_force_field", {"type": "null", "params": {}})
-        except (TimeoutError, zmq.ZMQError):
-            pass
-        sock.close(linger=0)
+            yield c
+        finally:
+            # Best-effort revert to NullField on teardown so handle is free.
+            try:
+                c.send_command(Command(
+                    command_id="",
+                    method="set_force_field",
+                    params={"type": "null", "params": {}},
+                ))
+            except zmq.ZMQError:
+                pass
 
 
 @pytest.fixture
@@ -172,14 +181,11 @@ class TestSpringDamperFeel:
 
     def test_light_spring(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "spring_damper",
                 "params": {"stiffness": 100, "damping": 5, "center": [0, 0, 0]},
@@ -196,14 +202,11 @@ class TestSpringDamperFeel:
 
     def test_stiff_spring(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "spring_damper",
                 "params": {"stiffness": 800, "damping": 20, "center": [0, 0, 0]},
@@ -221,14 +224,11 @@ class TestSpringDamperFeel:
 
     def test_offset_center(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "spring_damper",
                 "params": {
@@ -255,14 +255,11 @@ class TestConstantFieldFeel:
 
     def test_downward_push(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "constant",
                 "params": {"force": [0, -3.0, 0]},
@@ -285,14 +282,11 @@ class TestCompositeFieldFeel:
 
     def test_spring_plus_workspace_limits(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "composite",
                 "params": {
@@ -339,14 +333,11 @@ class TestChannelFeelPlane:
 
     def test_constrained_to_plane(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "channel",
                 "params": {
@@ -375,14 +366,11 @@ class TestChannelFeelLine:
 
     def test_constrained_to_line(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "channel",
                 "params": {
@@ -411,14 +399,11 @@ class TestCartPendulumFeel:
 
     def test_inertial_field(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "cart_pendulum",
                 "params": {
@@ -442,14 +427,11 @@ class TestCartPendulumFeel:
         ), "Operator rejected inertial-only cart-pendulum feel"
     def test_pendulum_swing(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "cart_pendulum",
                 "params": {
@@ -477,14 +459,11 @@ class TestCartPendulumFeel:
 
     def test_composite_pendulum_field(
         self,
-        dealer: zmq.Socket,  # type: ignore[type-arg]
-        cmd_address: str,
-        zmq_context: zmq.Context,  # type: ignore[type-arg]
+        client: HapticClient,
         countdown: int,
         duration: int,
     ) -> None:
-        assert run_timed_evaluation(
-            dealer, cmd_address, zmq_context,
+        assert run_timed_evaluation(client,
             field_params={
                 "type": "composite",
                 "params": {

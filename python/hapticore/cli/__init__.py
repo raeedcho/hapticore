@@ -170,6 +170,25 @@ def _simulate(args: argparse.Namespace) -> None:
     print(f"Accuracy: {summary['accuracy']:.1%}")
 
 
+def _list_screens(args: argparse.Namespace) -> None:
+    """List available screens with their indices and resolutions."""
+    try:
+        import pyglet
+    except ImportError:
+        print(
+            "Error: list-screens requires the 'display' pixi environment.\n"
+            "Run with: pixi run -e display hapticore list-screens",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    screens = pyglet.canvas.get_display().get_screens()
+    print(f"{'Index':<6} {'Resolution':<15} {'Position':<15}")
+    for i, s in enumerate(screens):
+        res = f"{s.width}x{s.height}"
+        print(f"{i:<6} {res:<15} ({s.x}, {s.y})")
+
+
 def _graph_task(args: argparse.Namespace) -> None:
     """Generate a state machine diagram for a task class."""
     # Import the task class
@@ -290,6 +309,13 @@ def main() -> None:
         help="Output file path (default: <ClassName>.png)",
     )
     graph_parser.set_defaults(func=_graph_task)
+
+    # list-screens subcommand
+    list_parser = subparsers.add_parser(
+        "list-screens",
+        help="List available monitors (requires the display pixi environment)",
+    )
+    list_parser.set_defaults(func=_list_screens)
 
     args = parser.parse_args()
     if hasattr(args, "func"):

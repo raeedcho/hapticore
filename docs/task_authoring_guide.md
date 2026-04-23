@@ -519,3 +519,8 @@ hapticore graph-task hapticore.tasks.my_task.MyTask
 ```
 
 A state with no outgoing transitions is a deadlock — the task will hang there forever.
+
+
+### PsychoPy text stimuli and window `viewScale`
+
+PsychoPy text stimuli (`visual.TextStim`) do not compose cleanly with window-level `viewScale` — text can render un-flipped even in a mirrored frame. This is not a concern for current Hapticore stimuli (circles, rectangles, physics bodies), but if you ever add text to a task, flip it per-stimulus with `flipHoriz=True` on the `TextStim` object rather than relying on the window-level mirror.

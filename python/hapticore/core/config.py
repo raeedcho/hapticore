@@ -89,6 +89,21 @@ class DisplayConfig(BaseModel):
         default_factory=lambda: [0.0, 0.0],
         description="Display offset in meters [x, y] for co-location calibration",
     )
+    screen: int = Field(
+        default=0, ge=0,
+        description="Monitor index (0 = first monitor in enumeration order). "
+                    "Run 'hapticore list-screens' to enumerate available monitors.",
+    )
+    mirror_horizontal: bool = Field(
+        default=False,
+        description="Mirror the rendered image across the vertical axis. Use "
+                    "when the subject views the monitor via a canted mirror that "
+                    "reflects the image left-right. See docs/rig-setup.md.",
+    )
+    mirror_vertical: bool = Field(
+        default=False,
+        description="Mirror the rendered image across the horizontal axis.",
+    )
 
 
 class RippleRecordingConfig(BaseModel):

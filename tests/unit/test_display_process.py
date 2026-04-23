@@ -653,3 +653,73 @@ class TestHandleDisplayCommandConversion:
         eff = 1.0 * _METERS_TO_CM
         args = scene.update.call_args
         assert args[0][1]["position"] == [0.05 * eff, 0.1 * eff]
+
+
+class TestCreateWindowKwargs:
+    """Verify _create_window passes screen and viewScale from DisplayConfig."""
+
+    def _make_visual_mock(self) -> MagicMock:
+        """Return a MagicMock that records Window constructor calls."""
+        visual = MagicMock()
+        visual.Window.return_value = MagicMock()
+        return visual
+
+    def _make_proc(self, **display_kwargs: Any) -> DisplayProcess:
+        return DisplayProcess(
+            display_config=DisplayConfig(**display_kwargs),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+
+    def _get_window_kwargs(self, visual: MagicMock) -> dict[str, Any]:
+        _, kwargs = visual.Window.call_args
+        return kwargs
+
+    def _call_create_window(
+        self, proc: DisplayProcess, visual: MagicMock,
+    ) -> dict[str, Any]:
+        """Call _create_window with mocked psychopy.monitors; return Window kwargs."""
+        mock_monitors = MagicMock()
+        mock_monitors.Monitor.return_value = MagicMock()
+        sys_modules_patch = {
+            "psychopy": MagicMock(),
+        }
+        with unittest.mock.patch.dict("sys.modules", sys_modules_patch):
+            proc._create_window(visual)
+        return self._get_window_kwargs(visual)
+
+    def test_default_config_screen_zero_viewscale_none(self) -> None:
+        """Default config → screen=0, viewScale=None."""
+        proc = self._make_proc()
+        visual = self._make_visual_mock()
+        kwargs = self._call_create_window(proc, visual)
+        assert kwargs["screen"] == 0
+        assert kwargs["viewScale"] is None
+
+    def test_screen_1_passed_through(self) -> None:
+        """screen=1 is passed verbatim to visual.Window."""
+        proc = self._make_proc(screen=1)
+        visual = self._make_visual_mock()
+        kwargs = self._call_create_window(proc, visual)
+        assert kwargs["screen"] == 1
+
+    def test_mirror_horizontal_only(self) -> None:
+        """mirror_horizontal=True → viewScale=[-1.0, 1.0]."""
+        proc = self._make_proc(mirror_horizontal=True)
+        visual = self._make_visual_mock()
+        kwargs = self._call_create_window(proc, visual)
+        assert kwargs["viewScale"] == [-1.0, 1.0]
+
+    def test_mirror_vertical_only(self) -> None:
+        """mirror_vertical=True → viewScale=[1.0, -1.0]."""
+        proc = self._make_proc(mirror_vertical=True)
+        visual = self._make_visual_mock()
+        kwargs = self._call_create_window(proc, visual)
+        assert kwargs["viewScale"] == [1.0, -1.0]
+
+    def test_both_mirrors(self) -> None:
+        """Both mirror flags → viewScale=[-1.0, -1.0]."""
+        proc = self._make_proc(mirror_horizontal=True, mirror_vertical=True)
+        visual = self._make_visual_mock()
+        kwargs = self._call_create_window(proc, visual)
+        assert kwargs["viewScale"] == [-1.0, -1.0]

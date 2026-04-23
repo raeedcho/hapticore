@@ -148,6 +148,41 @@ GND    → Common ground shared with all connected devices
  
 > Pin assignments are placeholders — update with actual pin numbers once firmware is finalized.
 
+## Multi-monitor and mirror setup
+
+The rig uses two monitors: one that the subject views through a canted mirror, and one in the control room for the experimenter. The display process renders to one monitor at a time. Use the following fields in `configs/rig/default.yaml` (under `display:`) to configure which monitor is used and whether the image should be mirrored.
+
+### Identifying monitor indices
+
+Run `hapticore list-screens` (requires the `display` pixi environment) to list available monitors with their indices and resolutions:
+
+```bash
+pixi run -e display hapticore list-screens
+```
+
+Example output:
+```
+Index  Resolution      Position
+0      1920x1080       (0, 0)
+1      1920x1080       (1920, 0)
+```
+
+Set `screen: 1` in the rig config to render on the second monitor. On Linux/X11, the screen index follows `xrandr` output order and is stable across reboots unless the physical cable connection order changes.
+
+### Horizontal mirror for a canted mirror
+
+The canted mirror reflects the image left-right. Set `mirror_horizontal: true` to compensate — the rendered frame is flipped so stimuli appear at the correct positions from the subject's perspective.
+
+Use `mirror_vertical: true` if the optical path also inverts the image vertically (uncommon for the standard single-mirror setup).
+
+### Optical-path-length note
+
+`monitor_distance_cm` should be set to the **total optical path length**: monitor-to-mirror distance plus mirror-to-eye distance, not the straight-line distance from monitor to subject. This matters for visual-angle calculations even though tasks currently render in `units="cm"`. Measuring the wrong distance will make stimuli appear smaller or larger than intended if tasks ever switch to `units="deg"`.
+
+### Photodiode corner
+
+`photodiode_corner` refers to the **physical location** of the sensor taped to the monitor (e.g., `"bottom_left"` if the sensor is at the bottom-left corner as seen from the front). When a mirror flag is set, the display process automatically remaps the render-frame corner to match the physical sensor location — no manual adjustment needed.
+
 ## Haptic server
 
 Enter the pixi environment, then build:

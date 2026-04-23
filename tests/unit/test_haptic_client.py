@@ -272,6 +272,61 @@ class TestCommands:
         # A non-empty command_id was assigned and echoed back
         assert resp.command_id
 
+    def test_stale_response_not_returned_to_next_command(self) -> None:
+        """After a timeout, the stale server reply is drained and not mistaken for the next command.
+
+        Scenario:
+          1. cmd1 sent with a 200 ms timeout; server delays its response by 300 ms.
+          2. Client returns timeout failure for cmd1.
+          3. Server's late cmd1 response lands in the DEALER queue.
+          4. Client drains the stale reply before sending cmd2.
+          5. Server responds promptly to cmd2.
+          6. Client returns cmd2's fresh response, not the stale cmd1 response.
+        """
+        state_addr, cmd_addr = _addresses()
+
+        # Use a fake server with a slow handler for "slow_cmd" and a normal
+        # handler for "fast_cmd". The slow handler blocks the dispatch thread
+        # for 300 ms, so the response arrives after the client's 200 ms timeout.
+        slow_handler_started = queue.Queue[bool]()
+
+        def _slow_handler(_params: dict[str, Any]) -> dict[str, Any]:
+            slow_handler_started.put(True)
+            time.sleep(0.3)  # response arrives after the 200 ms client timeout
+            return {"was_slow": True}
+
+        handlers = {
+            "slow_cmd": _slow_handler,
+            "fast_cmd": lambda _p: {"was_fast": True},
+        }
+
+        with fake_haptic_server(state_addr, cmd_addr, handlers):
+            with HapticClient(
+                state_addr, cmd_addr,
+                command_timeout_ms=200,
+                heartbeat_interval_s=0.45,  # avoid heartbeat noise during the test
+            ) as client:
+                # cmd1: should time out (server takes 300 ms, timeout is 200 ms)
+                resp1 = client.send_command(
+                    Command(command_id="cmd1", method="slow_cmd", params={})
+                )
+                assert resp1.success is False
+                assert "timed out" in (resp1.error or "")
+
+                # Wait for the stale cmd1 response to land in the DEALER queue
+                slow_handler_started.get(timeout=2.0)  # server started the slow handler
+                time.sleep(0.15)  # enough for the 300 ms handler to finish and respond
+
+                # cmd2: should get the fresh fast_cmd response, not cmd1's stale result
+                resp2 = client.send_command(
+                    Command(command_id="cmd2", method="fast_cmd", params={})
+                )
+
+        assert resp2.success is True
+        assert resp2.result.get("was_fast") is True, (
+            f"Got stale/wrong response: {resp2}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestHeartbeats

@@ -40,9 +40,14 @@ class HapticClient:
 
     Owns a ZMQ SUB socket drained by a background thread (so that
     ``get_latest_state()`` is a cheap lock-protected read, never a blocking
-    recv), a DEALER socket for commands, and a second background thread
-    that sends heartbeats at ``heartbeat_interval_s`` so the server does
-    not revert to NullField + damping.
+    recv), two DEALER sockets (one for user commands, one for the heartbeat
+    thread), and a second background thread that sends heartbeats at
+    ``heartbeat_interval_s`` so the server does not revert to NullField +
+    damping.
+
+    Keeping heartbeat and user command sockets separate ensures heartbeats
+    are never delayed by slow user commands, which would otherwise trip the
+    server's 500 ms watchdog and silently revert the active force field.
 
     Construct, then call ``connect()`` (or use as a context manager) before
     any state/command access. ``close()`` stops the threads and releases
@@ -69,8 +74,11 @@ class HapticClient:
         self._own_context = context is None
         self._context: zmq.Context[Any] = context if context is not None else zmq.Context()
         self._state_sock: zmq.Socket[Any] | None = None
-        self._cmd_sock: zmq.Socket[Any] | None = None
-        self._cmd_lock = threading.Lock()
+        # Two separate DEALER sockets: one for user commands, one for heartbeats.
+        # Keeping them separate avoids lock contention that could starve the heartbeat
+        # thread and trip the server's 500 ms watchdog during slow user commands.
+        self._user_cmd_sock: zmq.Socket[Any] | None = None
+        self._heartbeat_sock: zmq.Socket[Any] | None = None
         self._state_lock = threading.Lock()
         self._latest_state: HapticState | None = None
         self._callback: Callable[[HapticState], None] | None = None
@@ -102,12 +110,19 @@ class HapticClient:
         state_sock.connect(self._state_address)
         self._state_sock = state_sock
 
-        # DEALER socket: shared between heartbeat thread and send_command()
-        cmd_sock: zmq.Socket[Any] = self._context.socket(zmq.DEALER)
-        cmd_sock.setsockopt(zmq.LINGER, 0)
-        cmd_sock.setsockopt(zmq.RCVTIMEO, self._command_timeout_ms)
-        cmd_sock.connect(self._command_address)
-        self._cmd_sock = cmd_sock
+        # User command socket: used exclusively by send_command() (caller thread).
+        user_cmd_sock: zmq.Socket[Any] = self._context.socket(zmq.DEALER)
+        user_cmd_sock.setsockopt(zmq.LINGER, 0)
+        user_cmd_sock.connect(self._command_address)
+        self._user_cmd_sock = user_cmd_sock
+
+        # Heartbeat socket: used exclusively by the heartbeat background thread.
+        # Separate from the user socket so slow/timed-out user commands never
+        # delay heartbeats and trip the server's 500 ms watchdog.
+        heartbeat_sock: zmq.Socket[Any] = self._context.socket(zmq.DEALER)
+        heartbeat_sock.setsockopt(zmq.LINGER, 0)
+        heartbeat_sock.connect(self._command_address)
+        self._heartbeat_sock = heartbeat_sock
 
         self._shutdown.clear()
         self._connected = True
@@ -145,9 +160,13 @@ class HapticClient:
             self._state_sock.close(linger=0)
             self._state_sock = None
 
-        if self._cmd_sock is not None:
-            self._cmd_sock.close(linger=0)
-            self._cmd_sock = None
+        if self._user_cmd_sock is not None:
+            self._user_cmd_sock.close(linger=0)
+            self._user_cmd_sock = None
+
+        if self._heartbeat_sock is not None:
+            self._heartbeat_sock.close(linger=0)
+            self._heartbeat_sock = None
 
         if self._own_context:
             self._context.term()
@@ -181,8 +200,15 @@ class HapticClient:
     def send_command(self, cmd: Command) -> CommandResponse:
         """Send a command and return the server's response.
 
-        Never raises on protocol-level errors (timeout, malformed response).
-        On timeout, returns ``CommandResponse(success=False, ...)``.
+        Never raises on protocol-level errors (timeout, malformed response,
+        socket errors). On timeout, returns ``CommandResponse(success=False,
+        error="... timed out ...")``.
+
+        Before sending, any stale responses queued on the socket from prior
+        timeouts are drained so they cannot be mistaken for this command's
+        reply. The recv loop then validates ``command_id`` on each frame,
+        discarding unmatched ones, until the correct reply arrives or the
+        cumulative timeout expires.
 
         Raises
         ------
@@ -197,32 +223,87 @@ class HapticClient:
             use_bin_type=True,
         )
 
-        with self._cmd_lock:
-            assert self._cmd_sock is not None
-            self._cmd_sock.send_multipart([b"", payload])
+        assert self._user_cmd_sock is not None
+        sock = self._user_cmd_sock
 
+        # Drain any stale responses queued from prior timed-out commands.
+        while True:
             try:
-                frames: list[bytes] = self._cmd_sock.recv_multipart()
+                sock.recv_multipart(flags=zmq.NOBLOCK)
             except zmq.Again:
+                break
+            except zmq.ZMQError as exc:
                 return CommandResponse(
-                    command_id=command_id,
-                    success=False,
-                    result={},
-                    error=f"Command '{cmd.method}' timed out after {self._command_timeout_ms}ms",
+                    command_id=command_id, success=False, result={},
+                    error=f"Socket error draining before '{cmd.method}': {exc}",
                 )
 
         try:
-            unpacked: dict[str, Any] = msgpack.unpackb(frames[1], raw=False)
-            unpacked.pop("__msg_type__", None)
-            return CommandResponse(**unpacked)
-        except Exception as exc:
-            logger.warning("Malformed response to '%s': %s", cmd.method, exc)
+            sock.send_multipart([b"", payload])
+        except zmq.ZMQError as exc:
             return CommandResponse(
-                command_id=command_id,
-                success=False,
-                result={},
-                error=f"Malformed server response: {exc}",
+                command_id=command_id, success=False, result={},
+                error=f"Socket error sending '{cmd.method}': {exc}",
             )
+
+        deadline = time.monotonic() + self._command_timeout_ms / 1000.0
+        while True:
+            remaining_ms = int((deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                return CommandResponse(
+                    command_id=command_id, success=False, result={},
+                    error=f"Command '{cmd.method}' timed out after {self._command_timeout_ms}ms",
+                )
+
+            try:
+                if not sock.poll(remaining_ms, zmq.POLLIN):
+                    return CommandResponse(
+                        command_id=command_id,
+                        success=False,
+                        result={},
+                        error=(
+                            f"Command '{cmd.method}' timed out after"
+                            f" {self._command_timeout_ms}ms"
+                        ),
+                    )
+                frames: list[bytes] = sock.recv_multipart(flags=zmq.NOBLOCK)
+            except zmq.Again:
+                continue
+            except zmq.ZMQError as exc:
+                return CommandResponse(
+                    command_id=command_id, success=False, result={},
+                    error=f"Socket error receiving '{cmd.method}': {exc}",
+                )
+
+            if len(frames) < 2:
+                logger.warning(
+                    "Malformed response to '%s': expected ≥2 frames, got %d",
+                    cmd.method, len(frames),
+                )
+                continue
+
+            try:
+                unpacked: dict[str, Any] = msgpack.unpackb(frames[1], raw=False)
+                unpacked.pop("__msg_type__", None)
+            except Exception as exc:
+                logger.warning("Malformed response to '%s': %s", cmd.method, exc)
+                continue
+
+            if unpacked.get("command_id") != command_id:
+                logger.debug(
+                    "Dropping stale response (got command_id=%r, expected %r)",
+                    unpacked.get("command_id"), command_id,
+                )
+                continue
+
+            try:
+                return CommandResponse(**unpacked)
+            except Exception as exc:
+                logger.warning("Malformed response to '%s': %s", cmd.method, exc)
+                return CommandResponse(
+                    command_id=command_id, success=False, result={},
+                    error=f"Malformed server response: {exc}",
+                )
 
     def subscribe_state(self, callback: Callable[[HapticState], None]) -> None:
         """Register a callback invoked on each new state message.
@@ -277,7 +358,13 @@ class HapticClient:
                     logger.warning("State callback raised: %s", exc)
 
     def _heartbeat_loop(self) -> None:
-        """Send heartbeat commands at ``_heartbeat_interval_s`` until shutdown."""
+        """Send heartbeat commands at ``_heartbeat_interval_s`` until shutdown.
+
+        Uses the dedicated ``_heartbeat_sock`` so it never contends with
+        user calls to ``send_command()``.
+        """
+        assert self._heartbeat_sock is not None
+        sock = self._heartbeat_sock
         _last_warn_time: float = 0.0
         while not self._shutdown.wait(self._heartbeat_interval_s):
             cmd_id = uuid.uuid4().hex[:12]
@@ -286,18 +373,16 @@ class HapticClient:
                 use_bin_type=True,
             )
             try:
-                with self._cmd_lock:
-                    assert self._cmd_sock is not None
-                    self._cmd_sock.send_multipart([b"", payload])
-                    try:
-                        self._cmd_sock.recv_multipart()
-                    except zmq.Again:
-                        now = time.monotonic()
-                        if now - _last_warn_time >= 1.0:
-                            logger.warning(
-                                "Heartbeat timed out — server may have reverted to NullField"
-                            )
-                            _last_warn_time = now
+                sock.send_multipart([b"", payload])
+                if sock.poll(self._command_timeout_ms, zmq.POLLIN):
+                    sock.recv_multipart(flags=zmq.NOBLOCK)
+                else:
+                    now = time.monotonic()
+                    if now - _last_warn_time >= 1.0:
+                        logger.warning(
+                            "Heartbeat timed out — server may have reverted to NullField"
+                        )
+                        _last_warn_time = now
             except zmq.ZMQError:
                 # Socket closed during shutdown — exit quietly
                 break

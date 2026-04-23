@@ -4,18 +4,16 @@ from __future__ import annotations
 
 import multiprocessing
 import time
-import types
 
 import msgpack
 import pytest
 import zmq
 
-from hapticore.core.config import EventCodeMap, SyncConfig, ZMQConfig
+from hapticore.core.config import SyncConfig, ZMQConfig
 from hapticore.core.messages import (
     TOPIC_SESSION,
     TOPIC_SYNC,
     SessionControl,
-    StateTransition,
     serialize,
 )
 from hapticore.core.messaging import EventPublisher, make_ipc_address

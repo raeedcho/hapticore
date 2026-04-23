@@ -44,6 +44,10 @@ class CenterOutTask(BaseTask):
             type=float, default=1.0, unit="s",
             description="Inter-trial interval duration",
         ),
+        "reward_ms": ParamSpec(
+            type=int, default=100, min=1, max=1000, unit="ms",
+            description="Reward solenoid pulse duration",
+        ),
     }
 
     STATES = [
@@ -139,7 +143,7 @@ class CenterOutTask(BaseTask):
 
     def on_enter_success(self, event: Any = None) -> None:
         """Monkey reached and held the target — reward."""
-        self.reward()
+        self.sync.deliver_reward(self.params["reward_ms"])
         self.log_trial(outcome="success")
         self.display.clear()
         self.timer.set("trial_end", self.params["iti_duration"])

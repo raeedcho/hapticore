@@ -40,6 +40,10 @@ class TemplateTask(BaseTask):
             type=float, default=0.015, unit="m",
             description="Acceptance radius for target zone",
         ),
+        "reward_ms": ParamSpec(
+            type=int, default=100, min=1, max=1000, unit="ms",
+            description="Reward solenoid pulse duration",
+        ),
     }
 
     # ---- Declare states ----
@@ -95,7 +99,7 @@ class TemplateTask(BaseTask):
     def on_enter_success(self, event: Any = None) -> None:
         """Called when entering the 'success' state."""
         self.timer.cancel("time_expired")
-        self.reward()
+        self.sync.deliver_reward(self.params["reward_ms"])
         self.log_trial(outcome="success")
         self.timer.set("trial_end", 0.5)
 

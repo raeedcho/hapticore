@@ -45,6 +45,8 @@ class CenterOutTask(BaseTask):
         "hold_time": ParamSpec(type=float, default=0.5, unit="s"),
         "reach_timeout": ParamSpec(type=float, default=2.0, unit="s"),
         "iti_duration": ParamSpec(type=float, default=1.0, unit="s"),
+        "reward_ms": ParamSpec(type=int, default=100, min=1, max=1000, unit="ms",
+                              description="Reward solenoid pulse duration"),
     }
 
     STATES = [
@@ -134,7 +136,7 @@ For each state, you can implement `on_enter_<state>()` and `on_exit_<state>()` m
 
     def on_enter_success(self):
         """Monkey reached and held the target — reward."""
-        self.reward()
+        self.sync.deliver_reward(self.params["reward_ms"])
         self.log_trial(outcome="success")
         self.timer.set("trial_end", self.params["iti_duration"])
 

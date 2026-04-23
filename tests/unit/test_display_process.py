@@ -683,7 +683,6 @@ class TestCreateWindowKwargs:
         mock_monitors.Monitor.return_value = MagicMock()
         sys_modules_patch = {
             "psychopy": MagicMock(),
-            "psychopy.monitors": mock_monitors,
         }
         with unittest.mock.patch.dict("sys.modules", sys_modules_patch):
             proc._create_window(visual)

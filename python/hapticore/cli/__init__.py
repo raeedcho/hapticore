@@ -185,7 +185,8 @@ def _list_screens(args: argparse.Namespace) -> None:
     screens = pyglet.canvas.get_display().get_screens()
     print(f"{'Index':<6} {'Resolution':<15} {'Position':<15}")
     for i, s in enumerate(screens):
-        print(f"{i:<6} {s.width}x{s.height:<10} ({s.x}, {s.y})")
+        res = f"{s.width}x{s.height}"
+        print(f"{i:<6} {res:<15} ({s.x}, {s.y})")
 
 
 def _graph_task(args: argparse.Namespace) -> None:

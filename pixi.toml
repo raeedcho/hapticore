@@ -42,7 +42,6 @@ python-bidi = "*"
 arabic_reshaper = "*"
 freetype-py = "*"
 requests = "*"
-pyserial = "*"
 
 [feature.display.target.osx-arm64.pypi-dependencies]
 pyobjc-framework-Cocoa = "*"

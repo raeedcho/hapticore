@@ -20,6 +20,7 @@ TOPIC_EVENT = b"event"
 TOPIC_DISPLAY = b"display"
 TOPIC_TRIAL = b"trial"
 TOPIC_SESSION = b"session"
+TOPIC_SYNC = b"sync"
 
 
 def _msgpack_default(obj: object) -> Any:
@@ -90,13 +91,14 @@ class CommandResponse:
 
 @dataclasses.dataclass(slots=True)
 class SessionControl:
-    """Request to start/stop recording or sync pulses.
+    """Request to start/stop recording, sync pulses, or camera trigger.
 
-    Published by ``SessionManager`` (Phase 5A.3) and consumed by
-    ``RippleProcess`` / future ``LSLMarkerProcess``. ``action`` is one of
-    ``"start_recording"``, ``"stop_recording"``, ``"start_sync"``,
-    ``"stop_sync"``. ``params`` carries action-specific data such as
-    ``file_name_base`` on ``start_recording``.
+    Published by ``SessionManager`` (future) and consumed by ``SyncProcess``
+    and recording processes. ``action`` is one of ``"start_recording"``,
+    ``"stop_recording"``, ``"start_sync"``, ``"stop_sync"``,
+    ``"start_camera_trigger"``, or ``"stop_camera_trigger"``. ``params``
+    carries action-specific data such as ``file_name_base`` on
+    ``start_recording``.
     """
 
     timestamp: float

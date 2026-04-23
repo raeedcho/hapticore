@@ -104,8 +104,9 @@ class MockNeuralRecording:
 class MockSync:
     """Mock sync interface for Teensy hardware sync.
 
-    Logs every call to ``_call_log`` for test assertions. Tracks the
-    running state of the sync pulse and the camera trigger independently.
+    Logs command and state-changing method calls to ``_call_log`` for test
+    assertions. Tracks the running state of the sync pulse and the camera
+    trigger independently.
     """
 
     def __init__(self) -> None:

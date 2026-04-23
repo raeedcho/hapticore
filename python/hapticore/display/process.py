@@ -228,6 +228,8 @@ class DisplayProcess(multiprocessing.Process):
                 # Mouse returns raw screen coords; PsychoPy's viewScale does not
                 # transform them. If we mirrored the rendered frame, flip the
                 # mouse reading to match so the cursor tracks the subject's hand.
+                # mouse mode is a visual-feedback loop; offset composition is not
+                # load-bearing here because the user adapts to whatever mapping they see
                 if self._display_config.mirror_horizontal:
                     mx_cm = -mx_cm
                 if self._display_config.mirror_vertical:

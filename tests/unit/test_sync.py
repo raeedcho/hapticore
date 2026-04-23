@@ -161,6 +161,31 @@ class TestTeensySerialClient:
         )
         assert not client.is_open()
 
+    def test_write_before_open_raises(self) -> None:
+        fake_module = _FakeSerialModule()
+        client = TeensySerialClient(
+            port="/dev/ttyACM0",
+            baud=115200,
+            serial_module=fake_module,  # type: ignore[arg-type]
+        )
+        with pytest.raises(RuntimeError, match="open()"):
+            client.write(b"S1\n")
+
+    def test_readline_before_open_raises(self) -> None:
+        fake_module = _FakeSerialModule()
+        client = TeensySerialClient(
+            port="/dev/ttyACM0",
+            baud=115200,
+            serial_module=fake_module,  # type: ignore[arg-type]
+        )
+        with pytest.raises(RuntimeError, match="open()"):
+            client.readline()
+
+    def test_double_open_raises(self) -> None:
+        client, _ = self._make_client()
+        with pytest.raises(RuntimeError, match="already open"):
+            client.open()
+
 
 # ---------------------------------------------------------------------------
 # TeensySync shim tests

@@ -45,12 +45,14 @@ class TeensySerialClient:
 
     def open(self) -> None:
         """Open the serial connection."""
+        if self._serial is not None:
+            raise RuntimeError("TeensySerialClient is already open")
         if self._injected_module is not None:
             self._module = self._injected_module
         else:
             import serial as _serial  # noqa: PLC0415 — lazy by design
             self._module = _serial
-        assert self._module is not None
+        assert self._module is not None  # noqa: S101 — unreachable; narrows type
         self._serial = self._module.Serial(
             port=self._port,
             baudrate=self._baud,
@@ -68,11 +70,13 @@ class TeensySerialClient:
 
     def write(self, data: bytes) -> None:
         """Write raw bytes to the serial port."""
-        assert self._serial is not None
+        if self._serial is None:
+            raise RuntimeError("TeensySerialClient.open() must be called before write()")
         self._serial.write(data)
 
     def readline(self) -> bytes:
         """Read a line from the serial port (unused in 5A.4; kept for future)."""
-        assert self._serial is not None
+        if self._serial is None:
+            raise RuntimeError("TeensySerialClient.open() must be called before readline()")
         result: bytes = self._serial.readline()
         return result

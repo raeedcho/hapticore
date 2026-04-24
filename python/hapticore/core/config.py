@@ -40,8 +40,29 @@ class SubjectConfig(BaseModel):
     implant_info: dict[str, Any] = Field(default_factory=dict)
 
 
+class DhdConfig(BaseModel):
+    """Delta.3 haptic client settings.
+
+    Used when ``HapticConfig.kind == 'dhd'``. The client connects to a
+    running C++ haptic server via ZMQ; addresses live in ``ZMQConfig``.
+    These fields tune the client's command and heartbeat behavior.
+    """
+
+    heartbeat_interval_s: float = Field(
+        default=0.2, gt=0.0, lt=0.5,
+        description="Heartbeat period in seconds. Must be strictly less "
+                    "than the server's 500 ms watchdog timeout.",
+    )
+    command_timeout_ms: int = Field(
+        default=1000, gt=0,
+        description="Timeout in milliseconds for a single command round-trip.",
+    )
+
+
 class HapticConfig(BaseModel):
-    """Haptic server configuration."""
+    """Haptic interface configuration."""
+
+    kind: Literal["dhd", "mock", "mouse"] = "mock"
 
     server_address: str = "localhost"
     workspace_bounds: dict[str, list[float]] = Field(
@@ -52,6 +73,14 @@ class HapticConfig(BaseModel):
         default=20.0, gt=0, le=40.0, description="Maximum force in Newtons"
     )
     publish_rate_hz: float = Field(default=200.0, gt=0, le=1000.0)
+
+    dhd: DhdConfig | None = None
+
+    @model_validator(mode="after")
+    def _populate_selected_kind(self) -> Self:
+        if self.kind == "dhd" and self.dhd is None:
+            self.dhd = DhdConfig()
+        return self
 
 
 class DisplayConfig(BaseModel):

@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from hapticore.core.config import (
+    DhdConfig,
     EventCodeMap,
     ExperimentConfig,
     HapticConfig,
@@ -424,3 +425,56 @@ class TestRecordingConfigRipple:
     def test_operator_id_lower_bound(self) -> None:
         with pytest.raises(ValidationError):
             RippleRecordingConfig(operator_id=-1)
+
+
+class TestHapticConfigKinds:
+    def test_default_kind_is_mock(self) -> None:
+        cfg = HapticConfig()
+        assert cfg.kind == "mock"
+
+    def test_default_nested_dhd_block_is_none(self) -> None:
+        cfg = HapticConfig()
+        assert cfg.dhd is None
+
+    def test_dhd_kind_auto_populates_dhd_block(self) -> None:
+        cfg = HapticConfig(kind="dhd")
+        assert cfg.dhd is not None
+        assert cfg.dhd.heartbeat_interval_s == 0.2  # default
+        assert cfg.dhd.command_timeout_ms == 1000   # default
+
+    def test_dhd_kind_with_explicit_dhd_block(self) -> None:
+        cfg = HapticConfig(
+            kind="dhd",
+            dhd=DhdConfig(heartbeat_interval_s=0.1, command_timeout_ms=500),
+        )
+        assert cfg.dhd is not None
+        assert cfg.dhd.heartbeat_interval_s == 0.1
+        assert cfg.dhd.command_timeout_ms == 500
+
+    def test_mock_kind_leaves_dhd_block_none(self) -> None:
+        cfg = HapticConfig(kind="mock")
+        assert cfg.dhd is None
+
+    def test_mouse_kind_leaves_dhd_block_none(self) -> None:
+        cfg = HapticConfig(kind="mouse")
+        assert cfg.dhd is None
+
+    def test_invalid_kind_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            HapticConfig(kind="realdeal")  # type: ignore[arg-type]
+
+    def test_dhd_heartbeat_interval_rejects_watchdog_violation(self) -> None:
+        # lt=0.5 in DhdConfig.heartbeat_interval_s must be enforced.
+        with pytest.raises(ValidationError):
+            DhdConfig(heartbeat_interval_s=0.5)
+        with pytest.raises(ValidationError):
+            DhdConfig(heartbeat_interval_s=0.0)
+
+    def test_config_round_trips_through_model(self) -> None:
+        cfg = HapticConfig(kind="dhd")
+        dumped = cfg.model_dump()
+        restored = HapticConfig.model_validate(dumped)
+        assert restored.kind == "dhd"
+        assert restored.dhd is not None
+        assert restored.dhd.heartbeat_interval_s == 0.2
+

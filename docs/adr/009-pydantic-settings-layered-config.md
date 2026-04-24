@@ -28,7 +28,7 @@ configs/
 
 ## Rationale
 
-- **Eliminates config duplication across animals and tasks.** A rig's hardware settings are defined once in `configs/rig/default.yaml`. Subject identity is defined once per animal. Task parameters are defined once per task. Composing them is a single `load_config()` call.
+- **Eliminates config duplication across animals and tasks.** A rig's hardware settings are defined once in `configs/rig/<rig name>.yaml`. Subject identity is defined once per animal. Task parameters are defined once per task. Composing them is a single `load_config()` call.
 - **Enables per-rig environment variable overrides without editing YAML.** Setting `HAPTICORE_SYNC__TEENSY_PORT=/dev/ttyACM1` on a specific workstation overrides the default port without touching version-controlled files.
 - **Provides CLI overrides for one-off sessions.** A quick parameter tweak (e.g., shorter hold time for training) does not require creating a new YAML file.
 - **pydantic-settings is already a declared dependency** (`pydantic-settings>=2.0` in `pyproject.toml`) and was not previously used.

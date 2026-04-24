@@ -7,6 +7,8 @@ import importlib
 import subprocess
 import sys
 
+from hapticore.hardware.mock import MockDisplay
+
 
 def _run(args: argparse.Namespace) -> None:
     """Run a task against the hardware specified in the rig config."""
@@ -23,6 +25,7 @@ def _run(args: argparse.Namespace) -> None:
     from hapticore.hardware.mock import MockDisplay, MockSync
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
+    from hapticore.display.display_client import DisplayClient
 
     # --rig, --subject, --task are effectively required for `run`. Keep the
     # manual check so we can give a helpful error, rather than relying on
@@ -116,10 +119,9 @@ def _run(args: argparse.Namespace) -> None:
     publisher = EventPublisher(ctx, session_zmq.event_pub_address)
 
     # Display interface: flag-driven for now (until DisplayConfig.kind lands).
-    display: MockDisplay
+    display: MockDisplay | DisplayClient
     if args.display:
-        from hapticore.display.display_client import DisplayClient
-        display = DisplayClient(publisher)  # type: ignore[assignment]
+        display = DisplayClient(publisher)
     else:
         display = MockDisplay()
 
@@ -162,6 +164,13 @@ def _run(args: argparse.Namespace) -> None:
             display_proc.join(timeout=5.0)
             if display_proc.is_alive():
                 display_proc.terminate()
+                display_proc.join(timeout=2.0)
+                if display_proc.is_alive():
+                    print(
+                        "Warning: DisplayProcess still alive after terminate(); "
+                        "it may leave a zombie process.",
+                        file=sys.stderr,
+                    )
         publisher.close()
         ctx.term()
 

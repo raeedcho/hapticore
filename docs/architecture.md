@@ -291,7 +291,6 @@ A single flat YAML still works for simple setups: `load_config("configs/my_exper
 **CLI usage**:
 
 ```bash
-# CLI usage
 hapticore run \
     --rig configs/rig/rig2.yaml \
     --subject configs/subject/example_subject.yaml \

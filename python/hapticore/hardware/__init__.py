@@ -53,9 +53,9 @@ def make_haptic_interface(
         if mouse_queue is None:
             raise ValueError(
                 "HapticConfig.kind='mouse' requires mouse_queue to be passed "
-                "to make_haptic_interface(). The same queue must be passed to "
-                "the display process so mouse position flows from display to "
-                "haptic interface."
+                "to make_haptic_interface(). Pass the same queue to "
+                "DisplayProcess(mouse_queue=...) so mouse position flows from "
+                "the display process to the haptic interface."
             )
         from hapticore.hardware.mouse_haptic import MouseHapticInterface
         return MouseHapticInterface(mouse_queue=mouse_queue)

@@ -1,0 +1,37 @@
+# CI / automated test rig — all mock interfaces, no hardware.
+# Use when running tasks in automated test environments or as an
+# in-process smoke test. Safe to run anywhere.
+
+haptic:
+  kind: mock
+  workspace_bounds:
+    x: [-0.15, 0.15]
+    y: [-0.15, 0.15]
+    z: [-0.15, 0.15]
+  force_limit_n: 20.0
+  publish_rate_hz: 200.0
+
+display:
+  resolution: [800, 600]
+  refresh_rate_hz: 60
+  fullscreen: false
+  monitor_distance_cm: 50.0
+  background_color: [0.0, 0.0, 0.0]
+  photodiode_enabled: false
+
+recording:
+  save_dir: "data"
+  lsl_enabled: false
+
+sync:
+  transport: "mock"
+  sync_pulse_rate_hz: 1.0
+  code_map:
+    state_codes: {}
+    event_codes: {}
+
+zmq:
+  event_pub_address: "ipc:///tmp/hapticore_ci_events"
+  haptic_state_address: "ipc:///tmp/hapticore_ci_haptic_state"
+  haptic_command_address: "ipc:///tmp/hapticore_ci_haptic_cmd"
+  transport: "ipc"

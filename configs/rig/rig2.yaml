@@ -1,14 +1,21 @@
-# Default rig configuration
-# Contains hardware-specific settings: haptic workspace, display, ZMQ addresses, sync
+# Rig 2 — real delta.3 haptic rig with two monitors
+# This config drives sessions against the actual hardware. Do not use on
+# a laptop; it assumes the C++ haptic server is running.
 
 haptic:
-  server_address: "localhost"
+  kind: dhd  # HapticClient connects to the C++ haptic server over ZMQ
+  # Physical rig parameters (currently for human reference; Python code
+  # does not yet flow these into the C++ server — tracked separately).
   workspace_bounds:
     x: [-0.15, 0.15]
     y: [-0.15, 0.15]
     z: [-0.15, 0.15]
   force_limit_n: 20.0
   publish_rate_hz: 200.0
+  # Optional: tune heartbeat/timeout; defaults are fine for local IPC.
+  # dhd:
+  #   heartbeat_interval_s: 0.2
+  #   command_timeout_ms: 1000
 
 display:
   resolution: [1920, 1080]

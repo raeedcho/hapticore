@@ -156,7 +156,7 @@ All processes communicate via ZeroMQ with msgpack serialization. See ADR-001 for
 
 ### Task controller
 
-The `TaskController` process is the experiment orchestrator. It creates a `transitions.Machine` from the task's declared STATES and TRANSITIONS, wires `on_enter_<state>`/`on_exit_<state>` callbacks, and runs a main loop that polls ZeroMQ for haptic state and dispatches state machine triggers. Every state transition publishes an event on the bus and sends an event code through the SyncProcess. The production haptic interface is `HapticClient` (from `hapticore/hardware/haptic_client.py`), which wraps the ZMQ client side of the haptic server protocol. `MockHapticInterface` is used for simulation and CI; both satisfy the `HapticInterface` Protocol.
+The `TaskController` process is the experiment orchestrator. It creates a `transitions.Machine` from the task's declared STATES and TRANSITIONS, wires `on_enter_<state>`/`on_exit_<state>` callbacks, and runs a main loop that polls ZeroMQ for haptic state and dispatches state machine triggers. Every state transition publishes an event on the bus and sends an event code through the SyncProcess. The production path selects between `HapticClient` (real delta.3), `MockHapticInterface` (CI/simulation), and `MouseHapticInterface` (laptop development) via the `kind` field of `HapticConfig`, using the `make_haptic_interface()` factory in `hapticore.hardware`. Both `HapticClient` and all mock interfaces satisfy the `HapticInterface` Protocol.
 
 ### Display process
 

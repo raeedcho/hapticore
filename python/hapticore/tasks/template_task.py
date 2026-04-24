@@ -82,7 +82,7 @@ class TemplateTask(BaseTask):
         # self.haptic.send_command(Command(
         #     command_id=self.new_command_id(),
         #     method="set_force_field",
-        #     params={"type": "spring_damper", "center": [0, 0, 0], "stiffness": 200},
+        #     params={"type": "spring_damper", "params": {"center": [0, 0, 0], "stiffness": 200}},
         # ))
 
         # Example: show a target

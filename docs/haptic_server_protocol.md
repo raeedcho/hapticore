@@ -1,6 +1,6 @@
 # Haptic Server Protocol
 
-This document defines the ZeroMQ + msgpack interface contract between the C++ haptic server and Python clients. Both sides must conform to this spec. The Python `HapticInterface` mock (in `python/hapticore/hardware/mock.py`) must faithfully implement this contract for offline testing.
+This document defines the ZeroMQ + msgpack interface contract between the C++ haptic server and Python clients. Both sides must conform to this spec. The Python `HapticInterface` contract is satisfied by `MockHapticInterface` (in-process mock, `python/hapticore/hardware/mock.py`) and `HapticClient` (ZMQ client for a running server, `python/hapticore/hardware/haptic_client.py`). Both must conform to this spec.
 
 ## Transport
 

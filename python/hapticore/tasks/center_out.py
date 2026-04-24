@@ -101,9 +101,11 @@ class CenterOutTask(BaseTask):
             method="set_force_field",
             params={
                 "type": "spring_damper",
-                "center": [0.0, 0.0, 0.0],
-                "stiffness": 200.0,
-                "damping": 5.0,
+                "params": {
+                    "center": [0.0, 0.0, 0.0],
+                    "stiffness": 200.0,
+                    "damping": 5.0,
+                },
             },
         ))
         self.display.show_stimulus("center_target", {
@@ -123,7 +125,7 @@ class CenterOutTask(BaseTask):
         self.haptic.send_command(Command(
             command_id=self.new_command_id(),
             method="set_force_field",
-            params={"type": "null"},
+            params={"type": "null", "params": {}},
         ))
         target_pos = self.current_condition["target_position"]
         self.display.show_stimulus("peripheral_target", {

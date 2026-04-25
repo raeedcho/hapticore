@@ -214,3 +214,4 @@ Before proposing alternatives to a settled decision, check `docs/adr/` for conte
 - `012`: Separate repository for video capture of behavior
 - `013`: Teensy 4.1 as centralized sync hub (supersedes xipppy-DIO sync plan)
 - `014`: 8-bit parallel event codes via the Scout D-sub port
+- `015`: Config-driven backend selection via factory functions

@@ -118,7 +118,7 @@ def _run(args: argparse.Namespace) -> None:
     # Event publisher.
     publisher = EventPublisher(ctx, session_zmq.event_pub_address)
 
-    # Display interface: flag-driven for now (until DisplayConfig.kind lands).
+    # Display interface: flag-driven for now (until DisplayConfig.backend lands).
     display: DisplayClient | MockDisplay = (
         DisplayClient(publisher) if args.display else MockDisplay()
     )

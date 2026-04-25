@@ -1,0 +1,38 @@
+# Laptop development — mouse-driven haptic, real PsychoPy display.
+# Run with: hapticore run --rig configs/rig/dev-mouse.yaml \
+#                         --subject ... --task ... --display
+
+haptic:
+  kind: mouse
+  workspace_bounds:
+    x: [-0.15, 0.15]
+    y: [-0.15, 0.15]
+    z: [-0.15, 0.15]
+  force_limit_n: 20.0
+  publish_rate_hz: 200.0
+
+display:
+  resolution: [1280, 800]
+  refresh_rate_hz: 60
+  fullscreen: false
+  monitor_distance_cm: 50.0
+  background_color: [0.0, 0.0, 0.0]
+  photodiode_enabled: false
+  mirror_horizontal: false
+
+recording:
+  save_dir: "data"
+  lsl_enabled: false
+
+sync:
+  transport: "mock"
+  sync_pulse_rate_hz: 1.0
+  code_map:
+    state_codes: {}
+    event_codes: {}
+
+zmq:
+  event_pub_address: "ipc:///tmp/hapticore_dev_events"
+  haptic_state_address: "ipc:///tmp/hapticore_dev_haptic_state"
+  haptic_command_address: "ipc:///tmp/hapticore_dev_haptic_cmd"
+  transport: "ipc"

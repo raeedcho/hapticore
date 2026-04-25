@@ -7,50 +7,49 @@ import importlib
 import subprocess
 import sys
 
+from hapticore.hardware.mock import MockDisplay
 
-def _simulate(args: argparse.Namespace) -> None:
-    """Run a task in simulation mode with mock hardware."""
+
+def _run(args: argparse.Namespace) -> None:
+    """Run a task against the hardware specified in the rig config."""
+    import contextlib
     import multiprocessing
     import multiprocessing.queues
     import time
 
     import zmq
 
-    from hapticore.core.config import load_config, load_session_config
+    from hapticore.core.config import ZMQConfig, load_session_config
     from hapticore.core.messaging import EventPublisher, make_ipc_address
-    from hapticore.hardware.mock import MockDisplay, MockHapticInterface, MockSync
+    from hapticore.display.display_client import DisplayClient
+    from hapticore.hardware import HapticClient, make_haptic_interface
+    from hapticore.hardware.mock import MockDisplay, MockSync
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
 
-    # Build overrides dict
-    session_overrides: dict[str, object] = {}
-    if args.experiment_name:
-        session_overrides["experiment_name"] = args.experiment_name
-
-    if args.config:
-        # Backward-compatible single flat file mode
-        config = load_config(
-            args.config,
-            overrides=session_overrides or None,
-        )
-    elif args.rig and args.subject and args.task:
-        # Layered mode with required rig/subject/task arguments
-        config = load_session_config(
-            rig=args.rig,
-            subject=args.subject,
-            task=args.task,
-            extra=args.extra_config or [],
-            overrides=session_overrides or None,
-        )
-    else:
+    # --rig, --subject, --task are effectively required for `run`. Keep the
+    # manual check so we can give a helpful error, rather than relying on
+    # argparse's `required=True` which produces a less friendly message.
+    if not (args.rig and args.subject and args.task):
         print(
-            "Error: provide either --config for a flat YAML file, or "
-            "all three of --rig, --subject, and --task for layered configs.",
+            "Error: hapticore run requires --rig, --subject, and --task. "
+            "For single-file configs, call load_config() directly in Python "
+            "scripts (not supported on the CLI).",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    # Import the task class
+    session_overrides: dict[str, object] = {}
+    if args.experiment_name:
+        session_overrides["experiment_name"] = args.experiment_name
+
+    config = load_session_config(
+        rig=args.rig, subject=args.subject, task=args.task,
+        extra=args.extra_config or [],
+        overrides=session_overrides or None,
+    )
+
+    # Import the task class (unchanged logic).
     task_class_path = config.task.task_class
     if "." not in task_class_path:
         print(
@@ -65,63 +64,67 @@ def _simulate(args: argparse.Namespace) -> None:
     task_cls = getattr(module, class_name)
     task = task_cls()
 
-    # Create hardware for simulation
+    # Validate kind+display compatibility before launching anything.
+    if config.haptic.kind == "mouse" and not args.display:
+        print(
+            "Error: haptic.kind='mouse' requires --display (mouse position "
+            "comes from the PsychoPy window).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Session-specific ZMQConfig with random IPC addresses so parallel
+    # sessions don't collide, and so EventPublisher and DisplayProcess share
+    # the same addresses.
+    session_zmq = ZMQConfig(
+        event_pub_address=make_ipc_address("hc_evt"),
+        haptic_state_address=make_ipc_address("hc_state"),
+        haptic_command_address=make_ipc_address("hc_cmd"),
+        display_event_address=make_ipc_address("hc_disp"),
+    )
+    # For kind="dhd", override haptic addresses from the user-provided ZMQConfig
+    # so the client finds the server the user launched separately.
+    if config.haptic.kind == "dhd":
+        session_zmq = session_zmq.model_copy(update={
+            "haptic_state_address": config.zmq.haptic_state_address,
+            "haptic_command_address": config.zmq.haptic_command_address,
+        })
+
+    # Mouse queue for kind="mouse". None otherwise.
     mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None
-    if args.input == "mouse":
-        if not args.display:
-            print(
-                "Error: --input mouse requires --display (mouse position "
-                "comes from the PsychoPy window)",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
+    if config.haptic.kind == "mouse":
         from multiprocessing import Queue as MpQueue
-
-        from hapticore.hardware.mouse_haptic import MouseHapticInterface
-
-        # Buffer a few frames of mouse positions (~4 frames at 60 Hz).
-        # Consumer drains the queue and keeps only the latest value.
         mouse_queue = MpQueue(maxsize=4)
-        haptic = MouseHapticInterface(mouse_queue=mouse_queue)
-    else:
-        haptic = MockHapticInterface()
-    sync = MockSync()
 
+    # Start display process if requested.
     display_proc = None
     if args.display:
-        # Build a session-specific ZMQConfig with random IPC addresses so
-        # that parallel sessions don't collide and, critically, so the
-        # EventPublisher and DisplayProcess share the *same* addresses.
-        from hapticore.core.config import ZMQConfig
-        from hapticore.display.display_client import DisplayClient
         from hapticore.display.process import DisplayProcess
-
-        session_zmq = ZMQConfig(
-            event_pub_address=make_ipc_address("sim_evt"),
-            haptic_state_address=make_ipc_address("sim_state"),
-            display_event_address=make_ipc_address("sim_disp"),
-        )
         display_proc = DisplayProcess(
             config.display, session_zmq, headless=False, mouse_queue=mouse_queue,
         )
         display_proc.start()
         time.sleep(1.5)  # let PsychoPy create the window (~1s on macOS)
 
-    # Create event publisher — use the session ZMQ config so commands
-    # reach the DisplayProcess subscriber (when --display is active).
+    # ZMQ context shared between event publisher and HapticClient (for kind=dhd).
     ctx = zmq.Context()
-    address = (
-        session_zmq.event_pub_address if args.display else make_ipc_address("sim")
+
+    # Construct haptic interface via factory.
+    haptic = make_haptic_interface(
+        config.haptic, session_zmq,
+        context=ctx, mouse_queue=mouse_queue,
     )
-    publisher = EventPublisher(ctx, address)
 
-    if args.display:
-        display: MockDisplay | DisplayClient = DisplayClient(publisher)
-    else:
-        display = MockDisplay()
+    # Event publisher.
+    publisher = EventPublisher(ctx, session_zmq.event_pub_address)
 
-    # Create trial manager
+    # Display interface: flag-driven for now (until DisplayConfig.kind lands).
+    display: DisplayClient | MockDisplay = (
+        DisplayClient(publisher) if args.display else MockDisplay()
+    )
+
+    sync = MockSync()  # until Phase 5C wires SyncConfig.transport properly.
+
     trial_manager = TrialManager(
         conditions=config.task.conditions,
         block_size=config.task.block_size,
@@ -129,8 +132,7 @@ def _simulate(args: argparse.Namespace) -> None:
         randomization=config.task.randomization,
     )
 
-    # Create and run controller
-    # In --fast mode, override all timing parameters to 1ms for quick smoke-testing
+    # --fast: override timing parameters to 1ms for smoke testing.
     param_overrides = dict(config.task.params) if config.task.params else {}
     if args.fast:
         for name, spec in task.PARAMS.items():
@@ -138,19 +140,21 @@ def _simulate(args: argparse.Namespace) -> None:
                 param_overrides[name] = 0.001
 
     controller = TaskController(
-        task=task,
-        haptic=haptic,
-        display=display,
-        sync=sync,
-        event_publisher=publisher,
-        trial_manager=trial_manager,
+        task=task, haptic=haptic, display=display, sync=sync,
+        event_publisher=publisher, trial_manager=trial_manager,
         params=param_overrides or None,
-        poll_rate_hz=1000.0,  # fast for simulation
+        poll_rate_hz=1000.0,
     )
 
+    # Use contextlib.nullcontext() to manage kind-dependent lifecycle.
+    # HapticClient needs connect()/close() via __enter__/__exit__; mocks need neither.
+    haptic_cm: contextlib.AbstractContextManager[object] = (
+        haptic if isinstance(haptic, HapticClient) else contextlib.nullcontext()
+    )
     try:
-        controller.setup()
-        controller.run()
+        with haptic_cm:
+            controller.setup()
+            controller.run()
     finally:
         controller.teardown()
         if display_proc is not None:
@@ -158,10 +162,16 @@ def _simulate(args: argparse.Namespace) -> None:
             display_proc.join(timeout=5.0)
             if display_proc.is_alive():
                 display_proc.terminate()
+                display_proc.join(timeout=2.0)
+                if display_proc.is_alive():
+                    print(
+                        "Warning: DisplayProcess still alive after terminate(); "
+                        "it may leave a zombie process.",
+                        file=sys.stderr,
+                    )
         publisher.close()
         ctx.term()
 
-    # Print summary
     summary = trial_manager.get_summary()
     print("\n=== Session Summary ===")
     print(f"Total trials: {summary['total_trials']}")
@@ -247,53 +257,40 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # simulate subcommand
-    sim_parser = subparsers.add_parser(
-        "simulate",
-        help="Run a task with mock hardware",
+    # run subcommand
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run a task against the hardware specified in the rig config",
     )
-    sim_parser.add_argument(
+    run_parser.add_argument(
         "--experiment-name",
         help="Name for this experiment session (overrides YAML value)",
     )
-    # Layered config mode (preferred)
-    sim_parser.add_argument(
+    run_parser.add_argument(
         "--rig",
         help="Path to rig config YAML (haptic, display, sync, ZMQ settings)",
     )
-    sim_parser.add_argument(
+    run_parser.add_argument(
         "--subject",
         help="Path to subject config YAML (subject_id, species, implant_info)",
     )
-    sim_parser.add_argument(
+    run_parser.add_argument(
         "--task",
         help="Path to task config YAML (task_class, params, conditions)",
     )
-    sim_parser.add_argument(
+    run_parser.add_argument(
         "--extra-config", nargs="*", default=[],
-        help="Additional YAML files merged on top (e.g., overrides)",
+        help="Additional YAML files merged on top (later files win)",
     )
-    # Backward-compatible flat config mode
-    sim_parser.add_argument(
-        "--config",
-        help="Path to a single flat experiment config YAML (skips layer validation)",
-    )
-    sim_parser.add_argument(
+    run_parser.add_argument(
         "--fast", action="store_true",
         help="Override all timing parameters to 1ms for quick smoke-testing",
     )
-    sim_parser.add_argument(
+    run_parser.add_argument(
         "--display", action="store_true",
-        help="Launch a real PsychoPy display process (requires display environment)",
+        help="Launch a real PsychoPy display process (requires display pixi env)",
     )
-    sim_parser.add_argument(
-        "--input",
-        choices=["mock", "mouse"],
-        default="mock",
-        help="Position source for simulation. 'mock' = stationary origin, "
-             "'mouse' = live mouse cursor (requires --display)",
-    )
-    sim_parser.set_defaults(func=_simulate)
+    run_parser.set_defaults(func=_run)
 
     # graph-task subcommand
     graph_parser = subparsers.add_parser(

@@ -150,7 +150,7 @@ GND    → Common ground shared with all connected devices
 
 ## Multi-monitor and mirror setup
 
-The rig uses two monitors: one that the subject views through a canted mirror, and one in the control room for the experimenter. The display process renders to one monitor at a time. Use the following fields in `configs/rig/default.yaml` (under `display:`) to configure which monitor is used and whether the image should be mirrored.
+Rig 2 uses two monitors: one that the subject views through a canted mirror, and one in the control room for the experimenter. The display process renders to one monitor at a time. Use the following fields in `configs/rig/rig2.yaml` (under `display:`) to configure which monitor is used and whether the image should be mirrored.
 
 ### Identifying monitor indices
 

@@ -2,7 +2,7 @@
 # Minimal top-level file — compose with rig and subject layers:
 #
 #   config = load_config(
-#       "configs/rig/default.yaml",
+#       "configs/rig/rig2.yaml",
 #       "configs/subject/example_subject.yaml",
 #       "configs/task/center_out.yaml",
 #       "configs/example_experiment.yaml",

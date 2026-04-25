@@ -18,7 +18,7 @@ Edit both files following the instructions below. At run time, compose the task 
 
 ```python
 config = load_config(
-    "configs/rig/default.yaml",
+    "configs/rig/rig2.yaml",
     "configs/subject/monkey_a.yaml",
     "configs/task/my_task.yaml",
     overrides={"experiment_name": "my_first_experiment"},
@@ -215,7 +215,7 @@ Compose them at load time with `load_config()`:
 from hapticore.core.config import load_config
 
 config = load_config(
-    "configs/rig/default.yaml",       # rig hardware settings
+    "configs/rig/rig2.yaml",          # rig hardware settings
     "configs/subject/monkey_a.yaml",  # subject identity
     "configs/task/center_out.yaml",   # task params + conditions
 )
@@ -412,20 +412,14 @@ Use **PhysicsField** when the task involves:
 
 ## Step 5: Test without hardware
 
-Run your task in simulation mode using layered configs:
+Run your task using the CI rig config (mock interfaces, no hardware required):
 
 ```bash
-hapticore simulate \
-    --rig configs/rig/default.yaml \
+hapticore run \
+    --rig configs/rig/ci.yaml \
     --subject configs/subject/example_subject.yaml \
     --task configs/task/my_task.yaml \
     --experiment-name "my_task_test"
-```
-
-Or use a single flat config file:
-
-```bash
-hapticore simulate --config configs/example_config.yaml
 ```
 
 This launches all processes with mock hardware:

@@ -250,7 +250,9 @@ The configuration system uses `pydantic-settings` for layered composition from m
 ```
 configs/
 ├── rig/
-│   └── default.yaml          # haptic workspace, display, ZMQ, sync
+│   ├── rig2.yaml          # real Rig 2 hardware (delta.3, two monitors)
+│   ├── ci.yaml            # mock-everything for automated testing
+│   └── dev-mouse.yaml     # mouse-driven haptic for laptop development
 ├── subject/
 │   └── example_subject.yaml  # subject_id, species, implant_info
 ├── task/
@@ -264,7 +266,7 @@ Each layer file contains only the keys it owns. Deep merge combines them.
 
 ```python
 config = load_session_config(
-    rig="configs/rig/default.yaml",
+    rig="configs/rig/rig2.yaml",
     subject="configs/subject/example_subject.yaml",
     task="configs/task/center_out.yaml",
     overrides={"experiment_name": "center_out_2026_03_25"},
@@ -277,7 +279,7 @@ config = load_session_config(
 
 ```python
 config = load_config(
-    "configs/rig/default.yaml",
+    "configs/rig/rig2.yaml",
     "configs/subject/example_subject.yaml",
     "configs/task/center_out.yaml",
     "configs/example_experiment.yaml",
@@ -289,15 +291,11 @@ A single flat YAML still works for simple setups: `load_config("configs/my_exper
 **CLI usage**:
 
 ```bash
-# Layered mode (preferred)
-hapticore simulate \
-    --rig configs/rig/default.yaml \
+hapticore run \
+    --rig configs/rig/rig2.yaml \
     --subject configs/subject/example_subject.yaml \
     --task configs/task/center_out.yaml \
     --experiment-name "my_session_2026_03_25"
-
-# Flat file mode (backward compatible)
-hapticore simulate --config configs/example_config.yaml
 ```
 
 See ADR-009 for the rationale behind this design.

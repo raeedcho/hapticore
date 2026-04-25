@@ -55,66 +55,64 @@ class TestCLIGraphTask:
             os.unlink(output_path)
 
 
-class TestCLISimulate:
-    """Integration tests for the CLI simulate command."""
+class TestCLIRun:
+    """Integration tests for the CLI run command."""
 
-    def test_fast_simulation_completes_quickly(self) -> None:
-        """End-to-end: _simulate with --fast and --config finishes in seconds."""
-        from hapticore.cli import _simulate
-
-        config_path = Path(__file__).parents[2] / "configs" / "example_flat_config.yaml"
-        args = Namespace(
-            config=str(config_path),
-            rig=None, subject=None, task=None, extra_config=[],
-            experiment_name=None, fast=True, display=False, input="mock",
-        )
-
-        start = time.monotonic()
-        _simulate(args)
-        elapsed = time.monotonic() - start
-
-        assert elapsed < 10.0, (
-            f"Fast simulation took {elapsed:.1f}s — timing overrides "
-            f"are probably not being applied"
-        )
-
-    def test_fast_simulation_layered_mode(self) -> None:
-        """End-to-end: _simulate with --rig/--subject/--task layered configs."""
-        from hapticore.cli import _simulate
+    def test_fast_run_completes_quickly(self) -> None:
+        """End-to-end: _run with --fast finishes in seconds via the factory path."""
+        from hapticore.cli import _run
 
         configs = Path(__file__).parents[2] / "configs"
         args = Namespace(
-            config=None,
-            rig=str(configs / "rig" / "default.yaml"),
+            rig=str(configs / "rig" / "ci.yaml"),
             subject=str(configs / "subject" / "example_subject.yaml"),
             task=str(configs / "task" / "center_out.yaml"),
             extra_config=[str(configs / "example_experiment.yaml")],
-            experiment_name=None, fast=True, display=False, input="mock",
+            experiment_name=None, fast=True, display=False,
         )
 
         start = time.monotonic()
-        _simulate(args)
+        _run(args)
         elapsed = time.monotonic() - start
 
         assert elapsed < 10.0, (
-            f"Fast simulation took {elapsed:.1f}s — timing overrides "
+            f"Fast run took {elapsed:.1f}s — timing overrides "
             f"are probably not being applied"
         )
 
-    def test_simulate_mouse_without_display_fails(
+    def test_run_mouse_kind_without_display_fails(
         self, capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--input mouse requires --display; running without it must exit(1)."""
-        from hapticore.cli import _simulate
+        """haptic.kind='mouse' requires --display; running without it must exit(1)."""
+        from hapticore.cli import _run
 
-        config_path = Path(__file__).parents[2] / "configs" / "example_flat_config.yaml"
+        configs = Path(__file__).parents[2] / "configs"
         args = Namespace(
-            config=str(config_path),
-            rig=None, subject=None, task=None, extra_config=[],
-            experiment_name=None, fast=False, display=False, input="mouse",
+            rig=str(configs / "rig" / "dev-mouse.yaml"),
+            subject=str(configs / "subject" / "example_subject.yaml"),
+            task=str(configs / "task" / "center_out.yaml"),
+            extra_config=[str(configs / "example_experiment.yaml")],
+            experiment_name=None, fast=False, display=False,
         )
         with pytest.raises(SystemExit) as exc_info:
-            _simulate(args)
+            _run(args)
         assert exc_info.value.code == 1
         assert "requires --display" in capsys.readouterr().err
+
+    def test_run_without_rig_layers_fails(
+        self, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Running without --rig/--subject/--task must exit(1) with a helpful message."""
+        from hapticore.cli import _run
+
+        args = Namespace(
+            rig=None, subject=None, task=None, extra_config=[],
+            experiment_name=None, fast=False, display=False,
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            _run(args)
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "--rig" in err
+        assert "load_config" in err  # points to the Python-side escape hatch
 

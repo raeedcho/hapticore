@@ -21,11 +21,11 @@ def _run(args: argparse.Namespace) -> None:
 
     from hapticore.core.config import ZMQConfig, load_session_config
     from hapticore.core.messaging import EventPublisher, make_ipc_address
+    from hapticore.display.display_client import DisplayClient
     from hapticore.hardware import HapticClient, make_haptic_interface
     from hapticore.hardware.mock import MockDisplay, MockSync
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
-    from hapticore.display.display_client import DisplayClient
 
     # --rig, --subject, --task are effectively required for `run`. Keep the
     # manual check so we can give a helpful error, rather than relying on
@@ -119,11 +119,9 @@ def _run(args: argparse.Namespace) -> None:
     publisher = EventPublisher(ctx, session_zmq.event_pub_address)
 
     # Display interface: flag-driven for now (until DisplayConfig.kind lands).
-    display: MockDisplay | DisplayClient
-    if args.display:
-        display = DisplayClient(publisher)
-    else:
-        display = MockDisplay()
+    display: DisplayClient | MockDisplay = (
+        DisplayClient(publisher) if args.display else MockDisplay()
+    )
 
     sync = MockSync()  # until Phase 5C wires SyncConfig.transport properly.
 

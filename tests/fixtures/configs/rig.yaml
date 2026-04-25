@@ -14,7 +14,7 @@ display:
   monitor_distance_cm: 45.0
 
 sync:
-  transport: "mock"
+  backend: "mock"
   sync_pulse_rate_hz: 1.0
 
 zmq:

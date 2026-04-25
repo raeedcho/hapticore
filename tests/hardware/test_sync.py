@@ -24,7 +24,7 @@ def test_sync_process_starts_with_real_serial() -> None:
     from hapticore.core.messaging import make_ipc_address
     from hapticore.sync.sync_process import SyncProcess
 
-    sync_cfg = SyncConfig(transport="teensy")
+    sync_cfg = SyncConfig(backend="teensy")
     zmq_cfg = ZMQConfig(event_pub_address=make_ipc_address("hw_sync"))
 
     proc = SyncProcess(sync_cfg, zmq_cfg)

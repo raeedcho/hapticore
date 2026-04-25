@@ -3,7 +3,7 @@
 # in-process smoke test. Safe to run anywhere.
 
 haptic:
-  kind: mock
+  backend: mock
   workspace_bounds:
     x: [-0.15, 0.15]
     y: [-0.15, 0.15]
@@ -24,7 +24,7 @@ recording:
   lsl_enabled: false
 
 sync:
-  transport: "mock"
+  backend: "mock"
   sync_pulse_rate_hz: 1.0
   code_map:
     state_codes: {}

@@ -448,7 +448,7 @@ class TestSyncProcessHandlers:
         from hapticore.core.config import SyncConfig, ZMQConfig
         from hapticore.sync.sync_process import SyncProcess
 
-        sync_cfg = SyncConfig(transport="teensy")
+        sync_cfg = SyncConfig(backend="teensy")
         zmq_cfg = ZMQConfig()
         return SyncProcess(sync_cfg, zmq_cfg)
 
@@ -502,7 +502,7 @@ class TestSyncProcessHandlers:
         from hapticore.sync.sync_process import SyncProcess
 
         code_map = EventCodeMap(state_codes={"reach": 10, "hold": 20})
-        sync_cfg = SyncConfig(transport="teensy", code_map=code_map)
+        sync_cfg = SyncConfig(backend="teensy", code_map=code_map)
         zmq_cfg = ZMQConfig()
         proc = SyncProcess(sync_cfg, zmq_cfg)
         client, proto = self._make_client_and_protocol()
@@ -520,7 +520,7 @@ class TestSyncProcessHandlers:
         from hapticore.sync.sync_process import SyncProcess
 
         code_map = EventCodeMap(state_codes={"reach": 10})
-        sync_cfg = SyncConfig(transport="teensy", code_map=code_map)
+        sync_cfg = SyncConfig(backend="teensy", code_map=code_map)
         zmq_cfg = ZMQConfig()
         proc = SyncProcess(sync_cfg, zmq_cfg)
         client, proto = self._make_client_and_protocol()
@@ -617,16 +617,16 @@ class TestSyncProcessConstruction:
         from hapticore.core.config import SyncConfig, ZMQConfig
         from hapticore.sync.sync_process import SyncProcess
 
-        sync_cfg = SyncConfig(transport="mock")
+        sync_cfg = SyncConfig(backend="mock")
         zmq_cfg = ZMQConfig()
-        with pytest.raises(ValueError, match="transport='teensy'"):
+        with pytest.raises(ValueError, match="backend='teensy'"):
             SyncProcess(sync_cfg, zmq_cfg)
 
     def test_request_shutdown_sets_event(self) -> None:
         from hapticore.core.config import SyncConfig, ZMQConfig
         from hapticore.sync.sync_process import SyncProcess
 
-        sync_cfg = SyncConfig(transport="teensy")
+        sync_cfg = SyncConfig(backend="teensy")
         zmq_cfg = ZMQConfig()
         proc = SyncProcess(sync_cfg, zmq_cfg)
         assert not proc._shutdown.is_set()

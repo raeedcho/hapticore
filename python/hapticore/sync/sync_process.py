@@ -52,15 +52,15 @@ class SyncProcess(multiprocessing.Process):
         serial_module: ModuleType | None = None,
     ) -> None:
         super().__init__(name="SyncProcess", daemon=True)
-        if sync_config.transport != "teensy":
+        if sync_config.backend != "teensy":
             raise ValueError(
-                f"SyncProcess requires sync_config.transport='teensy', "
-                f"got {sync_config.transport!r}"
+                f"SyncProcess requires sync_config.backend='teensy', "
+                f"got {sync_config.backend!r}"
             )
         if sync_config.teensy is None:
             raise ValueError(
                 "SyncProcess requires sync_config.teensy to be populated. "
-                "Set sync.transport='teensy' to auto-populate."
+                "Set sync.backend='teensy' to auto-populate."
             )
         self._sync_config = sync_config
         self._zmq_config = zmq_config

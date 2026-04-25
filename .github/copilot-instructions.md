@@ -29,7 +29,7 @@ hapticore/
 ├── python/hapticore/
 │   ├── core/           # messaging (EventBus, CommandClient/Server), config (Pydantic models), interfaces (Protocol ABCs), messages (dataclass schemas + msgpack serialization)
 │   ├── tasks/          # behavioral task implementations (subclass BaseTask)
-│   ├── hardware/       # real hardware interface implementations + mock implementations
+│   ├── backends/       # haptic interface backends (HapticClient, mocks, mouse-driven)
 │   ├── display/        # PsychoPy display process
 │   ├── recording/      # Ripple, SpikeGLX, LSL wrappers
 │   ├── sync/           # Teensy serial interface

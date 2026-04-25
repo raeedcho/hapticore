@@ -7,7 +7,7 @@ import importlib
 import subprocess
 import sys
 
-from hapticore.hardware.mock import MockDisplay
+from hapticore.backends.mock import MockDisplay
 
 
 def _run(args: argparse.Namespace) -> None:
@@ -19,11 +19,11 @@ def _run(args: argparse.Namespace) -> None:
 
     import zmq
 
+    from hapticore.backends import HapticClient, make_haptic_interface
+    from hapticore.backends.mock import MockDisplay, MockSync
     from hapticore.core.config import ZMQConfig, load_session_config
     from hapticore.core.messaging import EventPublisher, make_ipc_address
     from hapticore.display.display_client import DisplayClient
-    from hapticore.hardware import HapticClient, make_haptic_interface
-    from hapticore.hardware.mock import MockDisplay, MockSync
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
 
@@ -64,10 +64,10 @@ def _run(args: argparse.Namespace) -> None:
     task_cls = getattr(module, class_name)
     task = task_cls()
 
-    # Validate kind+display compatibility before launching anything.
-    if config.haptic.kind == "mouse" and not args.display:
+    # Validate backend+display compatibility before launching anything.
+    if config.haptic.backend == "mouse" and not args.display:
         print(
-            "Error: haptic.kind='mouse' requires --display (mouse position "
+            "Error: haptic.backend='mouse' requires --display (mouse position "
             "comes from the PsychoPy window).",
             file=sys.stderr,
         )
@@ -82,17 +82,17 @@ def _run(args: argparse.Namespace) -> None:
         haptic_command_address=make_ipc_address("hc_cmd"),
         display_event_address=make_ipc_address("hc_disp"),
     )
-    # For kind="dhd", override haptic addresses from the user-provided ZMQConfig
+    # For backend="dhd", override haptic addresses from the user-provided ZMQConfig
     # so the client finds the server the user launched separately.
-    if config.haptic.kind == "dhd":
+    if config.haptic.backend == "dhd":
         session_zmq = session_zmq.model_copy(update={
             "haptic_state_address": config.zmq.haptic_state_address,
             "haptic_command_address": config.zmq.haptic_command_address,
         })
 
-    # Mouse queue for kind="mouse". None otherwise.
+    # Mouse queue for backend="mouse". None otherwise.
     mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None
-    if config.haptic.kind == "mouse":
+    if config.haptic.backend == "mouse":
         from multiprocessing import Queue as MpQueue
         mouse_queue = MpQueue(maxsize=4)
 
@@ -123,7 +123,7 @@ def _run(args: argparse.Namespace) -> None:
         DisplayClient(publisher) if args.display else MockDisplay()
     )
 
-    sync = MockSync()  # until Phase 5C wires SyncConfig.transport properly.
+    sync = MockSync()  # until Phase 5C wires SyncConfig.backend properly.
 
     trial_manager = TrialManager(
         conditions=config.task.conditions,

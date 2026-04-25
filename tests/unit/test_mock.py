@@ -9,7 +9,7 @@ from hapticore.core.interfaces import (
     SyncInterface,
 )
 from hapticore.core.messages import Command
-from hapticore.hardware.mock import (
+from hapticore.backends.mock import (
     MockDisplay,
     MockHapticInterface,
     MockNeuralRecording,

@@ -220,10 +220,10 @@ class TeensyConfig(BaseModel):
 
 
 class SyncConfig(BaseModel):
-    """Sync transport + event code map.
+    """Sync backend + event code map.
 
-    Transport-specific knobs are nested under ``teensy``. When the
-    ``teensy`` transport is selected, the nested block is auto-populated
+    Backend-specific knobs are nested under ``teensy``. When the
+    ``teensy`` backend is selected, the nested block is auto-populated
     with defaults if not provided explicitly, so the config is always
     internally consistent after validation. See ADR-013 (Teensy sync hub)
     for why Teensy is the sole hardware sync source.

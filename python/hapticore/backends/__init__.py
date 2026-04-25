@@ -1,4 +1,4 @@
-"""Hardware interface implementations (real and mock)."""
+"""Backend implementations of the HapticInterface protocol (real and mock)."""
 
 from __future__ import annotations
 

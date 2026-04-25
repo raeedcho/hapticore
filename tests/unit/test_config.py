@@ -360,8 +360,8 @@ class TestEventCodeMap:
             EventCodeMap(event_codes={"reward": "one hundred"})  # type: ignore[dict-item]
 
 
-class TestSyncConfigTransports:
-    def test_default_transport_is_mock(self) -> None:
+class TestSyncConfigBackends:
+    def test_default_backend_is_mock(self) -> None:
         cfg = SyncConfig()
         assert cfg.backend == "mock"
 
@@ -369,7 +369,7 @@ class TestSyncConfigTransports:
         cfg = SyncConfig()
         assert cfg.teensy is None
 
-    def test_teensy_transport_with_populated_teensy_block(self) -> None:
+    def test_teensy_backend_with_populated_teensy_block(self) -> None:
         cfg = SyncConfig(
             backend="teensy",
             teensy=TeensyConfig(port="/dev/ttyUSB0", baud=9600),
@@ -379,7 +379,7 @@ class TestSyncConfigTransports:
         assert cfg.teensy.port == "/dev/ttyUSB0"
         assert cfg.teensy.baud == 9600
 
-    def test_invalid_transport_string_rejected(self) -> None:
+    def test_invalid_backend_string_rejected(self) -> None:
         with pytest.raises(ValidationError):
             SyncConfig(backend="bluetooth")  # type: ignore[arg-type]
 
@@ -399,7 +399,7 @@ class TestSyncConfigTransports:
         assert cfg.teensy is not None
         assert cfg.teensy.port == "/dev/ttyACM0"  # default
 
-    def test_mock_transport_leaves_teensy_block_none(self) -> None:
+    def test_mock_backend_leaves_teensy_block_none(self) -> None:
         cfg = SyncConfig(backend="mock")
         assert cfg.teensy is None
 

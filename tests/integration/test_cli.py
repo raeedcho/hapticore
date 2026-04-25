@@ -80,7 +80,7 @@ class TestCLIRun:
             f"are probably not being applied"
         )
 
-    def test_run_mouse_kind_without_display_fails(
+    def test_run_mouse_backend_without_display_fails(
         self, capsys: pytest.CaptureFixture[str],
     ) -> None:
         """haptic.backend='mouse' requires --display; running without it must exit(1)."""

@@ -8,6 +8,7 @@ haptic:
   publish_rate_hz: 100.0
 
 display:
+  backend: mock
   resolution: [1920, 1080]
   refresh_rate_hz: 60
   fullscreen: false

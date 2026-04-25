@@ -7,23 +7,19 @@ import importlib
 import subprocess
 import sys
 
-from hapticore.backends.mock import MockDisplay
-
 
 def _run(args: argparse.Namespace) -> None:
     """Run a task against the hardware specified in the rig config."""
     import contextlib
     import multiprocessing
     import multiprocessing.queues
-    import time
 
     import zmq
 
-    from hapticore.backends import HapticClient, make_haptic_interface
-    from hapticore.backends.mock import MockDisplay, MockSync
+    from hapticore.backends import HapticClient, make_display_interface, make_haptic_interface
+    from hapticore.backends.mock import MockSync
     from hapticore.core.config import ZMQConfig, load_session_config
     from hapticore.core.messaging import EventPublisher, make_ipc_address
-    from hapticore.display.display_client import DisplayClient
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
 
@@ -65,10 +61,10 @@ def _run(args: argparse.Namespace) -> None:
     task = task_cls()
 
     # Validate backend+display compatibility before launching anything.
-    if config.haptic.backend == "mouse" and not args.display:
+    if config.haptic.backend == "mouse" and config.display.backend != "psychopy":
         print(
-            "Error: haptic.backend='mouse' requires --display (mouse position "
-            "comes from the PsychoPy window).",
+            "Error: haptic.backend='mouse' requires display.backend='psychopy' "
+            "(mouse position comes from the PsychoPy window).",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -96,79 +92,54 @@ def _run(args: argparse.Namespace) -> None:
         from multiprocessing import Queue as MpQueue
         mouse_queue = MpQueue(maxsize=4)
 
-    # Start display process if requested.
-    display_proc = None
-    if args.display:
-        from hapticore.display.process import DisplayProcess
-        display_proc = DisplayProcess(
-            config.display, session_zmq, headless=False, mouse_queue=mouse_queue,
-        )
-        display_proc.start()
-        time.sleep(1.5)  # let PsychoPy create the window (~1s on macOS)
-
-    # ZMQ context shared between event publisher and HapticClient (for kind=dhd).
+    # ZMQ context shared between event publisher, HapticClient, and DisplayProcess.
     ctx = zmq.Context()
+    publisher = EventPublisher(ctx, session_zmq.event_pub_address)
 
-    # Construct haptic interface via factory.
+    # Construct haptic interface via factory (no lifecycle owned here).
     haptic = make_haptic_interface(
         config.haptic, session_zmq,
         context=ctx, mouse_queue=mouse_queue,
     )
 
-    # Event publisher.
-    publisher = EventPublisher(ctx, session_zmq.event_pub_address)
-
-    # Display interface: flag-driven for now (until DisplayConfig.backend lands).
-    display: DisplayClient | MockDisplay = (
-        DisplayClient(publisher) if args.display else MockDisplay()
-    )
-
-    sync = MockSync()  # until Phase 5C wires SyncConfig.backend properly.
-
-    trial_manager = TrialManager(
-        conditions=config.task.conditions,
-        block_size=config.task.block_size,
-        num_blocks=config.task.num_blocks,
-        randomization=config.task.randomization,
-    )
-
-    # --fast: override timing parameters to 1ms for smoke testing.
-    param_overrides = dict(config.task.params) if config.task.params else {}
-    if args.fast:
-        for name, spec in task.PARAMS.items():
-            if spec.unit == "s" and spec.type is float:
-                param_overrides[name] = 0.001
-
-    controller = TaskController(
-        task=task, haptic=haptic, display=display, sync=sync,
-        event_publisher=publisher, trial_manager=trial_manager,
-        params=param_overrides or None,
-        poll_rate_hz=1000.0,
-    )
-
-    # Use contextlib.nullcontext() to manage kind-dependent lifecycle.
+    # Use contextlib.nullcontext() to manage backend-dependent lifecycle.
     # HapticClient needs connect()/close() via __enter__/__exit__; mocks need neither.
     haptic_cm: contextlib.AbstractContextManager[object] = (
         haptic if isinstance(haptic, HapticClient) else contextlib.nullcontext()
     )
     try:
-        with haptic_cm:
-            controller.setup()
-            controller.run()
+        with haptic_cm, make_display_interface(
+            config.display, session_zmq,
+            publisher=publisher, mouse_queue=mouse_queue,
+        ) as display:
+            sync = MockSync()  # until Phase 5C wires SyncConfig.backend properly.
+
+            trial_manager = TrialManager(
+                conditions=config.task.conditions,
+                block_size=config.task.block_size,
+                num_blocks=config.task.num_blocks,
+                randomization=config.task.randomization,
+            )
+
+            # --fast: override timing parameters to 1ms for smoke testing.
+            param_overrides = dict(config.task.params) if config.task.params else {}
+            if args.fast:
+                for name, spec in task.PARAMS.items():
+                    if spec.unit == "s" and spec.type is float:
+                        param_overrides[name] = 0.001
+
+            controller = TaskController(
+                task=task, haptic=haptic, display=display, sync=sync,
+                event_publisher=publisher, trial_manager=trial_manager,
+                params=param_overrides or None,
+                poll_rate_hz=1000.0,
+            )
+            try:
+                controller.setup()
+                controller.run()
+            finally:
+                controller.teardown()
     finally:
-        controller.teardown()
-        if display_proc is not None:
-            display_proc.request_shutdown()
-            display_proc.join(timeout=5.0)
-            if display_proc.is_alive():
-                display_proc.terminate()
-                display_proc.join(timeout=2.0)
-                if display_proc.is_alive():
-                    print(
-                        "Warning: DisplayProcess still alive after terminate(); "
-                        "it may leave a zombie process.",
-                        file=sys.stderr,
-                    )
         publisher.close()
         ctx.term()
 
@@ -285,10 +256,6 @@ def main() -> None:
     run_parser.add_argument(
         "--fast", action="store_true",
         help="Override all timing parameters to 1ms for quick smoke-testing",
-    )
-    run_parser.add_argument(
-        "--display", action="store_true",
-        help="Launch a real PsychoPy display process (requires display pixi env)",
     )
     run_parser.set_defaults(func=_run)
 

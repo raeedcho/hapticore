@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from hapticore.core.config import (
     DhdConfig,
+    DisplayConfig,
     EventCodeMap,
     ExperimentConfig,
     HapticConfig,
@@ -477,4 +478,29 @@ class TestHapticConfigBackends:
         assert restored.backend == "dhd"
         assert restored.dhd is not None
         assert restored.dhd.heartbeat_interval_s == 0.2
+
+
+class TestDisplayConfigBackends:
+    def test_default_backend_is_mock(self) -> None:
+        cfg = DisplayConfig()
+        assert cfg.backend == "mock"
+
+    def test_psychopy_backend_accepted(self) -> None:
+        cfg = DisplayConfig(backend="psychopy")
+        assert cfg.backend == "psychopy"
+
+    def test_mock_backend_accepted(self) -> None:
+        cfg = DisplayConfig(backend="mock")
+        assert cfg.backend == "mock"
+
+    def test_invalid_backend_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            DisplayConfig(backend="cinema")  # type: ignore[arg-type]
+
+    def test_config_round_trips_through_model(self) -> None:
+        cfg = DisplayConfig(backend="psychopy", resolution=(1280, 720))
+        dumped = cfg.model_dump()
+        restored = DisplayConfig.model_validate(dumped)
+        assert restored.backend == "psychopy"
+        assert restored.resolution == (1280, 720)
 

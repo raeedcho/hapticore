@@ -68,7 +68,7 @@ class TestCLIRun:
             subject=str(configs / "subject" / "example_subject.yaml"),
             task=str(configs / "task" / "center_out.yaml"),
             extra_config=[str(configs / "example_experiment.yaml")],
-            experiment_name=None, fast=True, display=False,
+            experiment_name=None, fast=True,
         )
 
         start = time.monotonic()
@@ -80,24 +80,27 @@ class TestCLIRun:
             f"are probably not being applied"
         )
 
-    def test_run_mouse_backend_without_display_fails(
-        self, capsys: pytest.CaptureFixture[str],
+    def test_run_mouse_haptic_with_mock_display_fails(
+        self, capsys: pytest.CaptureFixture[str], tmp_path: Path,
     ) -> None:
-        """haptic.backend='mouse' requires --display; running without it must exit(1)."""
+        """haptic.backend='mouse' + display.backend='mock' must exit(1)."""
         from hapticore.cli import _run
 
         configs = Path(__file__).parents[2] / "configs"
+        override = tmp_path / "force_mock_display.yaml"
+        override.write_text("display:\n  backend: mock\n")
+
         args = Namespace(
             rig=str(configs / "rig" / "dev-mouse.yaml"),
             subject=str(configs / "subject" / "example_subject.yaml"),
             task=str(configs / "task" / "center_out.yaml"),
-            extra_config=[str(configs / "example_experiment.yaml")],
-            experiment_name=None, fast=False, display=False,
+            extra_config=[str(override), str(configs / "example_experiment.yaml")],
+            experiment_name=None, fast=False,
         )
         with pytest.raises(SystemExit) as exc_info:
             _run(args)
         assert exc_info.value.code == 1
-        assert "requires --display" in capsys.readouterr().err
+        assert "haptic.backend='mouse'" in capsys.readouterr().err
 
     def test_run_without_rig_layers_fails(
         self, capsys: pytest.CaptureFixture[str],
@@ -107,7 +110,7 @@ class TestCLIRun:
 
         args = Namespace(
             rig=None, subject=None, task=None, extra_config=[],
-            experiment_name=None, fast=False, display=False,
+            experiment_name=None, fast=False,
         )
         with pytest.raises(SystemExit) as exc_info:
             _run(args)

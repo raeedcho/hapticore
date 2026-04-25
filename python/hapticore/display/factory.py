@@ -65,12 +65,12 @@ def make_display_interface(
         ValueError: If ``cfg.backend`` is not one of the supported values.
     """
     if cfg.backend == "mock":
-        from hapticore.backends.mock import MockDisplay
+        from hapticore.display.mock import MockDisplay
         yield MockDisplay()
         return
 
     if cfg.backend == "psychopy":
-        from hapticore.display.display_client import DisplayClient
+        from hapticore.display.client import DisplayClient
         from hapticore.display.process import DisplayProcess
 
         proc: DisplayProcess = DisplayProcess(
@@ -101,4 +101,3 @@ def make_display_interface(
         return
 
     raise ValueError(f"Unknown display backend: {cfg.backend!r}")
-

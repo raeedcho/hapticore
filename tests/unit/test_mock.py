@@ -9,12 +9,10 @@ from hapticore.core.interfaces import (
     SyncInterface,
 )
 from hapticore.core.messages import Command
-from hapticore.backends.mock import (
-    MockDisplay,
-    MockHapticInterface,
-    MockNeuralRecording,
-    MockSync,
-)
+from hapticore.display.mock import MockDisplay
+from hapticore.haptic.mock import MockHapticInterface
+from hapticore.recording.mock import MockNeuralRecording
+from hapticore.sync.mock import MockSync
 
 
 class TestProtocolCompliance:

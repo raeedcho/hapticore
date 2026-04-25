@@ -10,7 +10,9 @@ import zmq
 
 from hapticore.core.messages import TOPIC_EVENT, StateTransition, deserialize
 from hapticore.core.messaging import EventPublisher, EventSubscriber, make_ipc_address
-from hapticore.backends.mock import MockDisplay, MockHapticInterface, MockSync
+from hapticore.display.mock import MockDisplay
+from hapticore.haptic.mock import MockHapticInterface
+from hapticore.sync.mock import MockSync
 from hapticore.tasks.base import BaseTask, ParamSpec
 from hapticore.tasks.controller import TaskController
 from hapticore.tasks.trial_manager import TrialManager

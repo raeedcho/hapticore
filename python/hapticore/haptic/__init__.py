@@ -1,4 +1,4 @@
-"""Backend implementations of the HapticInterface protocol (real and mock)."""
+"""Haptic interface implementations and factory."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ from typing import Any
 
 import zmq
 
-from hapticore.backends.display import make_display_interface
-from hapticore.backends.haptic_client import HapticClient
+from hapticore.haptic.client import HapticClient
 from hapticore.core.config import HapticConfig, ZMQConfig
 from hapticore.core.interfaces import HapticInterface
 
-__all__ = ["HapticClient", "make_display_interface", "make_haptic_interface"]
+__all__ = ["HapticClient", "MockHapticInterface", "MouseHapticInterface", "make_haptic_interface"]
 
 
 def make_haptic_interface(
@@ -47,7 +46,7 @@ def make_haptic_interface(
             (should be impossible after validation; defensive check).
     """
     if cfg.backend == "mock":
-        from hapticore.backends.mock import MockHapticInterface
+        from hapticore.haptic.mock import MockHapticInterface
         return MockHapticInterface()
 
     if cfg.backend == "mouse":
@@ -58,7 +57,7 @@ def make_haptic_interface(
                 "DisplayProcess(mouse_queue=...) so mouse position flows from "
                 "the display process to the haptic interface."
             )
-        from hapticore.backends.mouse_haptic import MouseHapticInterface
+        from hapticore.haptic.mouse import MouseHapticInterface
         return MouseHapticInterface(mouse_queue=mouse_queue)
 
     if cfg.backend == "dhd":
@@ -80,3 +79,14 @@ def make_haptic_interface(
     # branch keeps mypy strict-mode happy and gives a clear error if
     # someone bypasses validation.
     raise ValueError(f"Unknown haptic backend: {cfg.backend!r}")
+
+
+# Lazy re-exports for caller convenience
+def __getattr__(name: str) -> Any:
+    if name == "MockHapticInterface":
+        from hapticore.haptic.mock import MockHapticInterface
+        return MockHapticInterface
+    if name == "MouseHapticInterface":
+        from hapticore.haptic.mouse import MouseHapticInterface
+        return MouseHapticInterface
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

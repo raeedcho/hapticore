@@ -11,9 +11,9 @@ import zmq
 
 from hapticore.core.config import DhdConfig, HapticConfig, ZMQConfig
 from hapticore.core.interfaces import HapticInterface
-from hapticore.backends import HapticClient, make_haptic_interface
-from hapticore.backends.mock import MockHapticInterface
-from hapticore.backends.mouse_haptic import MouseHapticInterface
+from hapticore.haptic import HapticClient, make_haptic_interface
+from hapticore.haptic.mock import MockHapticInterface
+from hapticore.haptic.mouse import MouseHapticInterface
 
 
 class TestMakeHapticInterface:

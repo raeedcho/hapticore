@@ -6,7 +6,9 @@ PsychoPy is imported ONLY inside DisplayProcess.run() — never at module level.
 
 from __future__ import annotations
 
-from hapticore.display.display_client import DisplayClient
+from hapticore.display.client import DisplayClient
+from hapticore.display.factory import make_display_interface
+from hapticore.display.mock import MockDisplay
 from hapticore.display.process import DisplayProcess
 
-__all__ = ["DisplayClient", "DisplayProcess"]
+__all__ = ["DisplayClient", "DisplayProcess", "MockDisplay", "make_display_interface"]

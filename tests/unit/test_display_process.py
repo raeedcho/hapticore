@@ -27,7 +27,7 @@ class TestImportSafety:
         import hapticore.display  # noqa: F401
 
     def test_import_display_client(self) -> None:
-        import hapticore.display.display_client  # noqa: F401
+        import hapticore.display.client  # noqa: F401
 
     def test_import_display_process(self) -> None:
         import hapticore.display.process  # noqa: F401

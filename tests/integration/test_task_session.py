@@ -16,7 +16,7 @@ from hapticore.core.messages import (
     TOPIC_TRIAL,
 )
 from hapticore.core.messaging import EventPublisher, EventSubscriber, make_ipc_address
-from hapticore.hardware.mock import MockDisplay, MockHapticInterface, MockSync
+from hapticore.backends.mock import MockDisplay, MockHapticInterface, MockSync
 from hapticore.tasks.base import BaseTask, ParamSpec
 from hapticore.tasks.controller import TaskController
 from hapticore.tasks.trial_manager import TrialManager

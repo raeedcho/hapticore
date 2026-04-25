@@ -32,7 +32,7 @@ recording:
   lsl_enabled: true
 
 sync:
-  transport: "mock"
+  backend: "mock"
   sync_pulse_rate_hz: 1.0
   code_map:
     state_codes: {}

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from hapticore.core.interfaces import HapticInterface
 from hapticore.core.messages import Command
-from hapticore.hardware.mouse_haptic import MouseHapticInterface
+from hapticore.backends.mouse_haptic import MouseHapticInterface
 
 if TYPE_CHECKING:
     _MouseQueue = multiprocessing.queues.Queue[tuple[float, float]]

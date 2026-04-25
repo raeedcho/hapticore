@@ -152,7 +152,7 @@ class TestLayeredMerge:
         assert config.subject.subject_id == "test_monkey"
         assert config.task.task_class == "hapticore.tasks.center_out.CenterOutTask"
         assert config.haptic.force_limit_n == 15.0
-        assert config.sync.transport == "mock"
+        assert config.sync.backend == "mock"
         assert config.sync.teensy is None
 
     def test_rig_task_no_subject(self) -> None:
@@ -360,28 +360,28 @@ class TestEventCodeMap:
             EventCodeMap(event_codes={"reward": "one hundred"})  # type: ignore[dict-item]
 
 
-class TestSyncConfigTransports:
-    def test_default_transport_is_mock(self) -> None:
+class TestSyncConfigBackends:
+    def test_default_backend_is_mock(self) -> None:
         cfg = SyncConfig()
-        assert cfg.transport == "mock"
+        assert cfg.backend == "mock"
 
     def test_default_nested_blocks_are_none(self) -> None:
         cfg = SyncConfig()
         assert cfg.teensy is None
 
-    def test_teensy_transport_with_populated_teensy_block(self) -> None:
+    def test_teensy_backend_with_populated_teensy_block(self) -> None:
         cfg = SyncConfig(
-            transport="teensy",
+            backend="teensy",
             teensy=TeensyConfig(port="/dev/ttyUSB0", baud=9600),
         )
-        assert cfg.transport == "teensy"
+        assert cfg.backend == "teensy"
         assert cfg.teensy is not None
         assert cfg.teensy.port == "/dev/ttyUSB0"
         assert cfg.teensy.baud == 9600
 
-    def test_invalid_transport_string_rejected(self) -> None:
+    def test_invalid_backend_string_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            SyncConfig(transport="bluetooth")  # type: ignore[arg-type]
+            SyncConfig(backend="bluetooth")  # type: ignore[arg-type]
 
     def test_code_map_round_trips_through_model(self) -> None:
         cfg = SyncConfig(
@@ -395,12 +395,12 @@ class TestSyncConfigTransports:
         assert restored.code_map.event_codes == {"reward": 100}
 
     def test_teensy_auto_populates_teensy_block(self) -> None:
-        cfg = SyncConfig(transport="teensy")
+        cfg = SyncConfig(backend="teensy")
         assert cfg.teensy is not None
         assert cfg.teensy.port == "/dev/ttyACM0"  # default
 
-    def test_mock_transport_leaves_teensy_block_none(self) -> None:
-        cfg = SyncConfig(transport="mock")
+    def test_mock_backend_leaves_teensy_block_none(self) -> None:
+        cfg = SyncConfig(backend="mock")
         assert cfg.teensy is None
 
 
@@ -427,24 +427,24 @@ class TestRecordingConfigRipple:
             RippleRecordingConfig(operator_id=-1)
 
 
-class TestHapticConfigKinds:
+class TestHapticConfigBackends:
     def test_default_kind_is_mock(self) -> None:
         cfg = HapticConfig()
-        assert cfg.kind == "mock"
+        assert cfg.backend == "mock"
 
     def test_default_nested_dhd_block_is_none(self) -> None:
         cfg = HapticConfig()
         assert cfg.dhd is None
 
     def test_dhd_kind_auto_populates_dhd_block(self) -> None:
-        cfg = HapticConfig(kind="dhd")
+        cfg = HapticConfig(backend="dhd")
         assert cfg.dhd is not None
         assert cfg.dhd.heartbeat_interval_s == 0.2  # default
         assert cfg.dhd.command_timeout_ms == 1000   # default
 
     def test_dhd_kind_with_explicit_dhd_block(self) -> None:
         cfg = HapticConfig(
-            kind="dhd",
+            backend="dhd",
             dhd=DhdConfig(heartbeat_interval_s=0.1, command_timeout_ms=500),
         )
         assert cfg.dhd is not None
@@ -452,16 +452,16 @@ class TestHapticConfigKinds:
         assert cfg.dhd.command_timeout_ms == 500
 
     def test_mock_kind_leaves_dhd_block_none(self) -> None:
-        cfg = HapticConfig(kind="mock")
+        cfg = HapticConfig(backend="mock")
         assert cfg.dhd is None
 
     def test_mouse_kind_leaves_dhd_block_none(self) -> None:
-        cfg = HapticConfig(kind="mouse")
+        cfg = HapticConfig(backend="mouse")
         assert cfg.dhd is None
 
     def test_invalid_kind_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            HapticConfig(kind="realdeal")  # type: ignore[arg-type]
+            HapticConfig(backend="realdeal")  # type: ignore[arg-type]
 
     def test_dhd_heartbeat_interval_rejects_watchdog_violation(self) -> None:
         # lt=0.5 in DhdConfig.heartbeat_interval_s must be enforced.
@@ -471,10 +471,10 @@ class TestHapticConfigKinds:
             DhdConfig(heartbeat_interval_s=0.0)
 
     def test_config_round_trips_through_model(self) -> None:
-        cfg = HapticConfig(kind="dhd")
+        cfg = HapticConfig(backend="dhd")
         dumped = cfg.model_dump()
         restored = HapticConfig.model_validate(dumped)
-        assert restored.kind == "dhd"
+        assert restored.backend == "dhd"
         assert restored.dhd is not None
         assert restored.dhd.heartbeat_interval_s == 0.2
 

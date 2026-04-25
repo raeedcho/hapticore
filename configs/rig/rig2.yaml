@@ -3,7 +3,7 @@
 # a laptop; it assumes the C++ haptic server is running.
 
 haptic:
-  kind: dhd  # HapticClient connects to the C++ haptic server over ZMQ
+  backend: dhd  # HapticClient connects to the C++ haptic server over ZMQ
   # Physical rig parameters (currently for human reference; Python code
   # does not yet flow these into the C++ server — tracked separately).
   workspace_bounds:
@@ -40,7 +40,7 @@ recording:
   #   auto_increment: true
 
 sync:
-  transport: "mock"  # one of: mock | teensy
+  backend: "mock"  # one of: mock | teensy
   sync_pulse_rate_hz: 1.0
   code_map:
     state_codes: {}

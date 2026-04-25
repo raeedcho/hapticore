@@ -7,7 +7,7 @@ import time
 import zmq
 
 from hapticore.core.messaging import EventPublisher, make_ipc_address
-from hapticore.hardware.mock import MockDisplay, MockHapticInterface, MockSync
+from hapticore.backends.mock import MockDisplay, MockHapticInterface, MockSync
 from hapticore.tasks.center_out import CenterOutTask
 from hapticore.tasks.controller import TaskController
 from hapticore.tasks.trial_manager import TrialManager

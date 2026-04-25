@@ -23,7 +23,7 @@ import pytest
 import zmq
 
 from hapticore.core.messages import Command
-from hapticore.hardware.haptic_client import HapticClient
+from hapticore.backends.haptic_client import HapticClient
 
 
 # ---------------------------------------------------------------------------

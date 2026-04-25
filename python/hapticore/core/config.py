@@ -43,7 +43,7 @@ class SubjectConfig(BaseModel):
 class DhdConfig(BaseModel):
     """Delta.3 haptic client settings.
 
-    Used when ``HapticConfig.kind == 'dhd'``. The client connects to a
+    Used when ``HapticConfig.backend == 'dhd'``. The client connects to a
     running C++ haptic server via ZMQ; addresses live in ``ZMQConfig``.
     These fields tune the client's command and heartbeat behavior.
     """
@@ -62,7 +62,7 @@ class DhdConfig(BaseModel):
 class HapticConfig(BaseModel):
     """Haptic interface configuration."""
 
-    kind: Literal["dhd", "mock", "mouse"] = "mock"
+    backend: Literal["dhd", "mock", "mouse"] = "mock"
 
     server_address: str = "localhost"
     workspace_bounds: dict[str, list[float]] = Field(
@@ -77,8 +77,8 @@ class HapticConfig(BaseModel):
     dhd: DhdConfig | None = None
 
     @model_validator(mode="after")
-    def _populate_selected_kind(self) -> Self:
-        if self.kind == "dhd" and self.dhd is None:
+    def _populate_selected_backend(self) -> Self:
+        if self.backend == "dhd" and self.dhd is None:
             self.dhd = DhdConfig()
         return self
 
@@ -210,7 +210,7 @@ class EventCodeMap(BaseModel):
 class TeensyConfig(BaseModel):
     """Teensy 4.1 sync hub settings.
 
-    Used when ``SyncConfig.transport == 'teensy'``. The Teensy 4.1 is
+    Used when ``SyncConfig.backend == 'teensy'``. The Teensy 4.1 is
     the centralized hardware timing source for all rig TTL signals —
     sync pulse, camera trigger, event codes, and reward. See ADR-013.
     """
@@ -220,23 +220,23 @@ class TeensyConfig(BaseModel):
 
 
 class SyncConfig(BaseModel):
-    """Sync transport + event code map.
+    """Sync backend + event code map.
 
-    Transport-specific knobs are nested under ``teensy``. When the
-    ``teensy`` transport is selected, the nested block is auto-populated
+    Backend-specific knobs are nested under ``teensy``. When the
+    ``teensy`` backend is selected, the nested block is auto-populated
     with defaults if not provided explicitly, so the config is always
     internally consistent after validation. See ADR-013 (Teensy sync hub)
     for why Teensy is the sole hardware sync source.
     """
 
-    transport: Literal["mock", "teensy"] = "mock"
+    backend: Literal["mock", "teensy"] = "mock"
     sync_pulse_rate_hz: float = Field(default=1.0, gt=0, le=10.0)
     code_map: EventCodeMap = Field(default_factory=EventCodeMap)
     teensy: TeensyConfig | None = None
 
     @model_validator(mode="after")
-    def _populate_selected_transport(self) -> Self:
-        if self.transport == "teensy" and self.teensy is None:
+    def _populate_selected_backend(self) -> Self:
+        if self.backend == "teensy" and self.teensy is None:
             self.teensy = TeensyConfig()
         return self
 

@@ -1,6 +1,6 @@
 # Laptop development — mouse-driven haptic, real PsychoPy display.
 # Run with: hapticore run --rig configs/rig/dev-mouse.yaml \
-#                         --subject ... --task ... --display
+#                         --subject ... --task ...
 
 haptic:
   backend: mouse
@@ -12,6 +12,7 @@ haptic:
   publish_rate_hz: 200.0
 
 display:
+  backend: psychopy  # mouse mode requires the real PsychoPy window
   resolution: [1280, 800]
   refresh_rate_hz: 60
   fullscreen: false

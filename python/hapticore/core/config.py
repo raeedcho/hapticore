@@ -86,6 +86,8 @@ class HapticConfig(BaseModel):
 class DisplayConfig(BaseModel):
     """Visual display configuration."""
 
+    backend: Literal["psychopy", "mock"] = "mock"
+
     resolution: tuple[int, int] = (1920, 1080)
     refresh_rate_hz: int = Field(default=60, gt=0, le=240)
     fullscreen: bool = True

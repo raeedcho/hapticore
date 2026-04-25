@@ -7,11 +7,12 @@ from typing import Any
 
 import zmq
 
+from hapticore.backends.display import make_display_interface
 from hapticore.backends.haptic_client import HapticClient
 from hapticore.core.config import HapticConfig, ZMQConfig
 from hapticore.core.interfaces import HapticInterface
 
-__all__ = ["HapticClient", "make_haptic_interface"]
+__all__ = ["HapticClient", "make_display_interface", "make_haptic_interface"]
 
 
 def make_haptic_interface(

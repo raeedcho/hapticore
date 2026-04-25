@@ -9,8 +9,8 @@ which backend the config selects.
 
 from __future__ import annotations
 
+import logging
 import multiprocessing.queues
-import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 __all__ = ["make_display_interface"]
 
+logger = logging.getLogger(__name__)
 
 # Time PsychoPy takes to create the window and bind its ZMQ sockets before
 # we can send the first command. Longer on macOS than Linux.
@@ -75,26 +76,29 @@ def make_display_interface(
         proc: DisplayProcess = DisplayProcess(
             cfg, zmq_cfg, headless=False, mouse_queue=mouse_queue,
         )
-        proc.start()
-        # PsychoPy takes ~1s to create the window and bind its ZMQ
-        # sockets. Without this sleep, the first command arrives before
-        # the subscriber is ready and gets silently dropped.
-        time.sleep(_DISPLAY_STARTUP_DELAY_S)
-
+        proc_started = False
         try:
+            proc.start()
+            proc_started = True
+            # PsychoPy takes ~1s to create the window and bind its ZMQ
+            # sockets. Without this sleep, the first command arrives before
+            # the subscriber is ready and gets silently dropped.
+            time.sleep(_DISPLAY_STARTUP_DELAY_S)
             yield DisplayClient(publisher)
         finally:
-            proc.request_shutdown()
-            proc.join(timeout=_DISPLAY_SHUTDOWN_TIMEOUT_S)
-            if proc.is_alive():
-                proc.terminate()
-                proc.join(timeout=_DISPLAY_TERMINATE_JOIN_TIMEOUT_S)
+            if proc_started:
+                proc.request_shutdown()
+                proc.join(timeout=_DISPLAY_SHUTDOWN_TIMEOUT_S)
                 if proc.is_alive():
-                    print(
-                        "Warning: DisplayProcess still alive after terminate(); "
-                        "it may leave a zombie process.",
-                        file=sys.stderr,
-                    )
+                    proc.terminate()
+                    proc.join(timeout=_DISPLAY_TERMINATE_JOIN_TIMEOUT_S)
+                    if proc.is_alive():
+                        logger.warning(
+                            "DisplayProcess (pid=%d) still alive after terminate(); "
+                            "may leak. Run `kill -9 %d` to clean up manually.",
+                            proc.pid, proc.pid,
+                        )
         return
 
     raise ValueError(f"Unknown display backend: {cfg.backend!r}")
+

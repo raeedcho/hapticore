@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -17,7 +18,7 @@ from hapticore.core.messaging import EventPublisher
 
 
 @pytest.fixture
-def publisher() -> EventPublisher:
+def publisher() -> Iterator[EventPublisher]:
     """A real EventPublisher bound to a unique ipc address."""
     from hapticore.core.messaging import make_ipc_address
     ctx = zmq.Context()
@@ -131,3 +132,27 @@ class TestMakeDisplayInterface:
                 cfg, ZMQConfig(), publisher=publisher,
             ):
                 pass
+
+    def test_psychopy_backend_startup_failure_does_not_leak(
+        self, publisher: EventPublisher,
+    ) -> None:
+        """If proc.start() raises, no terminate is attempted on the unstarted process."""
+        cfg = DisplayConfig(backend="psychopy")
+        fake_proc = MagicMock()
+        fake_proc.start.side_effect = OSError("simulated startup failure")
+
+        with patch(
+            "hapticore.display.process.DisplayProcess", return_value=fake_proc,
+        ):
+            with pytest.raises(OSError, match="simulated startup failure"):
+                with make_display_interface(
+                    cfg, ZMQConfig(), publisher=publisher,
+                ):
+                    pass
+
+        # Cleanup branch must NOT have called join/terminate on the
+        # unstarted process — those would raise AssertionError and mask
+        # the original OSError.
+        fake_proc.request_shutdown.assert_not_called()
+        fake_proc.join.assert_not_called()
+        fake_proc.terminate.assert_not_called()

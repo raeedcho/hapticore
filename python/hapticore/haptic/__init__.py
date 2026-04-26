@@ -7,9 +7,11 @@ from typing import Any
 
 import zmq
 
-from hapticore.haptic.client import HapticClient
 from hapticore.core.config import HapticConfig, ZMQConfig
 from hapticore.core.interfaces import HapticInterface
+from hapticore.haptic.client import HapticClient
+from hapticore.haptic.mock import MockHapticInterface
+from hapticore.haptic.mouse import MouseHapticInterface
 
 __all__ = ["HapticClient", "MockHapticInterface", "MouseHapticInterface", "make_haptic_interface"]
 
@@ -79,14 +81,3 @@ def make_haptic_interface(
     # branch keeps mypy strict-mode happy and gives a clear error if
     # someone bypasses validation.
     raise ValueError(f"Unknown haptic backend: {cfg.backend!r}")
-
-
-# Lazy re-exports for caller convenience
-def __getattr__(name: str) -> Any:
-    if name == "MockHapticInterface":
-        from hapticore.haptic.mock import MockHapticInterface
-        return MockHapticInterface
-    if name == "MouseHapticInterface":
-        from hapticore.haptic.mouse import MouseHapticInterface
-        return MouseHapticInterface
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -17,7 +17,7 @@ import zmq
 from hapticore.core.interfaces import HapticInterface
 from hapticore.core.messages import Command, HapticState, make_haptic_state
 from hapticore.core.messaging import make_ipc_address
-from hapticore.backends.haptic_client import HapticClient
+from hapticore.haptic.client import HapticClient
 
 from ._haptic_server_fixture import fake_haptic_server
 

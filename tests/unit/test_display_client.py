@@ -10,7 +10,7 @@ import pytest
 from hapticore.core.interfaces import DisplayInterface
 from hapticore.core.messages import TOPIC_DISPLAY
 from hapticore.core.messaging import EventBus, make_ipc_address
-from hapticore.display.display_client import DisplayClient
+from hapticore.display.client import DisplayClient
 
 
 def _unique_ipc() -> str:

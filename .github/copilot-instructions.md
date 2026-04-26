@@ -29,10 +29,10 @@ hapticore/
 ├── python/hapticore/
 │   ├── core/           # messaging (EventBus, CommandClient/Server), config (Pydantic models), interfaces (Protocol ABCs), messages (dataclass schemas + msgpack serialization)
 │   ├── tasks/          # behavioral task implementations (subclass BaseTask)
-│   ├── backends/       # haptic and display backends (HapticClient, DisplayProcess+DisplayClient, mocks, mouse-driven)
-│   ├── display/        # PsychoPy display process
-│   ├── recording/      # Ripple, SpikeGLX, LSL wrappers
-│   ├── sync/           # Teensy serial interface
+│   ├── haptic/         # haptic interface implementations and factory (HapticClient, MockHapticInterface, MouseHapticInterface, make_haptic_interface)
+│   ├── display/        # PsychoPy display process, client, mock, and factory (make_display_interface)
+│   ├── recording/      # neural recording implementations (MockNeuralRecording; real implementations land in Phase 5B)
+│   ├── sync/           # Teensy serial interface (SyncProcess, TeensySync, MockSync)
 │   └── cli/            # command-line entry points
 ├── cpp/haptic_server/  # C++ haptic server (CMake project)
 │   ├── src/            # source files (main, threads, force fields, DHD interface)
@@ -164,7 +164,7 @@ pio run  # compile only
 - Hardware tests use `@pytest.mark.hardware`. Interactive feel-tests (where the operator physically evaluates force feedback) use both `@pytest.mark.hardware` and `@pytest.mark.interactive`. Both markers are registered in `pyproject.toml`.
 - **All interactive feel-tests live in `tests/hardware/test_interactive_fields.py`**, organized as one test class per field type. When adding a new force field, add its feel-test class to this file — do not create a separate module.
 - **Always use `run_timed_evaluation()`** for interactive feel-tests. This handles the heartbeat keeper, countdown/duration timing, TTY detection, NullField revert, and operator confirmation in a consistent flow. Do not write raw `input()` calls or one-shot heartbeats.
-- **Never send a single heartbeat before a blocking `input()` call.** The server reverts to NullField after 500 ms without a heartbeat. Use the `HapticClient` (in `hapticore/backends/haptic_client.py`) to keep forces alive.
+- **Never send a single heartbeat before a blocking `input()` call.** The server reverts to NullField after 500 ms without a heartbeat. Use the `HapticClient` (in `hapticore/haptic/client.py`) to keep forces alive.
 - Interactive tests use the function-scoped `dealer` fixture (which reverts to NullField in its teardown), NOT the module-scoped `cmd_dealer` (which is for automated tests).  They also take `cmd_address`, `zmq_context`, `countdown`, and `duration` as fixtures.
 - Do not add standalone `test_cleanup_revert_to_null` functions. The `dealer` fixture handles cleanup automatically.
 - All shared ZMQ fixtures and helpers live in `tests/hardware/conftest.py`. The heartbeat keeper lives in `tests/hardware/heartbeat_keeper.py`. Check these before writing new infrastructure.
@@ -214,3 +214,4 @@ Before proposing alternatives to a settled decision, check `docs/adr/` for conte
 - `012`: Separate repository for video capture of behavior
 - `013`: Teensy 4.1 as centralized sync hub (supersedes xipppy-DIO sync plan)
 - `014`: 8-bit parallel event codes via the Scout D-sub port
+- `015`: Config-driven backend selection via factory functions

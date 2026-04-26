@@ -10,8 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import zmq
 
-from hapticore.backends import make_display_interface
-from hapticore.backends.mock import MockDisplay
+from hapticore.display import MockDisplay, make_display_interface
 from hapticore.core.config import DisplayConfig, ZMQConfig
 from hapticore.core.interfaces import DisplayInterface
 from hapticore.core.messaging import EventPublisher
@@ -61,11 +60,11 @@ class TestMakeDisplayInterface:
 
         with patch(
             "hapticore.display.process.DisplayProcess", return_value=fake_proc,
-        ), patch("hapticore.backends.display.time.sleep"):  # skip startup wait
+        ), patch("hapticore.display.factory.time.sleep"):  # skip startup wait
             with make_display_interface(
                 cfg, ZMQConfig(), publisher=publisher,
             ) as display:
-                from hapticore.display.display_client import DisplayClient
+                from hapticore.display.client import DisplayClient
                 assert isinstance(display, DisplayClient)
                 assert isinstance(display, DisplayInterface)
                 fake_proc.start.assert_called_once()
@@ -87,7 +86,7 @@ class TestMakeDisplayInterface:
 
         with patch(
             "hapticore.display.process.DisplayProcess", return_value=fake_proc,
-        ), patch("hapticore.backends.display.time.sleep"):
+        ), patch("hapticore.display.factory.time.sleep"):
             with make_display_interface(
                 cfg, ZMQConfig(), publisher=publisher,
             ):
@@ -113,7 +112,7 @@ class TestMakeDisplayInterface:
 
         with patch(
             "hapticore.display.process.DisplayProcess", side_effect=capture,
-        ), patch("hapticore.backends.display.time.sleep"):
+        ), patch("hapticore.display.factory.time.sleep"):
             with make_display_interface(
                 cfg, ZMQConfig(), publisher=publisher, mouse_queue=queue,
             ):

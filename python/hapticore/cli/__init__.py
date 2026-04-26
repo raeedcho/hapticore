@@ -16,10 +16,11 @@ def _run(args: argparse.Namespace) -> None:
 
     import zmq
 
-    from hapticore.backends import HapticClient, make_display_interface, make_haptic_interface
-    from hapticore.backends.mock import MockSync
     from hapticore.core.config import ZMQConfig, load_session_config
     from hapticore.core.messaging import EventPublisher, make_ipc_address
+    from hapticore.display import make_display_interface
+    from hapticore.haptic import HapticClient, make_haptic_interface
+    from hapticore.sync import MockSync
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
 

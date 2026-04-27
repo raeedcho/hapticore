@@ -4,12 +4,6 @@
 
 haptic:
   backend: mouse
-  workspace_bounds:
-    x: [-0.15, 0.15]
-    y: [-0.15, 0.15]
-    z: [-0.15, 0.15]
-  force_limit_n: 20.0
-  publish_rate_hz: 200.0
 
 display:
   backend: psychopy  # mouse mode requires the real PsychoPy window

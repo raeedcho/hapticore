@@ -1,11 +1,9 @@
 # Test fixture: rig layer
 haptic:
-  workspace_bounds:
-    x: [-0.10, 0.10]
-    y: [-0.10, 0.10]
-    z: [-0.10, 0.10]
-  force_limit_n: 15.0
-  publish_rate_hz: 100.0
+  backend: dhd
+  dhd:
+    force_limit_n: 15.0
+    publish_rate_hz: 100.0
 
 display:
   backend: mock

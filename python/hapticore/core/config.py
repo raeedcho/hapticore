@@ -48,6 +48,12 @@ class DhdConfig(BaseModel):
     These fields tune the client's command and heartbeat behavior.
     """
 
+    force_limit_n: float = Field(
+        default=20.0, gt=0, le=40.0, description="Maximum force in Newtons"
+    )
+    publish_rate_hz: float = Field(
+        default=200.0, gt=0, le=1000.0, description="Rate at which to publish haptic state updates"
+    )
     heartbeat_interval_s: float = Field(
         default=0.2, gt=0.0, lt=0.5,
         description="Heartbeat period in seconds. Must be strictly less "
@@ -63,16 +69,6 @@ class HapticConfig(BaseModel):
     """Haptic interface configuration."""
 
     backend: Literal["dhd", "mock", "mouse"] = "mock"
-
-    server_address: str = "localhost"
-    workspace_bounds: dict[str, list[float]] = Field(
-        default_factory=lambda: {"x": [-0.15, 0.15], "y": [-0.15, 0.15], "z": [-0.15, 0.15]},
-        description="Workspace limits in meters",
-    )
-    force_limit_n: float = Field(
-        default=20.0, gt=0, le=40.0, description="Maximum force in Newtons"
-    )
-    publish_rate_hz: float = Field(default=200.0, gt=0, le=1000.0)
 
     dhd: DhdConfig | None = None
 

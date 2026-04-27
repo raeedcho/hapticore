@@ -12,13 +12,10 @@ subject:  # required
     area: "M1"
 
 haptic:
-  server_address: "localhost"
-  workspace_bounds:
-    x: [-0.15, 0.15]
-    y: [-0.15, 0.15]
-    z: [-0.15, 0.15]
-  force_limit_n: 20.0
-  publish_rate_hz: 200.0
+  backend: dhd  # one of: dhd | mock | mouse
+  dhd:
+    force_limit_n: 20.0
+    publish_rate_hz: 200.0
 
 display:
   backend: mock

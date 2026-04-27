@@ -11,4 +11,5 @@ task:
   randomization: "pseudorandom"
 
 haptic:
-  publish_rate_hz: 500.0
+  dhd:
+    publish_rate_hz: 500.0

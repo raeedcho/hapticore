@@ -4,18 +4,14 @@
 
 haptic:
   backend: dhd  # HapticClient connects to the C++ haptic server over ZMQ
-  # Physical rig parameters (currently for human reference; Python code
-  # does not yet flow these into the C++ server — tracked separately).
-  workspace_bounds:
-    x: [-0.15, 0.15]
-    y: [-0.15, 0.15]
-    z: [-0.15, 0.15]
-  force_limit_n: 20.0
-  publish_rate_hz: 200.0
-  # Optional: tune heartbeat/timeout; defaults are fine for local IPC.
-  # dhd:
-  #   heartbeat_interval_s: 0.2
-  #   command_timeout_ms: 1000
+  dhd:
+    # Physical rig parameters (currently for human reference; Python code
+    # does not yet flow these into the C++ server — tracked separately).
+    force_limit_n: 20.0
+    publish_rate_hz: 200.0
+    # Optional: tune heartbeat/timeout; defaults are fine for local IPC.
+    heartbeat_interval_s: 0.2
+    command_timeout_ms: 1000
 
 display:
   backend: psychopy  # real PsychoPy window for the rig monitor

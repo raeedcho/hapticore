@@ -56,18 +56,24 @@ void stop_sync() {
 }
 
 uint32_t g_camera_period_us = 1'000'000u / 60u;  // default 60 Hz; not started
+bool g_camera_running = false;
 
 void set_camera_rate(uint32_t rate_hz) {
     g_camera_period_us = 1'000'000u / rate_hz;
+    if (g_camera_running) {
+        g_camera_timer.update(g_camera_period_us);
+    }
 }
 
 void start_camera() {
     digitalWriteFast(pins::CAMERA_TRIGGER, LOW);
     g_camera_timer.begin(camera_isr, g_camera_period_us);
+    g_camera_running = true;
 }
 
 void stop_camera() {
     g_camera_timer.end();
+    g_camera_running = false;
     digitalWriteFast(pins::CAMERA_TRIGGER, LOW);
 }
 

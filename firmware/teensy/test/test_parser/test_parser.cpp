@@ -6,6 +6,7 @@
 // serial protocol parser accepts the byte sequences emitted by
 // python/hapticore/sync/protocol.py and rejects malformed input.
 
+#include <cstring>
 #include <unity.h>
 
 #include "../../src/parser.h"

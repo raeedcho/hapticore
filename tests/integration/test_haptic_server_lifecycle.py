@@ -5,7 +5,7 @@ exercise the factory, and verify clean lifecycle management.
 
 Skipped automatically if the dev-mock binary is not built. Build with::
 
-    pixi run cpp          # builds dev-mock preset
+    pixi run mock-cpp          # builds dev-mock preset
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ _SERVER_BINARY: Path | None = next(
 pytestmark = pytest.mark.skipif(
     _SERVER_BINARY is None,
     reason=f"haptic_server binary not found at {_DEV_MOCK_BINARY} or {_CI_BINARY}. "
-           "Build with `pixi run cpp` (dev-mock) or `cmake --preset ci` (ci).",
+           "Build with `pixi run mock-cpp` (dev-mock) or `cmake --preset ci` (ci).",
 )
 
 

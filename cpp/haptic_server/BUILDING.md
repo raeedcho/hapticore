@@ -48,7 +48,7 @@ cmake --build --preset dev-dhd
 Or via pixi tasks:
 
 ```bash
-pixi run dhd-cpp-build
+pixi run dhd-cpp-debug-build
 ```
 
 For a production build:

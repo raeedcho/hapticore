@@ -14,15 +14,16 @@ See `docs/adr/013-teensy-sync-hub.md` for architectural context and
 
 ## Build
 
-This project uses PlatformIO. Install with:
+This project uses PlatformIO, which is installed via `pixi` dependencies.
 
 ```
-pip install platformio
+pixi install
 ```
 
 Then from this directory:
 
 ```
+pixi shell
 pio run                     # compile for Teensy 4.1
 pio run -e native           # compile host-side parser tests (optional)
 pio test -e native          # run host-side parser tests (optional)
@@ -31,7 +32,7 @@ pio test -e native          # run host-side parser tests (optional)
 ## Flash
 
 ```
-pio run -t upload           # flash via teensy-cli (Teensy must be plugged in)
+pixi run pio run -t upload           # flash via teensy-cli (Teensy must be plugged in)
 ```
 
 The `teensy-cli` upload protocol requires the Teensy bootloader. Press the

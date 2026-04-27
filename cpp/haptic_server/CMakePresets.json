@@ -26,8 +26,8 @@
       }
     },
     {
-      "name": "dev-real",
-      "displayName": "Development (Real Hardware)",
+      "name": "dev-dhd",
+      "displayName": "Development (DHD Hardware)",
       "inherits": "base",
       "generator": "Ninja",
       "cacheVariables": {
@@ -36,8 +36,8 @@
       }
     },
     {
-      "name": "release",
-      "displayName": "Release (Real Hardware)",
+      "name": "dhd",
+      "displayName": "Release (DHD Hardware)",
       "inherits": "base",
       "generator": "Ninja",
       "cacheVariables": {
@@ -71,12 +71,12 @@
       "configurePreset": "dev-mock"
     },
     {
-      "name": "dev-real",
-      "configurePreset": "dev-real"
+      "name": "dev-dhd",
+      "configurePreset": "dev-dhd"
     },
     {
-      "name": "release",
-      "configurePreset": "release"
+      "name": "dhd",
+      "configurePreset": "dhd"
     },
     {
       "name": "ci",

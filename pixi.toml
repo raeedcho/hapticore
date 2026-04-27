@@ -68,7 +68,17 @@ test-display = "pytest tests/display/ -m display -v"
 test = { depends-on = ["test-unit", "test-integration"] }
 
 # C++ haptic server (mock hardware)
-cpp-configure = { cmd = "cmake --preset dev-mock", cwd = "cpp/haptic_server" }
-cpp-build = { cmd = "cmake --build --preset dev-mock", cwd = "cpp/haptic_server", depends-on = ["cpp-configure"] }
-cpp-test = { cmd = "ctest --preset dev-mock", cwd = "cpp/haptic_server", depends-on = ["cpp-build"] }
-cpp = { depends-on = ["cpp-build", "cpp-test"] }
+mock-cpp-configure = { cmd = "cmake --preset dev-mock", cwd = "cpp/haptic_server" }
+mock-cpp-build = { cmd = "cmake --build --preset dev-mock", cwd = "cpp/haptic_server", depends-on = ["mock-cpp-configure"] }
+mock-cpp-test = { cmd = "ctest --preset dev-mock", cwd = "cpp/haptic_server", depends-on = ["mock-cpp-build"] }
+mock-cpp = { depends-on = ["mock-cpp-build", "mock-cpp-test"] }
+
+# C++ haptic server (DHD hardware)
+dhd-cpp-debug-configure = { cmd = "cmake --preset dev-dhd", cwd = "cpp/haptic_server" }
+dhd-cpp-debug-build = { cmd = "cmake --build --preset dev-dhd", cwd = "cpp/haptic_server", depends-on = ["dhd-cpp-debug-configure"] }
+
+# C++ haptic server release build (DHD hardware)
+dhd-cpp-release-configure = { cmd = "cmake --preset dhd", cwd = "cpp/haptic_server" }
+dhd-cpp-release-build = { cmd = "cmake --build --preset dhd", cwd = "cpp/haptic_server", depends-on = ["dhd-cpp-release-configure"] }
+
+haptic-build = { depends-on = ["mock-cpp", "dhd-cpp-debug-build", "dhd-cpp-release-build"] }

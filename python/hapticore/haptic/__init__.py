@@ -93,8 +93,8 @@ def _spawn_haptic_server(
     if not binary.exists():
         raise RuntimeError(
             f"Configured haptic_server binary does not exist: {binary}. "
-            "Build with `pixi run cpp` (mock) or "
-            "`cmake --build --preset dev-real` (real hardware)."
+            "Build with `pixi run mock-cpp` (mock) or "
+            "`pixi run dhd-cpp-build` (real hardware)."
         )
 
     args: list[str] = [

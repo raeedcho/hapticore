@@ -16,7 +16,7 @@ haptic:
     # individual `hapticore run` (e.g. iterating on task code without
     # re-paying calibration on every run), launch the binary once
     # manually; subsequent runs will attach.
-    server_binary: cpp/haptic_server/build/dev-real/haptic_server
+    server_binary: cpp/haptic_server/build/dev-dhd/haptic_server
     force_limit_n: 20.0
     publish_rate_hz: 200.0
     # Optional: tune heartbeat/timeout; defaults are fine for local IPC.

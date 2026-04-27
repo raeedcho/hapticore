@@ -200,12 +200,11 @@ The factory passes `force_limit_n` from the rig config through as `--force-limit
 2. Build the server (once per checkout; rebuild after C++ changes):
 
    ```bash
-   pixi run cpp           # mock build, dev-mock preset
-   # or, for the real device:
-   cd cpp/haptic_server
-   cmake --preset dev-real
-   cmake --build --preset dev-real
-   sudo setcap cap_sys_nice=eip build/dev-real/haptic_server
+   pixi run haptic-build           # build and test mock, and build dev-dhd and dhd release targets
+   # use setcap for real-time scheduling
+   # see below for automatic setcap
+   sudo setcap cap_sys_nice=eip cpp/haptic_server/build/dev-dhd/haptic_server
+   sudo setcap cap_sys_nice=eip cpp/haptic_server/build/dhd/haptic_server
    ```
 
 3. Make sure your rig config (e.g. `configs/rig/rig2.yaml`) has `haptic.dhd.server_binary` pointing to the binary you built, or set the `HAPTICORE_HAPTIC_SERVER_BIN` environment variable (which takes precedence over the config). The env var is useful when the path is rig-specific and you don't want it baked into a shared config file.
@@ -232,11 +231,11 @@ If you see "No haptic server detected at ..." with `auto_start: false` set in yo
 
 ### Long-lived server (across multiple `hapticore run` invocations)
 
-If you want the server to outlive any individual `hapticore run` — for example, iterating on task code without re-paying calibration on each run, or keeping the server up across debugging sessions — launch the binary once manually:
+If you want the server to outlive any individual `hapticore run` — for example, iterating on task code without re-paying calibration on each run, or keeping the server up across debugging sessions — launch the binary once manually (replace with `dev-dhd` build if you need the debugger):
 
 ```bash
 cd cpp/haptic_server
-./build/dev-real/haptic_server
+./build/dhd/haptic_server
 ```
 
 Subsequent `hapticore run` invocations will probe the address, find the running server, and attach. Because the factory only kills what it spawned, your manually-launched server stays alive across multiple `hapticore run` invocations.
@@ -248,7 +247,8 @@ The haptic loop runs at 4 kHz and needs real-time scheduling priority to avoid j
 Grant the capability after each build:
 
 ```bash
-sudo setcap cap_sys_nice=eip build/dev-real/haptic_server
+sudo setcap cap_sys_nice=eip build/dev-dhd/haptic_server
+sudo setcap cap_sys_nice=eip build/dhd/haptic_server
 ```
 
 To avoid running this manually after every rebuild, set up passwordless sudo for just the `setcap` command. Create a sudoers rule (replace `yourusername` with your actual username):
@@ -268,8 +268,8 @@ With this in place, the CMake post-build hook (if configured in `CMakeLists.txt`
 You can verify the capability is set:
 
 ```bash
-getcap build/dev-real/haptic_server
-# Expected: build/dev-real/haptic_server cap_sys_nice=eip
+getcap build/dhd/haptic_server
+# Expected: build/dhd/haptic_server cap_sys_nice=eip
 ```
 
 ### Cross-machine operation
@@ -277,7 +277,7 @@ getcap build/dev-real/haptic_server
 To connect from another machine (e.g., your macOS laptop running the Python task controller), use TCP addresses:
 
 ```bash
-./build/dev-real/haptic_server \
+./build/dhd/haptic_server \
     --pub-address tcp://*:5555 \
     --cmd-address tcp://*:5556
 ```
@@ -373,11 +373,11 @@ pixi run test-interactive --countdown=8 --duration=15
 - Is the USB cable connected?
 - Run `lsusb | grep 1451` to check if the device is visible.
 - Check the udev rule: `cat /etc/udev/rules.d/99-forcedimension.rules`
-- Try `sudo ./build/dev-real/haptic_server` to rule out permissions.
+- Try `sudo ./build/dev-dhd/haptic_server` to rule out permissions.
 
 **"Warning: could not set SCHED_FIFO"**
-- Run `getcap build/dev-real/haptic_server` — should show `cap_sys_nice=eip`.
-- If empty, run `sudo setcap cap_sys_nice=eip build/dev-real/haptic_server`.
+- Run `getcap build/dev-dhd/haptic_server` — should show `cap_sys_nice=eip`.
+- If empty, run `sudo setcap cap_sys_nice=eip build/dev-dhd/haptic_server`.
 - Capabilities are lost on rebuild — see the passwordless sudo setup above.
 
 **Hardware tests can't connect / time out**
@@ -386,7 +386,7 @@ pixi run test-interactive --countdown=8 --duration=15
 - For IPC, both the server and tests must run on the same machine.
 
 **Position reads as exactly [0, 0, 0]**
-- The mock hardware build reports zero position. Make sure you built with the `dev-real` preset (not `dev-mock`).
+- The mock hardware build reports zero position. Make sure you built with the `dev-dhd` preset (not `dev-mock`).
 - Physically move the handle slightly and re-run.
 
 **Handle drops under gravity when server is running**

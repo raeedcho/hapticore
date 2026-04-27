@@ -129,8 +129,12 @@ def _wait_for_server_ready(
 ) -> None:
     """Poll the probe until it succeeds or the deadline passes."""
     deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if _haptic_server_alive(state_address, timeout_s=0.5):
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        probe_timeout = min(0.5, remaining)
+        if _haptic_server_alive(state_address, timeout_s=probe_timeout):
             return
         # Probe already includes its own 0.5 s of waiting; loop
         # immediately and re-probe rather than adding another sleep.

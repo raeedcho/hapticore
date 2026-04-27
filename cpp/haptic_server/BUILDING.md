@@ -61,7 +61,13 @@ cmake --build --preset dhd
 Or via pixi tasks:
 
 ```bash
-pixi run dhd-cpp-release-build
+pixi run dhd-cpp-build
+```
+
+To build all targets via pixi:
+
+```bash
+pixi run haptic-build
 ```
 
 ## Platform notes

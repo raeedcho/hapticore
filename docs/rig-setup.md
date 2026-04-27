@@ -308,7 +308,7 @@ Hardware tests connect to a running haptic server and exercise the real device. 
 
 2. Make sure the device handle is not at the exact workspace center — just leave it wherever it naturally rests.
 
-3. Run the tests:
+<!-- 3. Run the tests: -->
 
 ```bash
 pixi run test-hardware
@@ -373,11 +373,11 @@ pixi run test-interactive --countdown=8 --duration=15
 - Is the USB cable connected?
 - Run `lsusb | grep 1451` to check if the device is visible.
 - Check the udev rule: `cat /etc/udev/rules.d/99-forcedimension.rules`
-- Try `sudo ./build/dev-dhd/haptic_server` to rule out permissions.
+- Try `sudo ./build/dhd/haptic_server` to rule out permissions.
 
 **"Warning: could not set SCHED_FIFO"**
-- Run `getcap build/dev-dhd/haptic_server` — should show `cap_sys_nice=eip`.
-- If empty, run `sudo setcap cap_sys_nice=eip build/dev-dhd/haptic_server`.
+- Run `getcap build/dhd/haptic_server` — should show `cap_sys_nice=eip`.
+- If empty, run `sudo setcap cap_sys_nice=eip build/dhd/haptic_server`.
 - Capabilities are lost on rebuild — see the passwordless sudo setup above.
 
 **Hardware tests can't connect / time out**
@@ -386,7 +386,7 @@ pixi run test-interactive --countdown=8 --duration=15
 - For IPC, both the server and tests must run on the same machine.
 
 **Position reads as exactly [0, 0, 0]**
-- The mock hardware build reports zero position. Make sure you built with the `dev-dhd` preset (not `dev-mock`).
+- The mock hardware build reports zero position. Make sure you built with the `dhd` preset (not `dev-mock`).
 - Physically move the handle slightly and re-run.
 
 **Handle drops under gravity when server is running**

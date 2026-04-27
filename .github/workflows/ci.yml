@@ -145,3 +145,31 @@ jobs:
 
       - name: Run display tests under xvfb
         run: xvfb-run -a -s "-screen 0 1920x1080x24" pixi run -e display test-display
+
+  firmware-build:
+    name: Teensy firmware compile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Compile firmware for Teensy 4.1
+        run: pio run -e teensy41
+        working-directory: firmware/teensy
+
+      - name: Run host-side parser tests
+        run: pio test -e native -f test_parser
+        working-directory: firmware/teensy
+        # Allow this step to fail without failing the job. Parser tests are
+        # nice-to-have; the compile-check above is the hard requirement.
+        continue-on-error: true

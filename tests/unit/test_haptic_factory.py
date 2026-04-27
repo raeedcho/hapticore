@@ -7,6 +7,7 @@ import multiprocessing.queues
 import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -246,4 +247,17 @@ class TestMakeHapticInterfaceDhdLifecycle:
                 with make_haptic_interface(cfg, zmq_cfg):
                     pass
             mock_spawn.assert_not_called()
+
+
+class TestSpawnHapticServer:
+    """Tests for _spawn_haptic_server helper."""
+
+    @patch("hapticore.haptic.subprocess.Popen")
+    def test_spawn_uses_new_session(self, mock_popen: MagicMock) -> None:
+        """Spawned server must be in its own session so Ctrl+C doesn't reach it."""
+        from hapticore.haptic import _spawn_haptic_server  # noqa: PLC2701
+        cfg = DhdConfig(server_binary=Path("/some/existing/path"))
+        with patch.object(Path, "exists", return_value=True):
+            _spawn_haptic_server(cfg, ZMQConfig())
+        assert mock_popen.call_args.kwargs["start_new_session"] is True
 

@@ -121,7 +121,7 @@ def _spawn_haptic_server(
         preexec_fn = _set_pdeathsig
 
     logger.info("Spawning haptic_server: %s", " ".join(args))
-    return subprocess.Popen(args, preexec_fn=preexec_fn)
+    return subprocess.Popen(args, preexec_fn=preexec_fn, start_new_session=True)
 
 
 def _wait_for_server_ready(
@@ -233,7 +233,7 @@ def make_haptic_interface(
                     zmq_cfg.haptic_state_address,
                     timeout_s=cfg.dhd.startup_timeout_s,
                 )
-            except Exception:
+            except BaseException:
                 _terminate_server(spawned)
                 raise
 

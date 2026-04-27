@@ -100,7 +100,7 @@ jobs:
         working-directory: cpp/haptic_server
 
   test-cross-language:
-    name: Cross-language serialization
+    name: Cross-language serialization + server lifecycle
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,6 +120,9 @@ jobs:
 
       - name: Run cross-language test
         run: pixi run -- pytest tests/integration/test_cross_language.py -v
+
+      - name: Run haptic server lifecycle integration tests
+        run: pixi run -- pytest tests/integration/test_haptic_server_lifecycle.py -v
 
   test-display:
     name: Display tests (Linux xvfb)

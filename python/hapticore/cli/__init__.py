@@ -10,7 +10,6 @@ import sys
 
 def _run(args: argparse.Namespace) -> None:
     """Run a task against the hardware specified in the rig config."""
-    import contextlib
     import multiprocessing
     import multiprocessing.queues
 
@@ -19,7 +18,7 @@ def _run(args: argparse.Namespace) -> None:
     from hapticore.core.config import ZMQConfig, load_session_config
     from hapticore.core.messaging import EventPublisher, make_ipc_address
     from hapticore.display import make_display_interface
-    from hapticore.haptic import HapticClient, make_haptic_interface
+    from hapticore.haptic import make_haptic_interface
     from hapticore.sync import MockSync
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
@@ -97,19 +96,11 @@ def _run(args: argparse.Namespace) -> None:
     ctx = zmq.Context()
     publisher = EventPublisher(ctx, session_zmq.event_pub_address)
 
-    # Construct haptic interface via factory (no lifecycle owned here).
-    haptic = make_haptic_interface(
-        config.haptic, session_zmq,
-        context=ctx, mouse_queue=mouse_queue,
-    )
-
-    # Use contextlib.nullcontext() to manage backend-dependent lifecycle.
-    # HapticClient needs connect()/close() via __enter__/__exit__; mocks need neither.
-    haptic_cm: contextlib.AbstractContextManager[object] = (
-        haptic if isinstance(haptic, HapticClient) else contextlib.nullcontext()
-    )
     try:
-        with haptic_cm, make_display_interface(
+        with make_haptic_interface(
+            config.haptic, session_zmq,
+            context=ctx, mouse_queue=mouse_queue,
+        ) as haptic, make_display_interface(
             config.display, session_zmq,
             publisher=publisher, mouse_queue=mouse_queue,
         ) as display:

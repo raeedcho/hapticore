@@ -1,12 +1,22 @@
 # Rig 2 — real delta.3 haptic rig with two monitors
-# This config drives sessions against the actual hardware. Do not use on
-# a laptop; it assumes the C++ haptic server is running.
+# This config drives sessions against the actual hardware. The haptic
+# server is auto-started by default (see haptic.dhd notes below).
 
 haptic:
   backend: dhd  # HapticClient connects to the C++ haptic server over ZMQ
   dhd:
-    # Physical rig parameters (currently for human reference; Python code
-    # does not yet flow these into the C++ server — tracked separately).
+    # auto_start defaults to True: hapticore probes the configured ZMQ
+    # state address on startup. If a server is already running, the
+    # factory attaches and leaves it running on exit. If not, the
+    # factory spawns one from server_binary, passing force_limit_n and
+    # publish_rate_hz through as --force-limit / --pub-rate, and
+    # cleanly terminates it on exit.
+    #
+    # For long-lived sessions where you want the server to outlive any
+    # individual `hapticore run` (e.g. iterating on task code without
+    # re-paying calibration on every run), launch the binary once
+    # manually; subsequent runs will attach.
+    server_binary: cpp/haptic_server/build/dev-real/haptic_server
     force_limit_n: 20.0
     publish_rate_hz: 200.0
     # Optional: tune heartbeat/timeout; defaults are fine for local IPC.

@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import multiprocessing
 import multiprocessing.queues
+import subprocess
+import threading
+import time
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 import zmq
 
 from hapticore.core.config import DhdConfig, HapticConfig, ZMQConfig
 from hapticore.core.interfaces import HapticInterface
+from hapticore.core.messages import TOPIC_STATE
+from hapticore.core.messaging import make_ipc_address
 from hapticore.haptic import HapticClient, make_haptic_interface
+from hapticore.haptic import _haptic_server_alive  # noqa: PLC2701 — testing internal probe directly
 from hapticore.haptic.mock import MockHapticInterface
 from hapticore.haptic.mouse import MouseHapticInterface
 
@@ -19,42 +26,44 @@ from hapticore.haptic.mouse import MouseHapticInterface
 class TestMakeHapticInterface:
     def test_mock_backend_returns_mock_interface(self) -> None:
         cfg = HapticConfig(backend="mock")
-        iface = make_haptic_interface(cfg, ZMQConfig())
-        assert isinstance(iface, MockHapticInterface)
-        assert isinstance(iface, HapticInterface)
+        with make_haptic_interface(cfg, ZMQConfig()) as iface:
+            assert isinstance(iface, MockHapticInterface)
+            assert isinstance(iface, HapticInterface)
 
     def test_mouse_backend_returns_mouse_interface(self) -> None:
         cfg = HapticConfig(backend="mouse")
         queue: multiprocessing.queues.Queue[tuple[float, float]] = (
             multiprocessing.Queue(maxsize=4)
         )
-        iface = make_haptic_interface(cfg, ZMQConfig(), mouse_queue=queue)
-        assert isinstance(iface, MouseHapticInterface)
-        assert isinstance(iface, HapticInterface)
+        with make_haptic_interface(cfg, ZMQConfig(), mouse_queue=queue) as iface:
+            assert isinstance(iface, MouseHapticInterface)
+            assert isinstance(iface, HapticInterface)
 
     def test_mouse_backend_without_queue_raises(self) -> None:
         cfg = HapticConfig(backend="mouse")
         with pytest.raises(ValueError, match="mouse_queue"):
-            make_haptic_interface(cfg, ZMQConfig())
+            with make_haptic_interface(cfg, ZMQConfig()):
+                pass
 
-    def test_dhd_backend_returns_unconnected_haptic_client(self) -> None:
+    def test_dhd_backend_returns_connected_haptic_client(self) -> None:
         cfg = HapticConfig(backend="dhd")
         zmq_cfg = ZMQConfig()
-        iface = make_haptic_interface(cfg, zmq_cfg)
-        assert isinstance(iface, HapticClient)
-        assert isinstance(iface, HapticInterface)
-        # Factory must NOT connect; caller owns lifecycle.
-        assert not iface._connected  # noqa: SLF001
+        with patch("hapticore.haptic._haptic_server_alive", return_value=True):
+            with make_haptic_interface(cfg, zmq_cfg) as iface:
+                assert isinstance(iface, HapticClient)
+                assert isinstance(iface, HapticInterface)
+                assert iface._connected  # noqa: SLF001
 
     def test_dhd_backend_passes_nested_params_through(self) -> None:
         cfg = HapticConfig(
             backend="dhd",
             dhd=DhdConfig(heartbeat_interval_s=0.1, command_timeout_ms=500),
         )
-        iface = make_haptic_interface(cfg, ZMQConfig())
-        assert isinstance(iface, HapticClient)
-        assert iface._heartbeat_interval_s == 0.1  # noqa: SLF001
-        assert iface._command_timeout_ms == 500    # noqa: SLF001
+        with patch("hapticore.haptic._haptic_server_alive", return_value=True):
+            with make_haptic_interface(cfg, ZMQConfig()) as iface:
+                assert isinstance(iface, HapticClient)
+                assert iface._heartbeat_interval_s == 0.1  # noqa: SLF001
+                assert iface._command_timeout_ms == 500    # noqa: SLF001
 
     def test_dhd_backend_uses_zmq_addresses(self) -> None:
         cfg = HapticConfig(backend="dhd")
@@ -62,24 +71,179 @@ class TestMakeHapticInterface:
             haptic_state_address="ipc:///tmp/test_state",
             haptic_command_address="ipc:///tmp/test_cmd",
         )
-        iface = make_haptic_interface(cfg, zmq_cfg)
-        assert isinstance(iface, HapticClient)
-        assert iface._state_address == "ipc:///tmp/test_state"       # noqa: SLF001
-        assert iface._command_address == "ipc:///tmp/test_cmd"       # noqa: SLF001
+        with patch("hapticore.haptic._haptic_server_alive", return_value=True):
+            with make_haptic_interface(cfg, zmq_cfg) as iface:
+                assert isinstance(iface, HapticClient)
+                assert iface._state_address == "ipc:///tmp/test_state"       # noqa: SLF001
+                assert iface._command_address == "ipc:///tmp/test_cmd"       # noqa: SLF001
 
     def test_dhd_backend_with_external_context_does_not_own_it(self) -> None:
         cfg = HapticConfig(backend="dhd")
         ctx: zmq.Context[Any] = zmq.Context()
         try:
-            iface = make_haptic_interface(cfg, ZMQConfig(), context=ctx)
-            assert isinstance(iface, HapticClient)
-            assert not iface._own_context  # noqa: SLF001
-            assert iface._context is ctx   # noqa: SLF001
+            with patch("hapticore.haptic._haptic_server_alive", return_value=True):
+                with make_haptic_interface(cfg, ZMQConfig(), context=ctx) as iface:
+                    assert isinstance(iface, HapticClient)
+                    assert not iface._own_context  # noqa: SLF001
+                    assert iface._context is ctx   # noqa: SLF001
         finally:
             ctx.term()
 
     def test_dhd_backend_without_context_owns_its_own(self) -> None:
         cfg = HapticConfig(backend="dhd")
-        iface = make_haptic_interface(cfg, ZMQConfig())
-        assert isinstance(iface, HapticClient)
-        assert iface._own_context  # noqa: SLF001
+        with patch("hapticore.haptic._haptic_server_alive", return_value=True):
+            with make_haptic_interface(cfg, ZMQConfig()) as iface:
+                assert isinstance(iface, HapticClient)
+                assert iface._own_context  # noqa: SLF001
+
+
+class TestHapticServerProbe:
+    """Tests for the _haptic_server_alive probe."""
+
+    def test_probe_returns_true_when_server_publishing(self) -> None:
+        """Bind a real PUB socket and publish TOPIC_STATE; probe should return True."""
+        address = make_ipc_address("probe_test_alive")
+        ctx: zmq.Context[Any] = zmq.Context()
+        pub = ctx.socket(zmq.PUB)
+        pub.bind(address)
+
+        stop_event = threading.Event()
+
+        def _publish() -> None:
+            while not stop_event.is_set():
+                try:
+                    pub.send_multipart([TOPIC_STATE, b"x"], zmq.NOBLOCK)
+                except zmq.Again:
+                    pass
+                time.sleep(0.02)
+
+        t = threading.Thread(target=_publish, daemon=True)
+        t.start()
+        try:
+            # Give the publisher a moment to bind and start
+            time.sleep(0.1)
+            result = _haptic_server_alive(address, timeout_s=1.0)
+            assert result is True
+        finally:
+            stop_event.set()
+            t.join(timeout=2.0)
+            pub.close(linger=0)
+            ctx.term()
+
+    def test_probe_returns_false_when_socket_bound_but_no_publish(self) -> None:
+        """Bind a PUB socket but never publish; probe should return False."""
+        address = make_ipc_address("probe_test_silent")
+        ctx: zmq.Context[Any] = zmq.Context()
+        pub = ctx.socket(zmq.PUB)
+        pub.bind(address)
+        try:
+            result = _haptic_server_alive(address, timeout_s=0.2)
+            assert result is False
+        finally:
+            pub.close(linger=0)
+            ctx.term()
+
+    def test_probe_returns_false_when_no_socket(self) -> None:
+        """No socket at the address; probe should return False."""
+        address = make_ipc_address("probe_test_nosocket")
+        result = _haptic_server_alive(address, timeout_s=0.2)
+        assert result is False
+
+
+class TestMakeHapticInterfaceDhdLifecycle:
+    """Tests for the auto-start branch of the dhd backend."""
+
+    def _make_dhd_cfg(self, **kwargs: Any) -> HapticConfig:
+        return HapticConfig(backend="dhd", dhd=DhdConfig(**kwargs))
+
+    def test_auto_start_true_probe_passes_no_spawn(self) -> None:
+        """auto_start=True, probe returns True → no spawn, client connected."""
+        cfg = self._make_dhd_cfg()
+        zmq_cfg = ZMQConfig()
+        with (
+            patch("hapticore.haptic._haptic_server_alive", return_value=True) as mock_probe,
+            patch("hapticore.haptic._spawn_haptic_server") as mock_spawn,
+            patch("hapticore.haptic._terminate_server") as mock_terminate,
+        ):
+            with make_haptic_interface(cfg, zmq_cfg) as haptic:
+                assert isinstance(haptic, HapticClient)
+                assert haptic._connected  # noqa: SLF001
+            mock_probe.assert_called_once()
+            mock_spawn.assert_not_called()
+            mock_terminate.assert_not_called()
+
+    def test_auto_start_true_probe_fails_spawns_server(self) -> None:
+        """auto_start=True, probe returns False → server spawned with correct args."""
+        cfg = self._make_dhd_cfg(force_limit_n=15.0, publish_rate_hz=100.0)
+        zmq_cfg = ZMQConfig(
+            haptic_state_address="ipc:///tmp/test_spawn_state",
+            haptic_command_address="ipc:///tmp/test_spawn_cmd",
+        )
+        fake_proc: MagicMock = MagicMock(spec=subprocess.Popen)
+        fake_proc.poll.return_value = None
+
+        with (
+            patch("hapticore.haptic._haptic_server_alive", return_value=False) as mock_probe,
+            patch("hapticore.haptic._spawn_haptic_server", return_value=fake_proc) as mock_spawn,
+            patch("hapticore.haptic._wait_for_server_ready") as mock_wait,
+            patch("hapticore.haptic._terminate_server") as mock_terminate,
+        ):
+            with make_haptic_interface(cfg, zmq_cfg) as haptic:
+                assert isinstance(haptic, HapticClient)
+            mock_probe.assert_called_once()
+            mock_spawn.assert_called_once()
+            # Verify the spawn was called with the right config objects
+            spawn_call_args = mock_spawn.call_args
+            assert spawn_call_args[0][0] is cfg.dhd
+            assert spawn_call_args[0][1] is zmq_cfg
+            mock_wait.assert_called_once()
+            mock_terminate.assert_called_once_with(fake_proc)
+
+    def test_auto_start_true_spawn_then_probe_times_out(self) -> None:
+        """auto_start=True, _wait_for_server_ready raises → terminate spawned proc, re-raise."""
+        cfg = self._make_dhd_cfg()
+        zmq_cfg = ZMQConfig()
+        fake_proc: MagicMock = MagicMock(spec=subprocess.Popen)
+        fake_proc.poll.return_value = None
+
+        with (
+            patch("hapticore.haptic._haptic_server_alive", return_value=False),
+            patch("hapticore.haptic._spawn_haptic_server", return_value=fake_proc),
+            patch(
+                "hapticore.haptic._wait_for_server_ready",
+                side_effect=RuntimeError("timed out"),
+            ),
+            patch("hapticore.haptic._terminate_server") as mock_terminate,
+        ):
+            with pytest.raises(RuntimeError, match="timed out"):
+                with make_haptic_interface(cfg, zmq_cfg):
+                    pass
+            mock_terminate.assert_called_once_with(fake_proc)
+
+    def test_auto_start_false_probe_passes_no_spawn(self) -> None:
+        """auto_start=False, probe returns True → attach, no spawn."""
+        cfg = self._make_dhd_cfg(auto_start=False)
+        zmq_cfg = ZMQConfig()
+        with (
+            patch("hapticore.haptic._haptic_server_alive", return_value=True),
+            patch("hapticore.haptic._spawn_haptic_server") as mock_spawn,
+            patch("hapticore.haptic._terminate_server") as mock_terminate,
+        ):
+            with make_haptic_interface(cfg, zmq_cfg) as haptic:
+                assert isinstance(haptic, HapticClient)
+            mock_spawn.assert_not_called()
+            mock_terminate.assert_not_called()
+
+    def test_auto_start_false_probe_fails_raises_runtime_error(self) -> None:
+        """auto_start=False, probe returns False → RuntimeError, no spawn."""
+        cfg = self._make_dhd_cfg(auto_start=False)
+        zmq_cfg = ZMQConfig()
+        with (
+            patch("hapticore.haptic._haptic_server_alive", return_value=False),
+            patch("hapticore.haptic._spawn_haptic_server") as mock_spawn,
+        ):
+            with pytest.raises(RuntimeError, match="No haptic server detected"):
+                with make_haptic_interface(cfg, zmq_cfg):
+                    pass
+            mock_spawn.assert_not_called()
+

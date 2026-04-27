@@ -183,22 +183,63 @@ Use `mirror_vertical: true` if the optical path also inverts the image verticall
 
 `photodiode_corner` refers to the **physical location** of the sensor taped to the monitor (e.g., `"bottom_left"` if the sensor is at the bottom-left corner as seen from the front). When a mirror flag is set, the display process automatically remaps the render-frame corner to match the physical sensor location — no manual adjustment needed.
 
-## Haptic server
+## Running the haptic server
 
-Enter the pixi environment, then build:
+By default, hapticore manages the C++ haptic server's lifecycle for you. When you run `hapticore run` (or hardware tests via the same factory), the Python factory probes the configured ZMQ state address:
+
+- **If a server is already running on those addresses,** hapticore attaches to it as a client and leaves it running on exit.
+- **If no server is detected,** hapticore spawns one from the binary path in `haptic.dhd.server_binary`, waits up to `startup_timeout_s` (default 20 s) for it to come up, attaches, and on exit cleanly terminates the server it spawned.
+
+This means most workflows are one command: `hapticore run --rig configs/rig/rig2.yaml --subject ... --task ...`. The factory only kills what it spawned, so launching the server manually in a separate terminal is the supported way to keep it alive across multiple `hapticore run` invocations (see "Long-lived server" below).
+
+The factory passes `force_limit_n` from the rig config through as `--force-limit` and `publish_rate_hz` as `--pub-rate`, so spawned-server parameters can never drift from the YAML. (For manually-launched servers, you're responsible for matching them yourself.)
+
+### First-time setup
+
+1. Power on the delta.3 and connect it via USB.
+2. Build the server (once per checkout; rebuild after C++ changes):
+
+   ```bash
+   pixi run cpp           # mock build, dev-mock preset
+   # or, for the real device:
+   cd cpp/haptic_server
+   cmake --preset dev-real
+   cmake --build --preset dev-real
+   sudo setcap cap_sys_nice=eip build/dev-real/haptic_server
+   ```
+
+3. Make sure your rig config (e.g. `configs/rig/rig2.yaml`) has `haptic.dhd.server_binary` pointing to the binary you built, or set the `HAPTICORE_HAPTIC_SERVER_BIN` environment variable (which takes precedence over the config). The env var is useful when the path is rig-specific and you don't want it baked into a shared config file.
+
+4. Run a session. The first run after powering on the device will trigger auto-calibration:
+
+   ```
+   Spawning haptic_server: .../haptic_server --pub-address ...
+   Opened device: delta.3
+   Auto-calibrating — device will move, keep hands clear...
+   Calibration complete
+   Position sanity check: device at nonzero position
+   Haptic server running.
+     PUB: ipc:///tmp/hapticore_haptic_state
+     CMD: ipc:///tmp/hapticore_haptic_cmd
+     Rate: 200 Hz
+     Force limit: 20 N
+   Press Ctrl+C to stop.
+   ```
+
+   Subsequent runs within the same power cycle skip calibration.
+
+If you see "No haptic server detected at ..." with `auto_start: false` set in your config, either remove the override or start the server manually (see below). If you see `"Configured haptic_server binary does not exist"`, build the server first.
+
+### Long-lived server (across multiple `hapticore run` invocations)
+
+If you want the server to outlive any individual `hapticore run` — for example, iterating on task code without re-paying calibration on each run, or keeping the server up across debugging sessions — launch the binary once manually:
 
 ```bash
-pixi shell
 cd cpp/haptic_server
-cmake --preset dev-real
-cmake --build --preset dev-real
+./build/dev-real/haptic_server
 ```
 
-Verify the build succeeded:
-
-```bash
-./build/dev-real/haptic_server --help
-```
+Subsequent `hapticore run` invocations will probe the address, find the running server, and attach. Because the factory only kills what it spawned, your manually-launched server stays alive across multiple `hapticore run` invocations.
 
 ### Real-time scheduling (SCHED_FIFO)
 
@@ -230,46 +271,6 @@ You can verify the capability is set:
 getcap build/dev-real/haptic_server
 # Expected: build/dev-real/haptic_server cap_sys_nice=eip
 ```
-
-### First run
-
-1. Power on the delta.3 and connect it via USB.
-
-2. Start the server:
-
-```bash
-cd cpp/haptic_server
-./build/dev-real/haptic_server
-```
-
-You should see:
-
-```
-Opened device: delta.3
-Device already calibrated
-Position sanity check: device at nonzero position
-Haptic server running.
-  PUB: ipc:///tmp/hapticore_haptic_state
-  CMD: ipc:///tmp/hapticore_haptic_cmd
-  Rate: 200 Hz
-  Force limit: 20 N
-Press Ctrl+C to stop.
-```
-
-For a fresh power-on (uncalibrated device), you will instead see:
-
-```
-Opened device: delta.3
-Auto-calibrating — device will move, keep hands clear...
-Calibration complete
-Position sanity check: device at nonzero position
-Haptic server running.
-...
-```
-
-If you see "Error: failed to open haptic device", check that the delta.3 is powered on, the USB cable is connected, and the udev rule is in place.
-
-If you see "Warning: could not set SCHED_FIFO", the `CAP_SYS_NICE` capability is not set. The server will still work but with potentially higher timing jitter.
 
 ### Cross-machine operation
 

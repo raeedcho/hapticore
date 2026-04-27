@@ -83,8 +83,13 @@ def _spawn_haptic_server(
     matching the resolved config.
 
     Inherits stdout/stderr so the user sees calibration progress directly.
-    On Linux, sets PR_SET_PDEATHSIG=SIGTERM in the child so a Python crash
-    doesn't leak a server. macOS has no equivalent; documented as a gap.
+    Uses start_new_session=True so Ctrl+C in the parent's terminal doesn't
+    reach the spawned server. Passes --die-with-parent so the C++ server
+    sets PR_SET_PDEATHSIG on Linux (handles the case where Python crashes
+    hard without unwinding through the factory's finally block). The
+    prctl call happens in the C++ binary after exec(), avoiding the
+    multi-thread fork hazard documented at
+    https://docs.python.org/3/library/subprocess.html#subprocess.Popen.preexec_fn
     """
     binary = _resolve_server_binary(cfg)
     if not binary.exists():
@@ -100,6 +105,7 @@ def _spawn_haptic_server(
         "--cmd-address", zmq_cfg.haptic_command_address,
         "--force-limit", str(cfg.force_limit_n),
         "--pub-rate", str(cfg.publish_rate_hz),
+        "--die-with-parent",
     ]
 
     logger.info("Spawning haptic_server: %s", " ".join(args))

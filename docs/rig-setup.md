@@ -382,10 +382,15 @@ pixi run test-interactive --countdown=8 --duration=15
 - Check the udev rule: `cat /etc/udev/rules.d/99-forcedimension.rules`
 - Try `sudo ./build/dhd/haptic_server` to rule out permissions.
 
-**"Warning: could not set SCHED_FIFO"**
-- Run `getcap build/dhd/haptic_server` — should show `cap_sys_nice=eip`.
-- If empty, run `sudo setcap cap_sys_nice=eip build/dhd/haptic_server`.
-- Capabilities are lost on rebuild — see the passwordless sudo setup above.
+**"Error: cannot set SCHED_FIFO" (server exits immediately)**
+- The binary doesn't have `CAP_SYS_NICE` and refuses to run with silently degraded timing.
+- Apply the capability with the command shown in the error message: `sudo setcap cap_sys_nice=eip <binary path>`.
+- For automatic application on every rebuild, configure passwordless sudo per the "Real-time scheduling" section above.
+- To bypass the check for non-data-collection runs, pass `--allow-no-rt`. Do NOT use this for sessions that record data.
+
+**"WARNING: --allow-no-rt set; SCHED_FIFO unavailable" (server runs)**
+- Expected when running with `--allow-no-rt`. The haptic loop runs at default scheduling.
+- Timing jitter under load is expected and may produce data artifacts. Don't record data from this run.
 
 **Hardware tests can't connect / time out**
 - Is the server running? Check with `ps aux | grep haptic_server`.

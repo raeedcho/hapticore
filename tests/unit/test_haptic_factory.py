@@ -261,3 +261,15 @@ class TestSpawnHapticServer:
             _spawn_haptic_server(cfg, ZMQConfig())
         assert mock_popen.call_args.kwargs["start_new_session"] is True
 
+    @patch("hapticore.haptic.subprocess.Popen")
+    def test_spawn_passes_die_with_parent(self, mock_popen: MagicMock) -> None:
+        """Factory spawns must pass --die-with-parent so the C++ server sets
+        PR_SET_PDEATHSIG; this is the hard-crash safety net when Python can't
+        run _terminate_server. Manual launches omit the flag intentionally."""
+        from hapticore.haptic import _spawn_haptic_server  # noqa: PLC2701
+        cfg = DhdConfig(server_binary=Path("/some/existing/path"))
+        with patch.object(Path, "exists", return_value=True):
+            _spawn_haptic_server(cfg, ZMQConfig())
+        spawned_args: list[str] = mock_popen.call_args.args[0]
+        assert "--die-with-parent" in spawned_args
+

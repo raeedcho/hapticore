@@ -386,7 +386,7 @@ pixi run test-interactive --countdown=8 --duration=15
 - For IPC, both the server and tests must run on the same machine.
 
 **Position reads as exactly [0, 0, 0]**
-- The mock hardware build reports zero position. Make sure you built with the `dhd` preset (not `dev-mock`).
+- The mock hardware build reports zero position. Make sure you built with a hardware preset (`dhd` or `dev-dhd`), not `dev-mock`.
 - Physically move the handle slightly and re-run.
 
 **Handle drops under gravity when server is running**

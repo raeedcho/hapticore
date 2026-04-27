@@ -102,7 +102,7 @@ class TestValueConstraints:
 class TestDefaults:
     """Tests for default value application."""
 
-    def test_haptic_defaults(self) -> None:
+    def test_dhd_defaults(self) -> None:
         config = DhdConfig()
         assert config.force_limit_n == 20.0
         assert config.publish_rate_hz == 200.0
@@ -168,7 +168,7 @@ class TestLayeredMerge:
         assert config.haptic.dhd.force_limit_n == 15.0
 
     def test_later_file_wins(self) -> None:
-        """When two files both set haptic.force_limit_n, the later file wins."""
+        """When two files both set haptic.dhd.force_limit_n, the later file wins."""
         config = load_config(
             FIXTURES_DIR / "rig.yaml",
             FIXTURES_DIR / "subject.yaml",
@@ -179,9 +179,9 @@ class TestLayeredMerge:
         assert config.haptic.dhd.force_limit_n == 20.0  # example_flat_config overrides rig's 15.0
 
     def test_deep_merge_preserves_other_fields(self) -> None:
-        """Rig sets workspace_bounds and force_limit_n; task file overrides publish_rate_hz.
+        """Rig sets force_limit_n; task file overrides publish_rate_hz.
 
-        Deep merge ensures workspace_bounds and force_limit_n from the rig layer
+        Deep merge ensures force_limit_n from the rig layer
         are preserved even though the later task file also contains a haptic section.
         """
         config = load_config(

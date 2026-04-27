@@ -1,5 +1,6 @@
 # Test fixture: rig layer
 haptic:
+  backend: dhd
   dhd:
     force_limit_n: 15.0
     publish_rate_hz: 100.0

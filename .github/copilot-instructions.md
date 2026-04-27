@@ -114,6 +114,8 @@ The firmware builds with PlatformIO or Arduino IDE + Teensyduino. The CI job doe
 cd firmware/teensy
 pio run  # compile only
 ```
+
+Note: Do not add `-Wpedantic` to firmware/teensy/platformio.ini's build_flags. The Teensy core framework uses anonymous structs and other GCC extensions that don't pass ISO C++ pedantic checks, and PlatformIO applies build_flags globally, including to vendor framework code.
  
 ### Key constraints
  

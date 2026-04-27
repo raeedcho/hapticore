@@ -242,7 +242,13 @@ Subsequent `hapticore run` invocations will probe the address, find the running 
 
 ### Real-time scheduling (SCHED_FIFO)
 
-The haptic loop runs at 4 kHz and needs real-time scheduling priority to avoid jitter. This requires the `CAP_SYS_NICE` capability on the binary. Without it, the server still works but may have occasional timing glitches under load.
+The haptic loop runs at 4 kHz and needs real-time scheduling priority to avoid jitter. This requires the `CAP_SYS_NICE` capability on the binary. On real-hardware builds, the server refuses to start if `SCHED_FIFO` cannot be set — this prevents silent data-quality degradation:
+
+```
+Error: cannot set SCHED_FIFO (CAP_SYS_NICE not granted).
+  Fix: sudo setcap cap_sys_nice=eip /path/to/haptic_server
+  Or pass --allow-no-rt to run without real-time priority (degraded timing; not suitable for data collection).
+```
 
 Grant the capability after each build:
 
@@ -299,6 +305,7 @@ export HAPTICORE_CMD_ADDRESS=tcp://rigmachine:5556
 | `--force-limit` | `20` | Maximum force in Newtons |
 | `--cpu-core` | `1` | CPU core to pin the haptic thread to |
 | `--no-calibrate` | off | Skip auto-calibration on startup |
+| `--allow-no-rt` | off | Skip the SCHED_FIFO capability check (real-hardware builds only; degraded timing) |
 
 ### Running hardware tests
 

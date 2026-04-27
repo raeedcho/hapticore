@@ -47,7 +47,10 @@ void HapticThread::run(std::atomic<bool>& stop_requested) {
     struct sched_param param{};
     param.sched_priority = 80;
     if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
-        std::cerr << "Warning: could not set SCHED_FIFO (need root or CAP_SYS_NICE)\n";
+        // Real-hardware builds without --allow-no-rt fail-fast before this point,
+        // so reaching here means we're in a mock build or the user explicitly
+        // passed --allow-no-rt. Log at a low level and continue.
+        std::cerr << "Note: SCHED_FIFO unavailable; haptic thread using default priority.\n";
     }
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);

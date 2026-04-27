@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import ctypes
 import logging
 import multiprocessing.queues
 import os
-import signal
 import subprocess
-import sys
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -105,23 +102,8 @@ def _spawn_haptic_server(
         "--pub-rate", str(cfg.publish_rate_hz),
     ]
 
-    preexec_fn: Callable[[], None] | None = None
-    if sys.platform == "linux":
-        def _set_pdeathsig() -> None:
-            libc = ctypes.CDLL("libc.so.6", use_errno=True)
-            PR_SET_PDEATHSIG = 1  # noqa: N806 — Linux constant
-            ret = libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
-            if ret != 0:
-                errno = ctypes.get_errno()
-                logger.warning(
-                    "prctl(PR_SET_PDEATHSIG) failed (errno=%d); spawned server "
-                    "may not be cleaned up if Python crashes hard.",
-                    errno,
-                )
-        preexec_fn = _set_pdeathsig
-
     logger.info("Spawning haptic_server: %s", " ".join(args))
-    return subprocess.Popen(args, preexec_fn=preexec_fn, start_new_session=True)
+    return subprocess.Popen(args, start_new_session=True)
 
 
 def _wait_for_server_ready(

@@ -128,6 +128,7 @@ void dispatch(parser::ParsedCommand cmd) {
 // and dispatches the buffered line, then resets.
 char g_buf[timing::SERIAL_BUFFER_SIZE];
 uint32_t g_buf_len = 0;
+bool g_buf_overflow = false;
 
 void poll_serial() {
     while (Serial.available() > 0) {
@@ -135,16 +136,19 @@ void poll_serial() {
         if (b < 0) return;
         const char c = static_cast<char>(b);
         if (c == '\n') {
-            dispatch(parser::parse(g_buf, g_buf_len));
+            if (!g_buf_overflow) {
+                dispatch(parser::parse(g_buf, g_buf_len));
+            }
             g_buf_len = 0;
+            g_buf_overflow = false;
             continue;
         }
         if (c == '\r') continue;  // tolerate stray CR
-        if (g_buf_len < timing::SERIAL_BUFFER_SIZE) {
+        if (!g_buf_overflow && g_buf_len < timing::SERIAL_BUFFER_SIZE) {
             g_buf[g_buf_len++] = c;
         } else {
-            // Overflow: drop the line. Reset on next newline.
-            g_buf_len = 0;
+            // Overflow: discard all remaining bytes until the next newline.
+            g_buf_overflow = true;
         }
     }
 }

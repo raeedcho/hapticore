@@ -11,6 +11,7 @@ python = ">=3.11,<3.12"
 uv = "*"
 cmake = ">=3.21"
 ninja = "*"
+platformio = "*"
 
 # Installs hapticore + all its [project.dependencies] from pyproject.toml
 [pypi-dependencies]

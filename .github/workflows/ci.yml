@@ -154,21 +154,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: prefix-dev/setup-pixi@v0.8.8
         with:
-          python-version: "3.11"
+          cache: true
 
       - name: Install PlatformIO
         run: pip install platformio
 
       - name: Compile firmware for Teensy 4.1
-        run: pio run -e teensy41
+        run: pixi run -- pio run -e teensy41
         working-directory: firmware/teensy
 
       - name: Run host-side parser tests
-        run: pio test -e native -f test_parser
+        run: pixi run -- pio test -e native -f test_parser
         working-directory: firmware/teensy
         # Allow this step to fail without failing the job. Parser tests are
         # nice-to-have; the compile-check above is the hard requirement.

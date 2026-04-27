@@ -263,7 +263,7 @@ Add this line:
 yourusername ALL=(root) NOPASSWD: /usr/sbin/setcap cap_sys_nice=eip /home/yourusername/hapticore/cpp/haptic_server/build/*/haptic_server
 ```
 
-With this in place, the CMake post-build hook (if configured in `CMakeLists.txt`) will set the capability automatically, or you can run the `sudo setcap` command without a password prompt.
+With this in place, the CMake post-build hook will set the capability automatically, or you can run the `sudo setcap` command without a password prompt.
 
 You can verify the capability is set:
 

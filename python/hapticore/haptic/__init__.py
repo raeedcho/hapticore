@@ -118,8 +118,8 @@ def _wait_for_server_ready(
         probe_timeout = min(0.5, remaining)
         if _haptic_server_alive(state_address, timeout_s=probe_timeout):
             return
-        # Probe already includes its own 0.5 s of waiting; loop
-        # immediately and re-probe rather than adding another sleep.
+        # Probe blocks for up to probe_timeout; loop immediately and re-probe
+        # rather than adding another sleep.
     raise RuntimeError(
         f"Haptic server did not become ready within {timeout_s} s. "
         "Possible causes: calibration is taking longer than expected, "

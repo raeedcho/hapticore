@@ -23,7 +23,7 @@ ctest --preset dev-mock
 Or via pixi tasks:
 
 ```bash
-pixi run cpp
+pixi run mock-cpp
 ```
 
 This builds with mock DHD stubs and runs all unit tests.
@@ -41,15 +41,33 @@ Then build inside the pixi environment:
 ```bash
 pixi shell
 cd cpp/haptic_server
-cmake --preset dev-real
-cmake --build --preset dev-real
+cmake --preset dev-dhd
+cmake --build --preset dev-dhd
+```
+
+Or via pixi tasks:
+
+```bash
+pixi run dhd-cpp-debug-build
 ```
 
 For a production build:
 
 ```bash
-cmake --preset release
-cmake --build --preset release
+cmake --preset dhd
+cmake --build --preset dhd
+```
+
+Or via pixi tasks:
+
+```bash
+pixi run dhd-cpp-build
+```
+
+To build all targets via pixi:
+
+```bash
+pixi run haptic-build
 ```
 
 ## Platform notes

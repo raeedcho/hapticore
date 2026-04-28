@@ -45,14 +45,18 @@ class DhdConfig(BaseModel):
 
     Used when ``HapticConfig.backend == 'dhd'``. The client connects to a
     running C++ haptic server via ZMQ; addresses live in ``ZMQConfig``.
-    These fields tune the client's command and heartbeat behavior.
+    These fields tune the client's command and heartbeat behavior, the
+    server's force/rate parameters (passed through when the factory
+    spawns the server), and let the factory spawn the server itself
+    (auto_start=True, the default).
     """
 
     force_limit_n: float = Field(
         default=20.0, gt=0, le=40.0, description="Maximum force in Newtons"
     )
     publish_rate_hz: float = Field(
-        default=200.0, gt=0, le=1000.0, description="Rate at which to publish haptic state updates"
+        default=200.0, gt=0, le=1000.0,
+        description="Rate at which to publish haptic state updates",
     )
     heartbeat_interval_s: float = Field(
         default=0.2, gt=0.0, lt=0.5,
@@ -62,6 +66,33 @@ class DhdConfig(BaseModel):
     command_timeout_ms: int = Field(
         default=1000, gt=0,
         description="Timeout in milliseconds for a single command round-trip.",
+    )
+    auto_start: bool = Field(
+        default=True,
+        description="If no server is detected at the configured ZMQ "
+                    "addresses, spawn one from server_binary (or the "
+                    "HAPTICORE_HAPTIC_SERVER_BIN environment variable). "
+                    "If a server is already running, the factory always "
+                    "attaches and leaves it running on exit, regardless "
+                    "of this flag. Set to False to enforce that someone "
+                    "explicitly started the server (i.e. fail loudly "
+                    "instead of spawning).",
+    )
+    server_binary: Path | None = Field(
+        default=None,
+        description="Path to the haptic_server binary. Used only when "
+                    "auto_start=True and the HAPTICORE_HAPTIC_SERVER_BIN "
+                    "environment variable is not set. The env var takes "
+                    "precedence so rig-specific paths can be overridden "
+                    "without editing config files.",
+    )
+    startup_timeout_s: float = Field(
+        default=20.0, gt=0,
+        description="Maximum time to wait for a spawned server's first "
+                    "state message (probe to pass). The default covers "
+                    "the slow path where the device requires fresh "
+                    "calibration on power-on (~5–10 s on the delta.3) "
+                    "with margin.",
     )
 
 

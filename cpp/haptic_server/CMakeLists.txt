@@ -113,11 +113,19 @@ add_executable(haptic_server src/main.cpp)
 target_compile_options(haptic_server PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(haptic_server PRIVATE haptic_server_lib)
 
-# On Linux, set CAP_SYS_NICE to allow real-time scheduling without sudo. Ignore failures since this is a best-effort optimization.
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+# On Linux real-hardware builds, set CAP_SYS_NICE for real-time scheduling.
+# Mock builds skip this — they don't need RT priority and shouldn't trigger sudo.
+# If neither plain setcap nor passwordless sudo works, print a loud warning so
+# the user knows real-time scheduling will be unavailable, but don't fail the
+# build (so devs without sudo configured aren't blocked entirely).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT MOCK_HARDWARE)
   add_custom_command(TARGET haptic_server POST_BUILD
-    COMMAND sudo setcap cap_sys_nice=eip $<TARGET_FILE:haptic_server> || true
-    COMMENT "Setting CAP_SYS_NICE on haptic_server (may require sudo)"
+    COMMAND setcap cap_sys_nice=eip $<TARGET_FILE:haptic_server> 2>/dev/null
+            || sudo -n setcap cap_sys_nice=eip $<TARGET_FILE:haptic_server> 2>/dev/null
+            || ${CMAKE_COMMAND} -E echo "WARNING: setcap failed. Real-time scheduling will be unavailable. Run manually: sudo setcap cap_sys_nice=eip $<TARGET_FILE:haptic_server>"
+    COMMAND ${CMAKE_COMMAND} -E true
+    COMMENT "Setting CAP_SYS_NICE on haptic_server"
+    VERBATIM
   )
 endif()
 

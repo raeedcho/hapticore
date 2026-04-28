@@ -8,6 +8,12 @@
 #include <string>
 #include <thread>
 
+#ifdef __linux__
+#include <pthread.h>
+#include <sched.h>
+#include <sys/prctl.h>
+#endif
+
 #include <zmq.hpp>
 
 #include "command_data.hpp"
@@ -36,6 +42,10 @@ void print_usage() {
               << "  --force-limit N       Force clamp in Newtons (default: 20)\n"
               << "  --cpu-core N          CPU core for haptic thread (default: 1)\n"
               << "  --no-calibrate        Skip auto-calibration on startup\n"
+              << "  --die-with-parent     Exit when parent process dies (Linux only; for auto-spawn use)\n"
+#if defined(__linux__) && !defined(HAPTIC_MOCK_HARDWARE)
+              << "  --allow-no-rt         Continue even if SCHED_FIFO is unavailable (degraded timing)\n"
+#endif
               << "  --help                Print this help\n";
 }
 
@@ -57,6 +67,10 @@ int main(int argc, char* argv[]) {
     double force_limit = 20.0;
     int cpu_core = 1;
     bool auto_calibrate = true;
+    bool die_with_parent = false;
+#if defined(__linux__) && !defined(HAPTIC_MOCK_HARDWARE)
+    bool allow_no_rt = false;
+#endif
 
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i) {
@@ -103,12 +117,63 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "--no-calibrate") {
             auto_calibrate = false;
+        } else if (arg == "--die-with-parent") {
+            die_with_parent = true;
+#if defined(__linux__) && !defined(HAPTIC_MOCK_HARDWARE)
+        } else if (arg == "--allow-no-rt") {
+            allow_no_rt = true;
+#endif
         } else {
             std::cerr << "Unknown option: " << arg << "\n";
             print_usage();
             return EXIT_FAILURE;
         }
     }
+
+#ifdef __linux__
+    // Link server lifetime to parent — only when explicitly requested (e.g., by
+    // the Python factory). Manual launches (nohup, tmux, systemd-run) must NOT
+    // pass this flag so the server outlives its launching shell as expected.
+    if (die_with_parent) {
+        if (prctl(PR_SET_PDEATHSIG, SIGTERM) != 0) {
+            std::cerr << "Warning: prctl(PR_SET_PDEATHSIG) failed; "
+                      << "spawned server may not be cleaned up if the parent crashes.\n";
+        }
+    }
+#else
+    (void)die_with_parent;  // suppress unused-variable warning on non-Linux
+#endif
+
+#if defined(__linux__) && !defined(HAPTIC_MOCK_HARDWARE)
+    // Pre-flight: verify SCHED_FIFO capability before launching any threads.
+    // A real-hardware build with degraded timing is silently wrong — the haptic
+    // loop won't hit 4 kHz reliably. Fail fast unless the user explicitly opts
+    // out, but always print a warning when the capability is missing so the
+    // user has runtime evidence of degraded scheduling.
+    {
+        struct sched_param rt_probe{};
+        rt_probe.sched_priority = 1;  // minimum SCHED_FIFO priority is sufficient to validate CAP_SYS_NICE
+        const bool can_use_rt =
+            pthread_setschedparam(pthread_self(), SCHED_FIFO, &rt_probe) == 0;
+        if (can_use_rt) {
+            // Probe succeeded — revert main thread to normal scheduling.
+            // The haptic thread will re-apply SCHED_FIFO on itself when it starts.
+            struct sched_param normal{};
+            if (pthread_setschedparam(pthread_self(), SCHED_OTHER, &normal) != 0) {
+                std::cerr << "Warning: failed to revert main thread to SCHED_OTHER after RT probe.\n";
+            }
+        } else if (!allow_no_rt) {
+            std::cerr << "Error: cannot set SCHED_FIFO (CAP_SYS_NICE not granted).\n"
+                      << "  Fix: sudo setcap cap_sys_nice=eip " << argv[0] << "\n"
+                      << "  Or pass --allow-no-rt to run without real-time priority "
+                      << "(degraded timing; not suitable for data collection).\n";
+            return EXIT_FAILURE;
+        } else {
+            std::cerr << "WARNING: --allow-no-rt set; SCHED_FIFO unavailable. "
+                         "Do not use this run for data collection.\n";
+        }
+    }
+#endif
 
     // 1. Create and open DHD interface
     auto dhd = create_dhd_interface();

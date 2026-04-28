@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -25,6 +26,10 @@
 #include "publisher_thread.hpp"
 #include "state_data.hpp"
 #include "triple_buffer.hpp"
+
+#ifdef HAPTIC_MOCK_HARDWARE
+#include "dhd_mock.hpp"
+#endif
 
 namespace {
 
@@ -55,6 +60,42 @@ void pack_active_field_result(msgpack::sbuffer& buf, const std::string& field_na
     pk.pack_map(1);
     pk.pack("active_field");
     pk.pack(field_name);
+}
+
+/// Extract a Vec3 from a msgpack map value keyed by ``key_name``.
+/// Returns std::nullopt if the key is missing, the value is not an array
+/// of exactly 3 elements, or any element is not numeric.
+std::optional<Vec3> parse_vec3_param(const msgpack::object& params, const char* key_name) {
+    if (params.type != msgpack::type::MAP) return std::nullopt;
+    auto map = params.via.map;
+    for (uint32_t i = 0; i < map.size; ++i) {
+        auto& key = map.ptr[i].key;
+        auto& val = map.ptr[i].val;
+        if (key.type != msgpack::type::STR) continue;
+        std::string k(key.via.str.ptr, key.via.str.size);
+        if (k == key_name) {
+            if (val.type != msgpack::type::ARRAY || val.via.array.size != 3) {
+                return std::nullopt;
+            }
+            Vec3 v{};
+            for (int j = 0; j < 3; ++j) {
+                auto& elem = val.via.array.ptr[j];
+                if (elem.type == msgpack::type::FLOAT64) {
+                    v[j] = elem.via.f64;
+                } else if (elem.type == msgpack::type::FLOAT32) {
+                    v[j] = static_cast<double>(elem.via.f64);
+                } else if (elem.type == msgpack::type::POSITIVE_INTEGER) {
+                    v[j] = static_cast<double>(elem.via.u64);
+                } else if (elem.type == msgpack::type::NEGATIVE_INTEGER) {
+                    v[j] = static_cast<double>(elem.via.i64);
+                } else {
+                    return std::nullopt;
+                }
+            }
+            return v;
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -224,8 +265,19 @@ int main(int argc, char* argv[]) {
     // 6. Create haptic thread (owns the DHD)
     HapticThread haptic(std::move(dhd), state_buffer, force_limit, cpu_core);
 
+#ifdef HAPTIC_MOCK_HARDWARE
+    // Safe: HAPTIC_MOCK_HARDWARE selects dhd_mock.cpp at link time,
+    // so haptic.dhd() returns a DhdMock*. This never compiles in
+    // real-hardware builds.
+    auto* mock_dhd = static_cast<DhdMock*>(haptic.dhd());
+#endif
+
     // 7. Define command handler lambda
+#ifdef HAPTIC_MOCK_HARDWARE
+    auto command_handler = [&haptic, mock_dhd](const CommandData& cmd) -> CommandResponseData {
+#else
     auto command_handler = [&haptic](const CommandData& cmd) -> CommandResponseData {
+#endif
         CommandResponseData resp;
         resp.command_id = cmd.command_id;
 
@@ -349,6 +401,35 @@ int main(int argc, char* argv[]) {
                 pk.pack(true);
             }
             return resp;
+
+#ifdef HAPTIC_MOCK_HARDWARE
+        } else if (cmd.method == "set_mock_position") {
+            auto vec = parse_vec3_param(cmd.params.get(), "position");
+            if (!vec) {
+                resp.success = false;
+                resp.error = "set_mock_position: params must contain \"position\" as array[3] of numbers";
+                return resp;
+            }
+            mock_dhd->set_mock_position(*vec);
+            resp.success = true;
+            return resp;
+
+        } else if (cmd.method == "set_mock_velocity") {
+            auto vec = parse_vec3_param(cmd.params.get(), "velocity");
+            if (!vec) {
+                resp.success = false;
+                resp.error = "set_mock_velocity: params must contain \"velocity\" as array[3] of numbers";
+                return resp;
+            }
+            mock_dhd->set_mock_velocity(*vec);
+            resp.success = true;
+            return resp;
+#else
+        } else if (cmd.method == "set_mock_position" || cmd.method == "set_mock_velocity") {
+            resp.success = false;
+            resp.error = cmd.method + " rejected: not a mock-hardware build";
+            return resp;
+#endif
 
         } else {
             resp.success = false;

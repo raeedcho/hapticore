@@ -125,6 +125,38 @@ Cleanly shut down the server. Reverts to NullField, then exits.
 
 **result:** `{"shutting_down": true}`
 
+### Mock-only commands
+
+These commands are only available on mock-hardware builds (`HAPTIC_MOCK_HARDWARE` defined, i.e., binaries built with `-DMOCK_HARDWARE=ON` such as the `dev-mock` and `ci` presets). Real-hardware builds (`dhd`, `dev-dhd`) reject them with `success: false` and an error message.
+
+#### `set_mock_position`
+
+Inject a device position into the mock DHD. The position takes effect on the next haptic thread tick (~250 µs). This is the mechanism dev-mouse uses to drive the mock server from mouse input — the Python side reads the mouse, computes a position in lab-frame meters, and sends this command at ~60 Hz.
+
+**params:**
+```json
+{
+    "position": [x, y, z]
+}
+```
+(`position` is an array of 3 numbers in lab-frame meters)
+
+**result:** `{}` (empty map) on success.
+
+#### `set_mock_velocity`
+
+Inject a device velocity into the mock DHD. Same timing as `set_mock_position`. Python sends this alongside `set_mock_position` each frame with a finite-differenced velocity.
+
+**params:**
+```json
+{
+    "velocity": [vx, vy, vz]
+}
+```
+(`velocity` is an array of 3 numbers in lab-frame m/s)
+
+**result:** `{}` (empty map) on success.
+
 ## Force field parameter schemas
 
 ### `null`

@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <thread>
@@ -11,6 +12,7 @@
 #include "command_data.hpp"
 #include "command_thread.hpp"
 #include "dhd_mock.hpp"
+#include "force_fields/field_factory.hpp"
 #include "force_fields/null_field.hpp"
 #include "force_fields/spring_damper_field.hpp"
 #include "haptic_thread.hpp"
@@ -587,3 +589,387 @@ TEST(HapticThreadTest, SequenceMonotonicallyIncreasing) {
     EXPECT_LT(state.sequence, 500u);
 #endif
 }
+
+// ==================== Mock Position Injection Tests ====================
+// Only compiled in mock-hardware builds
+
+#ifdef HAPTIC_MOCK_HARDWARE
+
+namespace {
+
+/// Send a command via ZMQ DEALER socket using the protocol framing.
+void send_zmq_command(zmq::socket_t& dealer, const std::string& id,
+                      const std::string& method, const msgpack::sbuffer& params) {
+    msgpack::sbuffer cmd_buf;
+    msgpack::packer<msgpack::sbuffer> pk(cmd_buf);
+    pk.pack_map(3);
+    pk.pack("command_id"); pk.pack(id);
+    pk.pack("method");     pk.pack(method);
+    pk.pack("params");
+    cmd_buf.write(params.data(), params.size());
+
+    zmq::message_t empty(0);
+    zmq::message_t payload(cmd_buf.data(), cmd_buf.size());
+    dealer.send(empty, zmq::send_flags::sndmore);
+    dealer.send(payload, zmq::send_flags::none);
+}
+
+/// Receive a command response from DEALER socket.
+/// Returns true if a response with success=true was received within the socket timeout.
+bool recv_response(zmq::socket_t& dealer) {
+    zmq::message_t empty, payload;
+    auto r1 = dealer.recv(empty, zmq::recv_flags::none);
+    if (!r1.has_value()) return false;
+    auto r2 = dealer.recv(payload, zmq::recv_flags::none);
+    if (!r2.has_value()) return false;
+
+    auto oh = msgpack::unpack(static_cast<const char*>(payload.data()), payload.size());
+    auto map = oh.get().via.map;
+    for (uint32_t i = 0; i < map.size; ++i) {
+        std::string key(map.ptr[i].key.via.str.ptr, map.ptr[i].key.via.str.size);
+        if (key == "success") return map.ptr[i].val.via.boolean;
+    }
+    return false;
+}
+
+/// Extract a Vec3 from a msgpack map value keyed by key_name.
+std::optional<Vec3> test_parse_vec3_param(const msgpack::object& params, const char* key_name) {
+    if (params.type != msgpack::type::MAP) return std::nullopt;
+    auto map = params.via.map;
+    for (uint32_t i = 0; i < map.size; ++i) {
+        auto& key = map.ptr[i].key;
+        auto& val = map.ptr[i].val;
+        if (key.type != msgpack::type::STR) continue;
+        std::string k(key.via.str.ptr, key.via.str.size);
+        if (k == key_name) {
+            if (val.type != msgpack::type::ARRAY || val.via.array.size != 3) return std::nullopt;
+            Vec3 v{};
+            for (int j = 0; j < 3; ++j) {
+                auto& elem = val.via.array.ptr[j];
+                if (elem.type == msgpack::type::FLOAT64)
+                    v[j] = elem.via.f64;
+                else if (elem.type == msgpack::type::FLOAT32)
+                    v[j] = static_cast<double>(elem.via.f64);
+                else if (elem.type == msgpack::type::POSITIVE_INTEGER)
+                    v[j] = static_cast<double>(elem.via.u64);
+                else if (elem.type == msgpack::type::NEGATIVE_INTEGER)
+                    v[j] = static_cast<double>(elem.via.i64);
+                else
+                    return std::nullopt;
+            }
+            return v;
+        }
+    }
+    return std::nullopt;
+}
+
+}  // namespace
+
+class MockPositionInjectionTest : public ::testing::Test {
+protected:
+    std::string pub_address() {
+        static int counter = 0;
+        return "ipc:///tmp/hapticore_test_mock_pos_pub_" + std::to_string(counter++) + ".ipc";
+    }
+    std::string cmd_address() {
+        static int counter = 0;
+        return "ipc:///tmp/hapticore_test_mock_pos_cmd_" + std::to_string(counter++) + ".ipc";
+    }
+};
+
+TEST_F(MockPositionInjectionTest, SetMockPositionAppearsInPublishedState) {
+    auto pub_addr = pub_address();
+    auto cmd_addr = cmd_address();
+
+    // 1. Create DhdMock + HapticThread
+    auto mock = std::make_unique<DhdMock>();
+    mock->open();
+    auto* mock_dhd = static_cast<DhdMock*>(mock.get());
+
+    TripleBuffer<HapticStateData> state_buffer;
+    HapticThread haptic(std::move(mock), state_buffer, 20.0, 0);
+
+    // 2. Build command handler
+    auto command_handler = [&haptic, mock_dhd](const CommandData& cmd) -> CommandResponseData {
+        CommandResponseData resp;
+        resp.command_id = cmd.command_id;
+        if (cmd.method == "heartbeat") {
+            haptic.update_heartbeat();
+            resp.success = true;
+            msgpack::packer<msgpack::sbuffer> pk(resp.result_buf);
+            pk.pack_map(1); pk.pack("timeout_ms"); pk.pack(500);
+        } else if (cmd.method == "set_mock_position") {
+            auto vec = test_parse_vec3_param(cmd.params.get(), "position");
+            if (!vec) {
+                resp.success = false;
+                resp.error = "set_mock_position: invalid params";
+            } else {
+                mock_dhd->set_mock_position(*vec);
+                resp.success = true;
+            }
+        } else {
+            resp.success = false;
+            resp.error = "unknown method: " + cmd.method;
+        }
+        return resp;
+    };
+
+    // 3. Create ZMQ context and threads
+    zmq::context_t ctx(1);
+    PublisherThread publisher(state_buffer, pub_addr, 200.0, ctx);
+    CommandThread commander(cmd_addr, command_handler, ctx);
+
+    std::atomic<bool> stop_flag{false};
+    std::thread haptic_thread([&haptic, &stop_flag]() { haptic.run(stop_flag); });
+    std::thread pub_thread([&publisher, &stop_flag]() { publisher.run(stop_flag); });
+    std::thread cmd_thread([&commander, &stop_flag]() { commander.run(stop_flag); });
+
+    // 4. Connect sockets
+    zmq::socket_t dealer(ctx, zmq::socket_type::dealer);
+    zmq::socket_t sub(ctx, zmq::socket_type::sub);
+    dealer.set(zmq::sockopt::rcvtimeo, 2000);
+    sub.set(zmq::sockopt::subscribe, "state");
+    sub.set(zmq::sockopt::rcvtimeo, 2000);
+    dealer.connect(cmd_addr);
+    sub.connect(pub_addr);
+
+    // 5. Wait for slow-joiner
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    // 6. Send heartbeat
+    {
+        msgpack::sbuffer params;
+        msgpack::packer<msgpack::sbuffer> pk(params);
+        pk.pack_map(0);
+        send_zmq_command(dealer, "hb-1", "heartbeat", params);
+        ASSERT_TRUE(recv_response(dealer));
+    }
+
+    // 7. Send set_mock_position with position [0.1, -0.05, 0.0]
+    const Vec3 target_pos = {0.1, -0.05, 0.0};
+    {
+        msgpack::sbuffer params;
+        msgpack::packer<msgpack::sbuffer> pk(params);
+        pk.pack_map(1);
+        pk.pack("position");
+        pk.pack_array(3);
+        pk.pack(target_pos[0]);
+        pk.pack(target_pos[1]);
+        pk.pack(target_pos[2]);
+        send_zmq_command(dealer, "pos-1", "set_mock_position", params);
+        ASSERT_TRUE(recv_response(dealer));
+    }
+
+    // 8. Wait for a publish cycle, then drain messages until we see the updated position
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    Vec3 read_pos = {-999.0, -999.0, -999.0};
+    bool found_pos = false;
+    for (int attempt = 0; attempt < 20 && !found_pos; ++attempt) {
+        zmq::message_t topic_msg, data_msg;
+        auto r = sub.recv(topic_msg, zmq::recv_flags::none);
+        if (!r.has_value()) break;
+        auto r2 = sub.recv(data_msg, zmq::recv_flags::none);
+        if (!r2.has_value()) break;
+
+        auto oh = msgpack::unpack(static_cast<const char*>(data_msg.data()), data_msg.size());
+        auto map = oh.get().via.map;
+        for (uint32_t i = 0; i < map.size; ++i) {
+            std::string key(map.ptr[i].key.via.str.ptr, map.ptr[i].key.via.str.size);
+            if (key == "position" && map.ptr[i].val.type == msgpack::type::ARRAY) {
+                auto arr = map.ptr[i].val.via.array;
+                if (arr.size == 3) {
+                    read_pos[0] = arr.ptr[0].via.f64;
+                    read_pos[1] = arr.ptr[1].via.f64;
+                    read_pos[2] = arr.ptr[2].via.f64;
+                    if (std::abs(read_pos[0] - target_pos[0]) < 1e-9) {
+                        found_pos = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // 9. Stop all threads
+    stop_flag.store(true);
+    haptic_thread.join();
+    pub_thread.join();
+    cmd_thread.join();
+    dealer.close();
+    sub.close();
+    ctx.close();
+
+    // 10. Assertions
+    ASSERT_TRUE(found_pos) << "Did not receive state with expected position";
+    EXPECT_NEAR(read_pos[0], target_pos[0], 1e-9);
+    EXPECT_NEAR(read_pos[1], target_pos[1], 1e-9);
+    EXPECT_NEAR(read_pos[2], target_pos[2], 1e-9);
+}
+
+TEST_F(MockPositionInjectionTest, SetMockPositionWithCartPendulumProducesFieldState) {
+    auto pub_addr = pub_address();
+    auto cmd_addr = cmd_address();
+
+    // 1. Create DhdMock + HapticThread
+    auto mock = std::make_unique<DhdMock>();
+    mock->open();
+    auto* mock_dhd = static_cast<DhdMock*>(mock.get());
+
+    TripleBuffer<HapticStateData> state_buffer;
+    HapticThread haptic(std::move(mock), state_buffer, 20.0, 0);
+
+    // 2. Build command handler (handles heartbeat, set_force_field, set_mock_position)
+    auto command_handler = [&haptic, mock_dhd](const CommandData& cmd) -> CommandResponseData {
+        CommandResponseData resp;
+        resp.command_id = cmd.command_id;
+        if (cmd.method == "heartbeat") {
+            haptic.update_heartbeat();
+            resp.success = true;
+            msgpack::packer<msgpack::sbuffer> pk(resp.result_buf);
+            pk.pack_map(1); pk.pack("timeout_ms"); pk.pack(500);
+        } else if (cmd.method == "set_force_field") {
+            const auto& params_obj = cmd.params.get();
+            std::string field_type;
+            const msgpack::object* field_params_ptr = nullptr;
+            if (params_obj.type == msgpack::type::MAP) {
+                auto m = params_obj.via.map;
+                for (uint32_t i = 0; i < m.size; ++i) {
+                    std::string k(m.ptr[i].key.via.str.ptr, m.ptr[i].key.via.str.size);
+                    if (k == "type" && m.ptr[i].val.type == msgpack::type::STR)
+                        field_type = std::string(m.ptr[i].val.via.str.ptr, m.ptr[i].val.via.str.size);
+                    else if (k == "params")
+                        field_params_ptr = &m.ptr[i].val;
+                }
+            }
+            auto new_field = create_field(field_type);
+            if (!new_field) {
+                resp.success = false;
+                resp.error = "set_force_field: unknown field type '" + field_type + "'";
+            } else {
+                if (field_params_ptr) new_field->update_params(*field_params_ptr);
+                haptic.set_field(std::shared_ptr<ForceField>(std::move(new_field)));
+                resp.success = true;
+                msgpack::packer<msgpack::sbuffer> pk(resp.result_buf);
+                pk.pack_map(1); pk.pack("active_field"); pk.pack(field_type);
+            }
+        } else if (cmd.method == "set_mock_position") {
+            auto vec = test_parse_vec3_param(cmd.params.get(), "position");
+            if (!vec) {
+                resp.success = false;
+                resp.error = "set_mock_position: invalid params";
+            } else {
+                mock_dhd->set_mock_position(*vec);
+                resp.success = true;
+            }
+        } else {
+            resp.success = false;
+            resp.error = "unknown method: " + cmd.method;
+        }
+        return resp;
+    };
+
+    // 3. Create ZMQ context and threads
+    zmq::context_t ctx(1);
+    PublisherThread publisher(state_buffer, pub_addr, 200.0, ctx);
+    CommandThread commander(cmd_addr, command_handler, ctx);
+
+    std::atomic<bool> stop_flag{false};
+    std::thread haptic_thread([&haptic, &stop_flag]() { haptic.run(stop_flag); });
+    std::thread pub_thread([&publisher, &stop_flag]() { publisher.run(stop_flag); });
+    std::thread cmd_thread([&commander, &stop_flag]() { commander.run(stop_flag); });
+
+    // 4. Connect sockets
+    zmq::socket_t dealer(ctx, zmq::socket_type::dealer);
+    zmq::socket_t sub(ctx, zmq::socket_type::sub);
+    dealer.set(zmq::sockopt::rcvtimeo, 2000);
+    sub.set(zmq::sockopt::subscribe, "state");
+    sub.set(zmq::sockopt::rcvtimeo, 2000);
+    dealer.connect(cmd_addr);
+    sub.connect(pub_addr);
+
+    // 5. Wait for slow-joiner
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    // 6. Send heartbeat
+    {
+        msgpack::sbuffer params;
+        msgpack::packer<msgpack::sbuffer> pk(params);
+        pk.pack_map(0);
+        send_zmq_command(dealer, "hb-2", "heartbeat", params);
+        ASSERT_TRUE(recv_response(dealer));
+    }
+
+    // 7. Send set_force_field(type=cart_pendulum, params={pendulum_length: 0.3})
+    {
+        msgpack::sbuffer params;
+        msgpack::packer<msgpack::sbuffer> pk(params);
+        pk.pack_map(2);
+        pk.pack("type"); pk.pack("cart_pendulum");
+        pk.pack("params");
+        pk.pack_map(1);
+        pk.pack("pendulum_length"); pk.pack(0.3);
+        send_zmq_command(dealer, "ff-1", "set_force_field", params);
+        ASSERT_TRUE(recv_response(dealer));
+    }
+
+    // 8. Send set_mock_position({0.05, 0.0, 0.0})
+    {
+        msgpack::sbuffer params;
+        msgpack::packer<msgpack::sbuffer> pk(params);
+        pk.pack_map(1);
+        pk.pack("position");
+        pk.pack_array(3);
+        pk.pack(0.05); pk.pack(0.0); pk.pack(0.0);
+        send_zmq_command(dealer, "pos-2", "set_mock_position", params);
+        ASSERT_TRUE(recv_response(dealer));
+    }
+
+    // 9. Wait for a publish cycle
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    // 10. Read published state and verify field_state contains cart_pendulum keys
+    bool found_cup_x = false, found_ball_x = false, found_ball_y = false, found_spilled = false;
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        zmq::message_t topic_msg, data_msg;
+        auto r = sub.recv(topic_msg, zmq::recv_flags::none);
+        if (!r.has_value()) break;
+        auto r2 = sub.recv(data_msg, zmq::recv_flags::none);
+        if (!r2.has_value()) break;
+
+        auto oh = msgpack::unpack(static_cast<const char*>(data_msg.data()), data_msg.size());
+        auto map = oh.get().via.map;
+        for (uint32_t i = 0; i < map.size; ++i) {
+            std::string key(map.ptr[i].key.via.str.ptr, map.ptr[i].key.via.str.size);
+            if (key == "field_state" && map.ptr[i].val.type == msgpack::type::MAP) {
+                auto fs_map = map.ptr[i].val.via.map;
+                for (uint32_t j = 0; j < fs_map.size; ++j) {
+                    std::string fs_key(fs_map.ptr[j].key.via.str.ptr, fs_map.ptr[j].key.via.str.size);
+                    if (fs_key == "cup_x")   found_cup_x   = true;
+                    if (fs_key == "ball_x")  found_ball_x  = true;
+                    if (fs_key == "ball_y")  found_ball_y  = true;
+                    if (fs_key == "spilled") found_spilled = true;
+                }
+                if (found_cup_x && found_ball_x && found_ball_y && found_spilled) break;
+            }
+        }
+        if (found_cup_x && found_ball_x && found_ball_y && found_spilled) break;
+    }
+
+    // 11. Stop all threads
+    stop_flag.store(true);
+    haptic_thread.join();
+    pub_thread.join();
+    cmd_thread.join();
+    dealer.close();
+    sub.close();
+    ctx.close();
+
+    // 12. Assertions
+    EXPECT_TRUE(found_cup_x)   << "field_state missing 'cup_x'";
+    EXPECT_TRUE(found_ball_x)  << "field_state missing 'ball_x'";
+    EXPECT_TRUE(found_ball_y)  << "field_state missing 'ball_y'";
+    EXPECT_TRUE(found_spilled) << "field_state missing 'spilled'";
+}
+
+#endif  // HAPTIC_MOCK_HARDWARE
+

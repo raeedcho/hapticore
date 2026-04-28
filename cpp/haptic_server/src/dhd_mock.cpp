@@ -14,11 +14,13 @@ bool DhdMock::is_open() const {
 }
 
 bool DhdMock::get_position(Vec3& pos) {
+    std::lock_guard<std::mutex> lock(io_mtx_);
     pos = position_;
     return true;
 }
 
 bool DhdMock::get_linear_velocity(Vec3& vel) {
+    std::lock_guard<std::mutex> lock(io_mtx_);
     vel = velocity_;
     return true;
 }
@@ -54,10 +56,12 @@ Vec3 DhdMock::max_force() const {
 }
 
 void DhdMock::set_mock_position(const Vec3& pos) {
+    std::lock_guard<std::mutex> lock(io_mtx_);
     position_ = pos;
 }
 
 void DhdMock::set_mock_velocity(const Vec3& vel) {
+    std::lock_guard<std::mutex> lock(io_mtx_);
     velocity_ = vel;
 }
 

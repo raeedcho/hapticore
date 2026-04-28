@@ -1,5 +1,6 @@
 #pragma once
 #include "dhd_interface.hpp"
+#include <mutex>
 #include <vector>
 
 class DhdMock : public DhdInterface {
@@ -25,6 +26,7 @@ public:
 
 private:
     bool is_open_ = false;
+    mutable std::mutex io_mtx_;  // protects position_ and velocity_
     Vec3 position_ = {0.0, 0.0, 0.0};
     Vec3 velocity_ = {0.0, 0.0, 0.0};
     double effector_mass_ = 0.0;

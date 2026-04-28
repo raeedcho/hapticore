@@ -66,7 +66,7 @@ All positions, velocities, and forces use the **lab frame**: X = horizontal (+ r
 ```bash
 # Python (primary workflow — uses pixi)
 pixi install                         # install all dependencies + editable package
-pixi run -e display install-psychopy # install PsychoPy (run once after pixi install)
+pixi run install-psychopy # install PsychoPy (run once after pixi install)
 pixi run test-unit                   # run Python unit tests
 pixi run test-integration            # run Python integration tests
 pixi run lint                        # ruff check
@@ -98,8 +98,8 @@ CI uses `setup-pixi` with `environments: display` and installs system deps (`xvf
 The Copilot setup steps install both `default` and `display` pixi environments. When modifying display code (`python/hapticore/display/` or `tests/display/`), validate with:
 
 ```bash
-xvfb-run -a -s "-screen 0 1920x1080x24" pixi run -e display test-display
-pixi run -e display test-unit
+xvfb-run -a -s "-screen 0 1920x1080x24" pixi run test-display
+pixi run test-unit
 ```
 
 ## Teensy firmware (`firmware/teensy/`)

@@ -26,10 +26,9 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.8.8
         with:
           cache: true
-          environments: default display
-        
+
       - name: Install PsychoPy (no-deps)
-        run: pixi run -e display install-psychopy
+        run: pixi run install-psychopy
         
       - name: Build C++ haptic server (mock)
         run: |

@@ -12,6 +12,26 @@ uv = "*"
 cmake = ">=3.21"
 ninja = "*"
 platformio = "*"
+# for psychopy
+scipy = "*"
+pillow = "*"
+pyopengl = "*"
+pyglet = "1.5.*"
+psutil = "*"
+configobj = "*"
+imageio = "*"
+json_tricks = "*"
+python-bidi = "*"
+arabic_reshaper = "*"
+freetype-py = "*"
+requests = "*"
+
+[target.osx-arm64.pypi-dependencies]
+pyobjc-framework-Cocoa = "*"
+
+[target.linux-64.dependencies]
+# Fix Linux C++ library mismatch in conda envs (PsychoPy's OpenGL chain)
+libstdcxx-ng = "*"
 
 # Installs hapticore + all its [project.dependencies] from pyproject.toml
 [pypi-dependencies]
@@ -30,35 +50,12 @@ pygraphviz = ">=1.11"
 [feature.dev.pypi-dependencies]
 types-PyYAML = ">=6.0"
 
-[feature.display.dependencies]
-scipy = "*"
-pillow = "*"
-pyopengl = "*"
-pyglet = "1.5.*"
-psutil = "*"
-configobj = "*"
-imageio = "*"
-json_tricks = "*"
-python-bidi = "*"
-arabic_reshaper = "*"
-freetype-py = "*"
-requests = "*"
-
-[feature.display.target.osx-arm64.pypi-dependencies]
-pyobjc-framework-Cocoa = "*"
-
-[feature.display.target.linux-64.dependencies]
-# Fix Linux C++ library mismatch in conda envs (PsychoPy's OpenGL chain)
-libstdcxx-ng = "*"
-
-[feature.display.tasks]
-install-psychopy = "uv pip install psychopy --no-deps --break-system-packages"
-
 [environments]
 default = { features = ["dev"], solve-group = "default" }
-display = { features = ["dev", "display"], solve-group = "default" }
 
 [tasks]
+install-psychopy = "uv pip install psychopy --no-deps --break-system-packages"
+
 lint = "ruff check python/"
 typecheck = "mypy python/hapticore/core/ --strict"
 test-unit = "pytest tests/unit/ -v"

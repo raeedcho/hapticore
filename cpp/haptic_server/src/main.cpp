@@ -83,7 +83,8 @@ std::optional<Vec3> parse_vec3_param(const msgpack::object& params, const char* 
                 if (elem.type == msgpack::type::FLOAT64) {
                     v[j] = elem.via.f64;
                 } else if (elem.type == msgpack::type::FLOAT32) {
-                    v[j] = static_cast<double>(elem.via.f32);
+                    // msgpack-cxx promotes FLOAT32 to double in via.f64 — there is no via.f32 member.
+                    v[j] = static_cast<double>(elem.via.f64);
                 } else if (elem.type == msgpack::type::POSITIVE_INTEGER) {
                     v[j] = static_cast<double>(elem.via.u64);
                 } else if (elem.type == msgpack::type::NEGATIVE_INTEGER) {

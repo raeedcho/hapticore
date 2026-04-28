@@ -649,7 +649,7 @@ std::optional<Vec3> test_parse_vec3_param(const msgpack::object& params, const c
                 if (elem.type == msgpack::type::FLOAT64)
                     v[j] = elem.via.f64;
                 else if (elem.type == msgpack::type::FLOAT32)
-                    v[j] = static_cast<double>(elem.via.f64);
+                    v[j] = static_cast<double>(elem.via.f32);
                 else if (elem.type == msgpack::type::POSITIVE_INTEGER)
                     v[j] = static_cast<double>(elem.via.u64);
                 else if (elem.type == msgpack::type::NEGATIVE_INTEGER)
@@ -661,6 +661,22 @@ std::optional<Vec3> test_parse_vec3_param(const msgpack::object& params, const c
         }
     }
     return std::nullopt;
+}
+
+/// Drain all currently buffered messages from a SUB socket without blocking.
+/// Call this after the slow-joiner wait and before checking for specific messages,
+/// to discard stale state snapshots published during the connection window.
+void drain_sub_socket(zmq::socket_t& sub) {
+    sub.set(zmq::sockopt::rcvtimeo, 0);
+    zmq::message_t msg;
+    while (sub.recv(msg, zmq::recv_flags::none).has_value()) {
+        // drain all frames in this multipart message
+        while (sub.get(zmq::sockopt::rcvmore)) {
+            zmq::message_t extra;
+            sub.recv(extra, zmq::recv_flags::none);
+        }
+    }
+    sub.set(zmq::sockopt::rcvtimeo, 2000);
 }
 
 }  // namespace
@@ -736,6 +752,12 @@ TEST_F(MockPositionInjectionTest, SetMockPositionAppearsInPublishedState) {
     // 5. Wait for slow-joiner
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
+    // Drain stale state messages that buffered during the slow-joiner wait
+    // (publisher runs at 200 Hz during the wait → ~40 stale messages).
+    // Without this drain the recv loop below would consume those old messages
+    // (position = 0,0,0) and never see the injected position.
+    drain_sub_socket(sub);
+
     // 6. Send heartbeat
     {
         msgpack::sbuffer params;
@@ -760,7 +782,8 @@ TEST_F(MockPositionInjectionTest, SetMockPositionAppearsInPublishedState) {
         ASSERT_TRUE(recv_response(dealer));
     }
 
-    // 8. Wait for a publish cycle, then drain messages until we see the updated position
+    // 8. Wait for at least one publish cycle after position injection,
+    //    then read messages until we see the updated position.
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     Vec3 read_pos = {-999.0, -999.0, -999.0};
@@ -890,6 +913,9 @@ TEST_F(MockPositionInjectionTest, SetMockPositionWithCartPendulumProducesFieldSt
     // 5. Wait for slow-joiner
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
+    // Drain stale state messages that buffered during the slow-joiner wait.
+    drain_sub_socket(sub);
+
     // 6. Send heartbeat
     {
         msgpack::sbuffer params;
@@ -924,7 +950,7 @@ TEST_F(MockPositionInjectionTest, SetMockPositionWithCartPendulumProducesFieldSt
         ASSERT_TRUE(recv_response(dealer));
     }
 
-    // 9. Wait for a publish cycle
+    // 9. Wait for at least one publish cycle after position and field injection.
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     // 10. Read published state and verify field_state contains cart_pendulum keys

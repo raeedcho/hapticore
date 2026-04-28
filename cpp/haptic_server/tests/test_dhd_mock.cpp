@@ -65,6 +65,11 @@ TEST(DhdMockTest, ConcurrentReadWriteIsSafe) {
     DhdMock mock;
     mock.open();
 
+    // Initialize to a point on the unit circle so even read 0 passes
+    // the invariant check (the writer starts at t=0 → {sin(0), cos(0)} = {0, 1}).
+    mock.set_mock_position({0.0, 1.0, 0.0});
+    mock.set_mock_velocity({1.0, 0.0, 0.0});
+
     std::atomic<bool> stop{false};
 
     // Writer: rapidly update position and velocity

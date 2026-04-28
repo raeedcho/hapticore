@@ -154,7 +154,7 @@ Rig 2 uses two monitors: one that the subject views through a canted mirror, and
 
 ### Identifying monitor indices
 
-Run `hapticore list-screens` (requires the `display` pixi environment) to list available monitors with their indices and resolutions:
+Run `hapticore list-screens` to list available monitors with their indices and resolutions:
 
 ```bash
 pixi run hapticore list-screens

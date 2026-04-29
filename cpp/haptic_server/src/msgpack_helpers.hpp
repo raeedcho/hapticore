@@ -3,6 +3,8 @@
 #include <cstddef>
 
 #include <msgpack.hpp>
+#include <optional>
+#include <string>
 
 #include "types.hpp"
 
@@ -37,6 +39,27 @@ inline bool try_get_bool(const msgpack::object& obj, bool& out) {
     if (obj.type != msgpack::type::BOOLEAN) return false;
     out = obj.via.boolean;
     return true;
+}
+
+/// Extract a Vec3 from a msgpack map value keyed by ``key_name``.
+/// Returns std::nullopt if the key is missing, the value is not an array
+/// of exactly 3 elements, or any element is not numeric.
+inline std::optional<Vec3> try_get_keyed_vec3(
+    const msgpack::object& params, const char* key_name
+) {
+    if (params.type != msgpack::type::MAP) return std::nullopt;
+    auto map = params.via.map;
+    for (uint32_t i = 0; i < map.size; ++i) {
+        auto& key = map.ptr[i].key;
+        if (key.type != msgpack::type::STR) continue;
+        std::string k(key.via.str.ptr, key.via.str.size);
+        if (k == key_name) {
+            Vec3 v{};
+            if (!try_get_vec3(map.ptr[i].val, v)) return std::nullopt;
+            return v;
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace haptic

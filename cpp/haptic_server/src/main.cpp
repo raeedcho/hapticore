@@ -23,6 +23,7 @@
 #include "force_fields/field_factory.hpp"
 #include "force_fields/null_field.hpp"
 #include "haptic_thread.hpp"
+#include "msgpack_helpers.hpp"
 #include "publisher_thread.hpp"
 #include "state_data.hpp"
 #include "triple_buffer.hpp"
@@ -60,43 +61,6 @@ void pack_active_field_result(msgpack::sbuffer& buf, const std::string& field_na
     pk.pack_map(1);
     pk.pack("active_field");
     pk.pack(field_name);
-}
-
-/// Extract a Vec3 from a msgpack map value keyed by ``key_name``.
-/// Returns std::nullopt if the key is missing, the value is not an array
-/// of exactly 3 elements, or any element is not numeric.
-std::optional<Vec3> parse_vec3_param(const msgpack::object& params, const char* key_name) {
-    if (params.type != msgpack::type::MAP) return std::nullopt;
-    auto map = params.via.map;
-    for (uint32_t i = 0; i < map.size; ++i) {
-        auto& key = map.ptr[i].key;
-        auto& val = map.ptr[i].val;
-        if (key.type != msgpack::type::STR) continue;
-        std::string k(key.via.str.ptr, key.via.str.size);
-        if (k == key_name) {
-            if (val.type != msgpack::type::ARRAY || val.via.array.size != 3) {
-                return std::nullopt;
-            }
-            Vec3 v{};
-            for (int j = 0; j < 3; ++j) {
-                auto& elem = val.via.array.ptr[j];
-                if (elem.type == msgpack::type::FLOAT64) {
-                    v[j] = elem.via.f64;
-                } else if (elem.type == msgpack::type::FLOAT32) {
-                    // msgpack-cxx promotes FLOAT32 to double in via.f64 — there is no via.f32 member.
-                    v[j] = static_cast<double>(elem.via.f64);
-                } else if (elem.type == msgpack::type::POSITIVE_INTEGER) {
-                    v[j] = static_cast<double>(elem.via.u64);
-                } else if (elem.type == msgpack::type::NEGATIVE_INTEGER) {
-                    v[j] = static_cast<double>(elem.via.i64);
-                } else {
-                    return std::nullopt;
-                }
-            }
-            return v;
-        }
-    }
-    return std::nullopt;
 }
 
 } // namespace
@@ -405,7 +369,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef HAPTIC_MOCK_HARDWARE
         } else if (cmd.method == "set_mock_position") {
-            auto vec = parse_vec3_param(cmd.params.get(), "position");
+            auto vec = haptic::try_get_keyed_vec3(cmd.params.get(), "position");
             if (!vec) {
                 resp.success = false;
                 resp.error = "set_mock_position: params must contain \"position\" as array[3] of numbers";
@@ -416,7 +380,7 @@ int main(int argc, char* argv[]) {
             return resp;
 
         } else if (cmd.method == "set_mock_velocity") {
-            auto vec = parse_vec3_param(cmd.params.get(), "velocity");
+            auto vec = haptic::try_get_keyed_vec3(cmd.params.get(), "velocity");
             if (!vec) {
                 resp.success = false;
                 resp.error = "set_mock_velocity: params must contain \"velocity\" as array[3] of numbers";

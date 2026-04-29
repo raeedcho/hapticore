@@ -16,6 +16,7 @@
 #include "force_fields/null_field.hpp"
 #include "force_fields/spring_damper_field.hpp"
 #include "haptic_thread.hpp"
+#include "msgpack_helpers.hpp"
 #include "publisher_thread.hpp"
 #include "state_data.hpp"
 #include "triple_buffer.hpp"
@@ -632,38 +633,6 @@ bool recv_response(zmq::socket_t& dealer) {
     return false;
 }
 
-/// Extract a Vec3 from a msgpack map value keyed by key_name.
-std::optional<Vec3> test_parse_vec3_param(const msgpack::object& params, const char* key_name) {
-    if (params.type != msgpack::type::MAP) return std::nullopt;
-    auto map = params.via.map;
-    for (uint32_t i = 0; i < map.size; ++i) {
-        auto& key = map.ptr[i].key;
-        auto& val = map.ptr[i].val;
-        if (key.type != msgpack::type::STR) continue;
-        std::string k(key.via.str.ptr, key.via.str.size);
-        if (k == key_name) {
-            if (val.type != msgpack::type::ARRAY || val.via.array.size != 3) return std::nullopt;
-            Vec3 v{};
-            for (int j = 0; j < 3; ++j) {
-                auto& elem = val.via.array.ptr[j];
-                if (elem.type == msgpack::type::FLOAT64)
-                    v[j] = elem.via.f64;
-                else if (elem.type == msgpack::type::FLOAT32)
-                    // msgpack-cxx promotes FLOAT32 to double in via.f64 — there is no via.f32 member.
-                    v[j] = static_cast<double>(elem.via.f64);
-                else if (elem.type == msgpack::type::POSITIVE_INTEGER)
-                    v[j] = static_cast<double>(elem.via.u64);
-                else if (elem.type == msgpack::type::NEGATIVE_INTEGER)
-                    v[j] = static_cast<double>(elem.via.i64);
-                else
-                    return std::nullopt;
-            }
-            return v;
-        }
-    }
-    return std::nullopt;
-}
-
 /// Drain all currently buffered messages from a SUB socket without blocking.
 /// Call this after the slow-joiner wait and before checking for specific messages,
 /// to discard stale state snapshots published during the connection window.
@@ -716,7 +685,7 @@ TEST_F(MockPositionInjectionTest, SetMockPositionAppearsInPublishedState) {
             msgpack::packer<msgpack::sbuffer> pk(resp.result_buf);
             pk.pack_map(1); pk.pack("timeout_ms"); pk.pack(500);
         } else if (cmd.method == "set_mock_position") {
-            auto vec = test_parse_vec3_param(cmd.params.get(), "position");
+            auto vec = haptic::try_get_keyed_vec3(cmd.params.get(), "position");
             if (!vec) {
                 resp.success = false;
                 resp.error = "set_mock_position: invalid params";
@@ -877,7 +846,7 @@ TEST_F(MockPositionInjectionTest, SetMockPositionWithCartPendulumProducesFieldSt
                 pk.pack_map(1); pk.pack("active_field"); pk.pack(field_type);
             }
         } else if (cmd.method == "set_mock_position") {
-            auto vec = test_parse_vec3_param(cmd.params.get(), "position");
+            auto vec = haptic::try_get_keyed_vec3(cmd.params.get(), "position");
             if (!vec) {
                 resp.success = false;
                 resp.error = "set_mock_position: invalid params";

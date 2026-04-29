@@ -93,6 +93,11 @@ TEST(DhdMockTest, ConcurrentReadWriteIsSafe) {
             double r2 = pos[0]*pos[0] + pos[1]*pos[1];
             EXPECT_NEAR(r2, 1.0, 0.01)
                 << "Position appears torn at read " << reads;
+
+            double v_r2 = vel[0]*vel[0] + vel[1]*vel[1];
+            EXPECT_NEAR(v_r2, 1.0, 0.01)
+                << "Velocity appears torn at read " << reads;
+
             ++reads;
         }
     });

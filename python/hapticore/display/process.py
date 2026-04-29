@@ -259,8 +259,8 @@ class DisplayProcess(multiprocessing.Process):
                 ]
                 scene.set_cursor_position(cursor_pos)
 
-            # 2b. Update scene from field_state data (skip in mouse mode)
-            if mouse is None and latest_state is not None:
+            # 2b. Update scene from field_state data
+            if latest_state is not None:
                 self._update_from_field_state(scene, latest_state)
 
             # 3. Draw all stimuli

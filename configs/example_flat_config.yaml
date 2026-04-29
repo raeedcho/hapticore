@@ -12,7 +12,7 @@ subject:  # required
     area: "M1"
 
 haptic:
-  backend: dhd  # one of: dhd | mock | mouse
+  backend: dhd  # one of: dhd | mock
   dhd:
     force_limit_n: 20.0
     publish_rate_hz: 200.0

@@ -61,9 +61,13 @@ def _run(args: argparse.Namespace) -> None:
     task = task_cls()
 
     # Validate backend+display compatibility before launching anything.
-    if config.haptic.backend == "mouse" and config.display.backend != "psychopy":
+    if (
+        config.haptic.dhd is not None
+        and config.haptic.dhd.mouse_input
+        and config.display.backend != "psychopy"
+    ):
         print(
-            "Error: haptic.backend='mouse' requires display.backend='psychopy' "
+            "Error: haptic.dhd.mouse_input=True requires display.backend='psychopy' "
             "(mouse position comes from the PsychoPy window).",
             file=sys.stderr,
         )
@@ -86,9 +90,9 @@ def _run(args: argparse.Namespace) -> None:
             "haptic_command_address": config.zmq.haptic_command_address,
         })
 
-    # Mouse queue for backend="mouse". None otherwise.
+    # Mouse queue for dhd.mouse_input. None otherwise.
     mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None
-    if config.haptic.backend == "mouse":
+    if config.haptic.dhd is not None and config.haptic.dhd.mouse_input:
         from multiprocessing import Queue as MpQueue
         mouse_queue = MpQueue(maxsize=4)
 

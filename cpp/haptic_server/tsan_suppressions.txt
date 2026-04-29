@@ -1,0 +1,5 @@
+# libzmq uses internal lock-free data structures that ThreadSanitizer
+# cannot understand because the system-installed libzmq.so is not built
+# with -fsanitize=thread. All reported races are inside libzmq's I/O
+# thread and are false positives.
+race:libzmq

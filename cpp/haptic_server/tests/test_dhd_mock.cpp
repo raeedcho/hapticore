@@ -1,5 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <thread>
+
 #include "dhd_interface.hpp"
 #include "dhd_mock.hpp"
 
@@ -54,4 +59,52 @@ TEST(DhdMockTest, FactoryReturnsMockInMockBuild) {
 #ifdef HAPTIC_MOCK_HARDWARE
     EXPECT_EQ(dhd->device_name(), "MockDHD");
 #endif
+}
+
+TEST(DhdMockTest, ConcurrentReadWriteIsSafe) {
+    DhdMock mock;
+    mock.open();
+
+    // Initialize to a point on the unit circle so even read 0 passes
+    // the invariant check (the writer starts at t=0 → {sin(0), cos(0)} = {0, 1}).
+    mock.set_mock_position({0.0, 1.0, 0.0});
+    mock.set_mock_velocity({1.0, 0.0, 0.0});
+
+    std::atomic<bool> stop{false};
+
+    // Writer: rapidly update position and velocity
+    std::thread writer([&mock, &stop]() {
+        double t = 0.0;
+        while (!stop.load(std::memory_order_relaxed)) {
+            mock.set_mock_position({std::sin(t), std::cos(t), 0.0});
+            mock.set_mock_velocity({std::cos(t), -std::sin(t), 0.0});
+            t += 0.001;
+        }
+    });
+
+    // Reader: rapidly read position (simulates 4 kHz haptic loop)
+    std::thread reader([&mock, &stop]() {
+        Vec3 pos{}, vel{};
+        int reads = 0;
+        while (!stop.load(std::memory_order_relaxed) && reads < 100000) {
+            mock.get_position(pos);
+            mock.get_linear_velocity(vel);
+            // Verify values are consistent (not torn): x² + y² ≈ 1.0
+            double r2 = pos[0]*pos[0] + pos[1]*pos[1];
+            EXPECT_NEAR(r2, 1.0, 0.01)
+                << "Position appears torn at read " << reads;
+
+            double v_r2 = vel[0]*vel[0] + vel[1]*vel[1];
+            EXPECT_NEAR(v_r2, 1.0, 0.01)
+                << "Velocity appears torn at read " << reads;
+
+            ++reads;
+        }
+    });
+
+    // Let them race for a bit
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    stop.store(true);
+    writer.join();
+    reader.join();
 }

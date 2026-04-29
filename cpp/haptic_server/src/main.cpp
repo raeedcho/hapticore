@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -22,9 +23,14 @@
 #include "force_fields/field_factory.hpp"
 #include "force_fields/null_field.hpp"
 #include "haptic_thread.hpp"
+#include "msgpack_helpers.hpp"
 #include "publisher_thread.hpp"
 #include "state_data.hpp"
 #include "triple_buffer.hpp"
+
+#ifdef HAPTIC_MOCK_HARDWARE
+#include "dhd_mock.hpp"
+#endif
 
 namespace {
 
@@ -224,8 +230,19 @@ int main(int argc, char* argv[]) {
     // 6. Create haptic thread (owns the DHD)
     HapticThread haptic(std::move(dhd), state_buffer, force_limit, cpu_core);
 
+#ifdef HAPTIC_MOCK_HARDWARE
+    // Safe: HAPTIC_MOCK_HARDWARE selects dhd_mock.cpp at link time,
+    // so haptic.dhd() returns a DhdMock*. This never compiles in
+    // real-hardware builds.
+    auto* mock_dhd = static_cast<DhdMock*>(haptic.dhd());
+#endif
+
     // 7. Define command handler lambda
+#ifdef HAPTIC_MOCK_HARDWARE
+    auto command_handler = [&haptic, mock_dhd](const CommandData& cmd) -> CommandResponseData {
+#else
     auto command_handler = [&haptic](const CommandData& cmd) -> CommandResponseData {
+#endif
         CommandResponseData resp;
         resp.command_id = cmd.command_id;
 
@@ -349,6 +366,35 @@ int main(int argc, char* argv[]) {
                 pk.pack(true);
             }
             return resp;
+
+#ifdef HAPTIC_MOCK_HARDWARE
+        } else if (cmd.method == "set_mock_position") {
+            auto vec = haptic::try_get_keyed_vec3(cmd.params.get(), "position");
+            if (!vec) {
+                resp.success = false;
+                resp.error = "set_mock_position: params must contain \"position\" as array[3] of numbers";
+                return resp;
+            }
+            mock_dhd->set_mock_position(*vec);
+            resp.success = true;
+            return resp;
+
+        } else if (cmd.method == "set_mock_velocity") {
+            auto vec = haptic::try_get_keyed_vec3(cmd.params.get(), "velocity");
+            if (!vec) {
+                resp.success = false;
+                resp.error = "set_mock_velocity: params must contain \"velocity\" as array[3] of numbers";
+                return resp;
+            }
+            mock_dhd->set_mock_velocity(*vec);
+            resp.success = true;
+            return resp;
+#else
+        } else if (cmd.method == "set_mock_position" || cmd.method == "set_mock_velocity") {
+            resp.success = false;
+            resp.error = cmd.method + " rejected: not a mock-hardware build";
+            return resp;
+#endif
 
         } else {
             resp.success = false;

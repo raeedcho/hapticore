@@ -131,7 +131,7 @@ These commands are only available on mock-hardware builds (`HAPTIC_MOCK_HARDWARE
 
 #### `set_mock_position`
 
-Inject a device position into the mock DHD. The position takes effect on the next haptic thread tick (~250 µs). This is the mechanism dev-mouse uses to drive the mock server from mouse input — the Python side reads the mouse, computes a position in lab-frame meters, and sends this command at ~60 Hz.
+Inject a device position into the mock DHD. The position takes effect on the next haptic thread tick (~250 µs). External test or development clients connected to a mock-hardware server can use this to provide synthetic device state by sending lab-frame positions, typically at an interactive update rate (for example, ~60 Hz).
 
 **params:**
 ```json

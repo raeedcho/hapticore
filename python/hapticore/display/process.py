@@ -341,6 +341,11 @@ class DisplayProcess(multiprocessing.Process):
                 scene.clear()
             elif action == "update_scene":
                 params = cmd.get("params", {})
+                # Handle cursor visibility as a special key before
+                # iterating over normal stimulus updates.
+                cursor_cmd = params.pop("__cursor", None)
+                if cursor_cmd is not None and "visible" in cursor_cmd:
+                    scene.set_cursor_visible(cursor_cmd["visible"])
                 for stim_id, stim_params in params.items():
                     scene.update(stim_id, self._convert_spatial_params(stim_params))
             else:
@@ -385,7 +390,7 @@ class DisplayProcess(multiprocessing.Process):
         Only updates stimuli that already exist — the task is responsible for
         creating them via create_cart_pendulum_stimuli().
         """
-        _CUP_ID, _BALL_ID, _STRING_ID = CART_PENDULUM_STIM_IDS
+        _CUP_ID, _BALL_ID = CART_PENDULUM_STIM_IDS
         eff_scale = self._effective_scale()
         eff_offset = self._effective_offset_cm()
 
@@ -410,12 +415,6 @@ class DisplayProcess(multiprocessing.Process):
                 "position": [ball_cx, ball_cy],
                 "color": ball_color,
             })
-
-        # Update string endpoints
-        string_stim = scene.get_stimulus(_STRING_ID)
-        if string_stim is not None:
-            string_stim.start = [cup_cx, cup_cy]
-            string_stim.end = [ball_cx, ball_cy]
 
     def _update_physics_bodies(
         self, scene: SceneManager, field_state: dict[str, Any],

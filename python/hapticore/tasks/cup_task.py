@@ -15,6 +15,7 @@ States:
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from hapticore.core.messages import Command, HapticState
@@ -62,16 +63,28 @@ class CupTask(BaseTask):
             description="Inter-trial interval duration",
         ),
         "pendulum_length": ParamSpec(
-            type=float, default=0.3, unit="m",
+            type=float, default=0.1, unit="m",
             description="Pendulum string length (must match force field)",
+        ),
+        "spill_threshold": ParamSpec(
+            type=float, default=math.pi / 2, unit="rad",
+            description="Ball angle at which spill is triggered",
         ),
         "ball_mass": ParamSpec(
             type=float, default=0.6, unit="kg",
             description="Ball mass for cart-pendulum dynamics",
         ),
+        "ball_radius": ParamSpec(
+            type=float, default=0.004, unit="m",
+            description="Ball radius for display only (does not affect physics)",
+        ),
         "cup_mass": ParamSpec(
             type=float, default=2.4, unit="kg",
             description="Cup mass for cart-pendulum dynamics",
+        ),
+        "cup_thickness": ParamSpec(
+            type=float, default=0.003, unit="m",
+            description="Cup thickness for display only (does not affect physics)",
         ),
         "angular_damping": ParamSpec(
             type=float, default=0.05, unit="N·m·s/rad",
@@ -151,10 +164,10 @@ class CupTask(BaseTask):
         h = self.params["target_height"]
         self.display.show_stimulus("left_target", {
             "type": "rectangle",
-            "position": [lx, 0.0],
+            "position": [lx, h/2 - self.params["cup_thickness"] - self.params["ball_radius"]],
             "width": hw * 2,
             "height": h,
-            "color": [1.0, 1.0, 0.0],
+            "color": [0.7, 0.7, 0.0],
             "fill": False,
         })
 
@@ -163,6 +176,7 @@ class CupTask(BaseTask):
 
     def on_enter_preview(self, event: Any = None) -> None:
         """Hold cursor at start, show cup-ball preview and right target."""
+        self.display.update_scene({"__cursor": {"visible": False}})
         phi = self.current_condition["initial_phi"]
         lx = self.params["left_x"]
         rx = self.params["right_x"]
@@ -177,6 +191,25 @@ class CupTask(BaseTask):
             "damping": self.params["preview_damping"],
         })
 
+        # Right target
+        self.display.show_stimulus("right_target", {
+            "type": "rectangle",
+            "position": [rx, h/2 - self.params["cup_thickness"] - self.params["ball_radius"]],
+            "width": hw * 2,
+            "height": h,
+            "color": [0.0, 0.7, 0.0],
+            "fill": False,
+        })
+
+        # Connecting line between targets
+        self.display.show_stimulus("track_line", {
+            "type": "line",
+            "start": [lx, -self.params["cup_thickness"]-self.params["ball_radius"]],
+            "end": [rx, -self.params["cup_thickness"]-self.params["ball_radius"]],
+            "color": [0.7, 0.7, 0.7],
+            "line_width": 1.0,
+        })
+
         # Cup-ball at left target with initial angle.
         # Visuals are frozen because active_field != "cart_pendulum",
         # so _update_cart_pendulum in DisplayProcess doesn't run.
@@ -185,26 +218,10 @@ class CupTask(BaseTask):
             cup_position=[lx, 0.0],
             initial_phi=phi,
             pendulum_length=self.params["pendulum_length"],
+            spill_threshold=self.params["spill_threshold"],
+            ball_radius=self.params["ball_radius"],
+            cup_thickness=self.params["cup_thickness"],
         )
-
-        # Right target
-        self.display.show_stimulus("right_target", {
-            "type": "rectangle",
-            "position": [rx, 0.0],
-            "width": hw * 2,
-            "height": h,
-            "color": [0.0, 1.0, 0.0],
-            "fill": False,
-        })
-
-        # Connecting line between targets
-        self.display.show_stimulus("track_line", {
-            "type": "line",
-            "start": [lx, 0.0],
-            "end": [rx, 0.0],
-            "color": [0.3, 0.3, 0.3],
-            "line_width": 1.0,
-        })
 
         self.timer.set("go_cue", self.params["preview_duration"])
 
@@ -220,6 +237,7 @@ class CupTask(BaseTask):
             "coupling_stiffness": self.params["coupling_stiffness"],
             "coupling_damping": self.params["coupling_damping"],
             "angular_damping": self.params["angular_damping"],
+            "spill_threshold": self.params["spill_threshold"],
             "initial_phi": phi,
         })
 
@@ -318,6 +336,7 @@ class CupTask(BaseTask):
         self._set_channeled_field("null", {})
         self._clear_task_visuals()
         self.timer.cancel_all()  # Cancel any pending timers from the trial
+        self.display.update_scene({"__cursor": {"visible": True}})
         self.timer.set("trial_end", self.params["iti_duration"])
 
     def _clear_task_visuals(self) -> None:

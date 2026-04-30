@@ -80,18 +80,21 @@ class TestCLIRun:
             f"are probably not being applied"
         )
 
-    def test_run_mouse_haptic_with_mock_display_fails(
+    def test_run_mouse_input_with_mock_display_fails(
         self, capsys: pytest.CaptureFixture[str], tmp_path: Path,
     ) -> None:
-        """haptic.backend='mouse' + display.backend='mock' must exit(1)."""
+        """haptic.dhd.mouse_input=True + display.backend='mock' must exit(1)."""
         from hapticore.cli import _run
 
         configs = Path(__file__).parents[2] / "configs"
-        override = tmp_path / "force_mock_display.yaml"
-        override.write_text("display:\n  backend: mock\n")
+        override = tmp_path / "force_mouse_input.yaml"
+        override.write_text(
+            "haptic:\n  backend: dhd\n  dhd:\n    mouse_input: true\n"
+            "display:\n  backend: mock\n"
+        )
 
         args = Namespace(
-            rig=str(configs / "rig" / "dev-mouse.yaml"),
+            rig=str(configs / "rig" / "ci.yaml"),
             subject=str(configs / "subject" / "example_subject.yaml"),
             task=str(configs / "task" / "center_out.yaml"),
             extra_config=[str(override), str(configs / "example_experiment.yaml")],
@@ -100,7 +103,7 @@ class TestCLIRun:
         with pytest.raises(SystemExit) as exc_info:
             _run(args)
         assert exc_info.value.code == 1
-        assert "haptic.backend='mouse'" in capsys.readouterr().err
+        assert "mouse_input" in capsys.readouterr().err
 
     def test_run_without_rig_layers_fails(
         self, capsys: pytest.CaptureFixture[str],

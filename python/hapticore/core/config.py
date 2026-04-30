@@ -94,12 +94,21 @@ class DhdConfig(BaseModel):
                     "calibration on power-on (~5–10 s on the delta.3) "
                     "with margin.",
     )
+    mouse_input: bool = Field(
+        default=False,
+        description="Drive the mock haptic server from mouse cursor position. "
+                    "When True, the CLI creates a mouse position queue, the "
+                    "display process reads PsychoPy mouse input into it, and "
+                    "a MouseBridge thread forwards positions to the server as "
+                    "set_mock_position / set_mock_velocity commands. Requires "
+                    "display.backend='psychopy'.",
+    )
 
 
 class HapticConfig(BaseModel):
     """Haptic interface configuration."""
 
-    backend: Literal["dhd", "mock", "mouse"] = "mock"
+    backend: Literal["dhd", "mock"] = "mock"
 
     dhd: DhdConfig | None = None
 

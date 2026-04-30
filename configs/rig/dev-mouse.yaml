@@ -1,12 +1,20 @@
-# Laptop development — mouse-driven haptic, real PsychoPy display.
+# Laptop development — mouse-driven haptic via mock C++ server.
 # Run with: hapticore run --rig configs/rig/dev-mouse.yaml \
 #                         --subject ... --task ...
+#
+# The factory auto-starts the mock haptic server and a MouseBridge
+# thread that forwards mouse position from the PsychoPy window to
+# the server as set_mock_position / set_mock_velocity commands.
 
 haptic:
-  backend: mouse
+  backend: dhd
+  dhd:
+    auto_start: true
+    server_binary: cpp/haptic_server/build/dev-mock/haptic_server
+    mouse_input: true
 
 display:
-  backend: psychopy  # mouse mode requires the real PsychoPy window
+  backend: psychopy  # mouse_input requires the real PsychoPy window
   resolution: [1280, 800]
   refresh_rate_hz: 60
   fullscreen: false

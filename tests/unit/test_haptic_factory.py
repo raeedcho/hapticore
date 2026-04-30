@@ -21,7 +21,7 @@ from hapticore.core.messaging import make_ipc_address
 from hapticore.haptic import HapticClient, make_haptic_interface
 from hapticore.haptic import _haptic_server_alive  # noqa: PLC2701 — testing internal probe directly
 from hapticore.haptic.mock import MockHapticInterface
-from hapticore.haptic.mouse import MouseHapticInterface
+from hapticore.haptic.mouse_bridge import MouseBridge
 
 
 class TestMakeHapticInterface:
@@ -30,21 +30,6 @@ class TestMakeHapticInterface:
         with make_haptic_interface(cfg, ZMQConfig()) as iface:
             assert isinstance(iface, MockHapticInterface)
             assert isinstance(iface, HapticInterface)
-
-    def test_mouse_backend_returns_mouse_interface(self) -> None:
-        cfg = HapticConfig(backend="mouse")
-        queue: multiprocessing.queues.Queue[tuple[float, float]] = (
-            multiprocessing.Queue(maxsize=4)
-        )
-        with make_haptic_interface(cfg, ZMQConfig(), mouse_queue=queue) as iface:
-            assert isinstance(iface, MouseHapticInterface)
-            assert isinstance(iface, HapticInterface)
-
-    def test_mouse_backend_without_queue_raises(self) -> None:
-        cfg = HapticConfig(backend="mouse")
-        with pytest.raises(ValueError, match="mouse_queue"):
-            with make_haptic_interface(cfg, ZMQConfig()):
-                pass
 
     def test_dhd_backend_returns_connected_haptic_client(self) -> None:
         cfg = HapticConfig(backend="dhd")
@@ -96,6 +81,68 @@ class TestMakeHapticInterface:
             with make_haptic_interface(cfg, ZMQConfig()) as iface:
                 assert isinstance(iface, HapticClient)
                 assert iface._own_context  # noqa: SLF001
+
+    def test_dhd_backend_starts_mouse_bridge_when_queue_provided(self) -> None:
+        """dhd backend with mouse_input=True and mouse_queue → MouseBridge instantiated and started."""
+        cfg = HapticConfig(backend="dhd", dhd=DhdConfig(mouse_input=True))
+        zmq_cfg = ZMQConfig()
+        queue: multiprocessing.queues.Queue[tuple[float, float]] = (
+            multiprocessing.Queue(maxsize=4)
+        )
+        mock_bridge = MagicMock(spec=MouseBridge)
+
+        with (
+            patch("hapticore.haptic._haptic_server_alive", return_value=True),
+            patch("hapticore.haptic.MouseBridge", return_value=mock_bridge) as mock_cls,
+        ):
+            with make_haptic_interface(cfg, zmq_cfg, mouse_queue=queue):
+                pass
+
+        mock_cls.assert_called_once()
+        call_kwargs = mock_cls.call_args
+        assert call_kwargs.kwargs["mouse_queue"] is queue
+        mock_bridge.start.assert_called_once()
+        mock_bridge.request_stop.assert_called_once()
+
+    def test_dhd_backend_no_bridge_when_mouse_input_false(self) -> None:
+        """dhd backend with mouse_queue but mouse_input=False → no MouseBridge."""
+        cfg = HapticConfig(backend="dhd", dhd=DhdConfig(mouse_input=False))
+        zmq_cfg = ZMQConfig()
+        queue: multiprocessing.queues.Queue[tuple[float, float]] = (
+            multiprocessing.Queue(maxsize=4)
+        )
+        with (
+            patch("hapticore.haptic._haptic_server_alive", return_value=True),
+            patch("hapticore.haptic.MouseBridge") as mock_cls,
+        ):
+            with make_haptic_interface(cfg, zmq_cfg, mouse_queue=queue):
+                pass
+        mock_cls.assert_not_called()
+
+    def test_dhd_backend_mouse_input_true_without_queue_raises(self) -> None:
+        """dhd backend with mouse_input=True but no queue → ValueError."""
+        cfg = HapticConfig(backend="dhd", dhd=DhdConfig(mouse_input=True))
+        zmq_cfg = ZMQConfig()
+        with (
+            patch("hapticore.haptic._haptic_server_alive", return_value=True),
+            pytest.raises(ValueError, match="mouse_queue"),
+        ):
+            with make_haptic_interface(cfg, zmq_cfg, mouse_queue=None):
+                pass
+
+    def test_dhd_backend_no_bridge_when_mouse_input_false_and_no_queue(self) -> None:
+        """dhd backend with mouse_input=False (default) and no queue → MouseBridge is NOT instantiated."""
+        cfg = HapticConfig(backend="dhd", dhd=DhdConfig())
+        zmq_cfg = ZMQConfig()
+
+        with (
+            patch("hapticore.haptic._haptic_server_alive", return_value=True),
+            patch("hapticore.haptic.MouseBridge") as mock_cls,
+        ):
+            with make_haptic_interface(cfg, zmq_cfg, mouse_queue=None):
+                pass
+
+        mock_cls.assert_not_called()
 
 
 class TestHapticServerProbe:

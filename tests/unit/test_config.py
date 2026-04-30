@@ -454,10 +454,6 @@ class TestHapticConfigBackends:
         cfg = HapticConfig(backend="mock")
         assert cfg.dhd is None
 
-    def test_mouse_kind_leaves_dhd_block_none(self) -> None:
-        cfg = HapticConfig(backend="mouse")
-        assert cfg.dhd is None
-
     def test_invalid_kind_rejected(self) -> None:
         with pytest.raises(ValidationError):
             HapticConfig(backend="realdeal")  # type: ignore[arg-type]

@@ -19,9 +19,9 @@ from hapticore.core.interfaces import HapticInterface
 from hapticore.core.messages import TOPIC_STATE
 from hapticore.haptic.client import HapticClient
 from hapticore.haptic.mock import MockHapticInterface
-from hapticore.haptic.mouse import MouseHapticInterface
+from hapticore.haptic.mouse_bridge import MouseBridge
 
-__all__ = ["HapticClient", "MockHapticInterface", "MouseHapticInterface", "make_haptic_interface"]
+__all__ = ["HapticClient", "MockHapticInterface", "MouseBridge", "make_haptic_interface"]
 
 logger = logging.getLogger(__name__)
 
@@ -162,8 +162,8 @@ def make_haptic_interface(
     """Construct a HapticInterface from a resolved HapticConfig.
 
     Now a context manager so the dhd backend can own the haptic_server
-    subprocess lifecycle when it spawns one. Mock and mouse backends
-    yield immediately and own no resources; the dhd backend yields a
+    subprocess lifecycle when it spawns one. Mock backend yields
+    immediately and owns no resources; the dhd backend yields a
     connected HapticClient (probing the configured state address first
     and either attaching, spawning, or raising depending on auto_start).
 
@@ -174,30 +174,19 @@ def make_haptic_interface(
         zmq_cfg: ZMQ address configuration. Only consulted for ``backend="dhd"``.
         context: Optional ZMQ context. Only used for ``backend="dhd"``. If
             omitted, ``HapticClient`` creates and owns its own context.
-        mouse_queue: Required only when ``backend="mouse"``. The same queue
-            must be passed to the display process so the mouse reader and
-            the haptic interface share it.
+        mouse_queue: Optional queue of ``(x_m, y_m)`` tuples. When provided
+            alongside ``backend="dhd"`` and ``dhd.mouse_input=True``, a
+            ``MouseBridge`` thread is started to forward positions to the
+            server. Ignored for ``backend="mock"``.
 
     Raises:
-        ValueError: If ``backend="mouse"`` but ``mouse_queue`` was not provided,
-            or if ``backend="dhd"`` but the ``dhd`` config block is missing
+        ValueError: If ``backend="dhd"`` but the ``dhd`` config block is missing
             (should be impossible after validation; defensive check).
         RuntimeError: If ``backend="dhd"``, ``auto_start=False``, and no server
             is detected at the configured ZMQ state address.
     """
     if cfg.backend == "mock":
         yield MockHapticInterface()
-        return
-
-    if cfg.backend == "mouse":
-        if mouse_queue is None:
-            raise ValueError(
-                "HapticConfig.backend='mouse' requires mouse_queue to be passed "
-                "to make_haptic_interface(). Pass the same queue to "
-                "DisplayProcess(mouse_queue=...) so mouse position flows from "
-                "the display process to the haptic interface."
-            )
-        yield MouseHapticInterface(mouse_queue=mouse_queue)
         return
 
     if cfg.backend == "dhd":
@@ -236,10 +225,26 @@ def make_haptic_interface(
             command_timeout_ms=cfg.dhd.command_timeout_ms,
             context=context,
         )
+        bridge: MouseBridge | None = None
         try:
             with client:
+                if cfg.dhd.mouse_input:
+                    if mouse_queue is None:
+                        raise ValueError(
+                            "DhdConfig.mouse_input=True but no mouse_queue was provided. "
+                            "Pass mouse_queue from the CLI (created when mouse_input=True)."
+                        )
+                    bridge = MouseBridge(
+                        mouse_queue=mouse_queue,
+                        command_address=zmq_cfg.haptic_command_address,
+                        context=context,
+                    )
+                    bridge.start()
                 yield client
         finally:
+            if bridge is not None:
+                bridge.request_stop()
+                bridge.join(timeout=2.0)
             if spawned is not None:
                 _terminate_server(spawned)
         return

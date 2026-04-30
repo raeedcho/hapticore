@@ -9,15 +9,16 @@
 task:
   task_class: "hapticore.tasks.cup_task.CupTask"
   params:
-    left_x: -0.06
-    right_x: 0.06
-    target_half_width: 0.03
-    target_height: 0.03
+    left_x: -0.08
+    right_x: 0.08
+    target_half_width: 0.04
+    target_height: 0.02
     hold_time: 0.5
     preview_duration: 1.0
     reach_timeout: 5.0
     iti_duration: 1.0
-    pendulum_length: 0.03
+    pendulum_length: 0.05
+    spill_threshold: 0.7
     ball_mass: 0.6
     cup_mass: 2.4
     angular_damping: 0.05

@@ -181,7 +181,7 @@ void CartPendulumField::pack_state(msgpack::packer<msgpack::sbuffer>& pk) const 
     pk.pack("spilled");          pk.pack(spilled_);
     pk.pack("cup_x");            pk.pack(cup_x_);
     pk.pack("ball_x");           pk.pack(x_sim_ + pendulum_length_ * std::sin(phi_));
-    pk.pack("ball_y");           pk.pack(-pendulum_length_ * std::cos(phi_));
+    pk.pack("ball_y");           pk.pack(pendulum_length_ * (1 - std::cos(phi_)));
     pk.pack("coupling_stretch"); pk.pack(cup_x_dev_ - x_sim_);
 }
 

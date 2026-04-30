@@ -21,6 +21,8 @@ task:
     ball_mass: 0.6
     cup_mass: 2.4
     angular_damping: 0.05
+    coupling_stiffness: 1200.0
+    coupling_damping: 20.0
     channel_stiffness: 800.0
     channel_damping: 15.0
     preview_stiffness: 200.0

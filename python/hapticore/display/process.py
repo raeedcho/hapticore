@@ -359,9 +359,17 @@ class DisplayProcess(multiprocessing.Process):
         field_state = state.get("field_state", {})
 
         if active_field == "cart_pendulum":
-            self._update_cart_pendulum(scene, state, field_state)
+            self._update_cart_pendulum(scene, field_state)
         elif active_field == "physics_world":
             self._update_physics_bodies(scene, field_state)
+        elif active_field == "composite":
+            # Composite wraps multiple children. Scan for recognizable
+            # child states and dispatch to the appropriate renderer.
+            for child_state in field_state.get("children", []):
+                if "cup_x" in child_state:
+                    self._update_cart_pendulum(scene, child_state)
+                elif "bodies" in child_state:
+                    self._update_physics_bodies(scene, child_state)
         # Other field types (null, spring_damper, constant, workspace_limit, channel):
         # no continuous visual updates needed — task controller manages
         # discrete stimuli via show/hide commands.
@@ -369,7 +377,6 @@ class DisplayProcess(multiprocessing.Process):
     def _update_cart_pendulum(
         self,
         scene: SceneManager,
-        state: dict[str, Any],
         field_state: dict[str, Any],
     ) -> None:
         """Update cup, ball, and string positions from CartPendulumField state.

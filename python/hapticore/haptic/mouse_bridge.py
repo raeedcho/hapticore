@@ -49,13 +49,14 @@ class MouseBridge(threading.Thread):
         self._queue = mouse_queue
         self._command_address = command_address
         self._context = context
-        self._stop = threading.Event()
+        self._shutdown = threading.Event()
 
     def run(self) -> None:
         own_ctx = self._context is None
         ctx: zmq.Context[Any] = self._context if self._context is not None else zmq.Context()
         dealer = ctx.socket(zmq.DEALER)
         dealer.setsockopt(zmq.LINGER, 0)
+        dealer.setsockopt(zmq.SNDTIMEO, 50)  # 50ms send timeout — drop stale samples
         dealer.connect(self._command_address)
 
         position = [0.0, 0.0, 0.0]
@@ -63,7 +64,7 @@ class MouseBridge(threading.Thread):
         cmd_seq = 0
 
         try:
-            while not self._stop.is_set():
+            while not self._shutdown.is_set():
                 # Drain queue, keep only the latest reading
                 latest: tuple[float, float] | None = None
                 try:
@@ -96,17 +97,17 @@ class MouseBridge(threading.Thread):
                     # No data this iteration; sleep briefly to avoid spinning.
                     # Display pushes at ~60 Hz; 8 ms sleep means we check
                     # ~125 times/s, well above the input rate.
-                    self._stop.wait(timeout=0.008)
+                    self._shutdown.wait(timeout=0.008)
         except Exception:
             logger.exception("MouseBridge crashed")
         finally:
             dealer.close(linger=0)
             if own_ctx:
-                ctx.term()
+                ctx.destroy()
 
     def request_stop(self) -> None:
         """Signal the bridge to exit its run loop."""
-        self._stop.set()
+        self._shutdown.set()
 
     @staticmethod
     def _send_command(
@@ -128,4 +129,7 @@ class MouseBridge(threading.Thread):
             "method": method,
             "params": params,
         })
-        dealer.send_multipart([b"", payload], zmq.NOBLOCK)
+        try:
+            dealer.send_multipart([b"", payload], zmq.NOBLOCK)
+        except zmq.Again:
+            pass

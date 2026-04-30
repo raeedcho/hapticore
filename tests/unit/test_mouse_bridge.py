@@ -159,15 +159,19 @@ class TestMouseBridge:
         )
         bridge = MouseBridge(mouse_queue=queue, command_address=address)
 
-        bridge.start()
-        assert bridge.is_alive()
+        try:
+            bridge.start()
+            assert bridge.is_alive()
 
-        bridge.request_stop()
-        bridge.join(timeout=2.0)
+            bridge.request_stop()
+            bridge.join(timeout=2.0)
 
-        assert not bridge.is_alive()
-        router.close(linger=0)
-        ctx.term()
+            assert not bridge.is_alive()
+        finally:
+            bridge.request_stop()
+            bridge.join(timeout=1.0)
+            router.close(linger=0)
+            ctx.term()
 
     def test_bridge_fire_and_forget_does_not_block(self) -> None:
         """Bridge should not hang even if the ROUTER never reads responses."""

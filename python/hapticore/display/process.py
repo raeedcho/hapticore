@@ -11,6 +11,7 @@ import logging
 import math
 import multiprocessing
 import multiprocessing.queues
+import os
 import signal
 import time
 from queue import Full
@@ -125,7 +126,6 @@ class DisplayProcess(multiprocessing.Process):
         # (PYGLET_SHADOW_WINDOW=0) defers GL context creation to the real
         # window, which then opens on the correct screen.
         if self._display_config.x_display:
-            import os
             os.environ["DISPLAY"] = self._display_config.x_display
             os.environ["PYGLET_SHADOW_WINDOW"] = "0"
 

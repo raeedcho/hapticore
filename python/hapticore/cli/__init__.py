@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import os
 import subprocess
 import sys
 
@@ -155,7 +156,6 @@ def _run(args: argparse.Namespace) -> None:
 def _list_screens(args: argparse.Namespace) -> None:
     """List available screens with their indices and resolutions."""
     if args.display:
-        import os
         os.environ["DISPLAY"] = args.display
         os.environ["PYGLET_SHADOW_WINDOW"] = "0"
 

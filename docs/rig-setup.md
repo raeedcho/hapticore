@@ -176,7 +176,7 @@ Some rigs use a Zaphod configuration to give the rig monitor its own dedicated r
 
 **Detecting a Zaphod setup:** Run `xdpyinfo | grep "number of screens"`. If it shows `2`, the rig is running a Zaphod config. The control-room monitor and the rig monitor are separate X screens (e.g., `:1.0` and `:1.1`) rather than two outputs on one X screen. `xrandr` only shows the current screen, so the rig monitor is invisible from the default display — use `xrandr --display :1.1` to query it.
 
-**Why `screen: 1` doesn't work:** In a Zaphod setup, pyglet can only see monitors on the current X display. `screen: 1` selects the second monitor on `DISPLAY=:1.0`, which doesn't exist — the rig monitor lives on a completely separate X screen. The `x_display` config field solves this by telling the display process which X screen to target before pyglet initialises.
+**Why `screen: 1` doesn't work:** In a Zaphod setup, pyglet can only see monitors on the current X display. `screen: 1` selects the second monitor on `DISPLAY=:1.0`, which doesn't exist — the rig monitor lives on a completely separate X screen. The `x_display` config field solves this by telling the display process which X screen to target before pyglet initializes.
 
 **How to configure it:**
 

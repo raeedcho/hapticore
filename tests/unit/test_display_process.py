@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import os
 import time
 import unittest.mock
 from typing import Any
@@ -779,8 +780,6 @@ class TestZaphodEnvSetup:
 
     def test_x_display_sets_env_vars(self) -> None:
         """run() sets DISPLAY and PYGLET_SHADOW_WINDOW when x_display is set."""
-        import os
-
         proc = self._make_proc_with_x_display(":1.1")
 
         captured_env: dict[str, str] = {}
@@ -831,8 +830,6 @@ class TestZaphodEnvSetup:
 
     def test_no_x_display_leaves_env_alone(self) -> None:
         """run() does not modify DISPLAY when x_display is not set."""
-        import os
-
         proc = self._make_proc_with_x_display(None)
 
         original_display = os.environ.get("DISPLAY")

@@ -77,6 +77,14 @@ class CupTask(BaseTask):
             type=float, default=0.05, unit="N·m·s/rad",
             description="Angular damping coefficient",
         ),
+        "coupling_stiffness": ParamSpec(
+            type=float, default=1200.0, unit="N/m", min=0.0, max=3000.0,
+            description="Stiffness of the coupling spring between cup and hand",
+        ),
+        "coupling_damping": ParamSpec(
+            type=float, default=20.0, unit="N·s/m", min=0.0, max=100.0,
+            description="Damping of the coupling spring between cup and hand",
+        ),
         "channel_stiffness": ParamSpec(
             type=float, default=800.0, unit="N/m", min=0.0, max=3000.0,
             description="Stiffness of the Y/Z channel constraint",
@@ -209,6 +217,8 @@ class CupTask(BaseTask):
             "pendulum_length": self.params["pendulum_length"],
             "ball_mass": self.params["ball_mass"],
             "cup_mass": self.params["cup_mass"],
+            "coupling_stiffness": self.params["coupling_stiffness"],
+            "coupling_damping": self.params["coupling_damping"],
             "angular_damping": self.params["angular_damping"],
             "initial_phi": phi,
         })
@@ -235,6 +245,7 @@ class CupTask(BaseTask):
     # --- Continuous trigger checking ---
 
     def check_triggers(self, haptic_state: HapticState) -> None:
+        cart_pendulum_state = self._get_cart_pendulum_state(haptic_state.field_state)
         pos = haptic_state.position
 
         if self.state == "move_to_left":
@@ -249,13 +260,13 @@ class CupTask(BaseTask):
         elif self.state == "reach":
             # Spill check BEFORE position check — if both are true on the
             # same tick, the trial should fail, not start a hold.
-            if haptic_state.field_state.get("spilled", False):
+            if cart_pendulum_state.get("spilled", False):
                 self.trigger("spilled")
             elif self._in_target(pos[0], self.params["right_x"]):
                 self.trigger("at_right")
 
         elif self.state == "hold_right":
-            if haptic_state.field_state.get("spilled", False):
+            if cart_pendulum_state.get("spilled", False):
                 self.trigger("spilled")
             elif not self._in_target(pos[0], self.params["right_x"]):
                 self.timer.cancel("hold_complete")
@@ -306,6 +317,7 @@ class CupTask(BaseTask):
         """Clean up visuals, reset field, start ITI timer."""
         self._set_channeled_field("null", {})
         self._clear_task_visuals()
+        self.timer.cancel_all()  # Cancel any pending timers from the trial
         self.timer.set("trial_end", self.params["iti_duration"])
 
     def _clear_task_visuals(self) -> None:
@@ -313,3 +325,12 @@ class CupTask(BaseTask):
         hide_cart_pendulum_stimuli(self.display.hide_stimulus)
         for sid in ("left_target", "right_target", "track_line"):
             self.display.hide_stimulus(sid)
+
+    def _get_cart_pendulum_state(self, field_state: dict[str, Any]) -> dict[str, Any]:
+        """Extract cart-pendulum state from field_state, handling composite wrapping."""
+        if "spilled" in field_state:
+            return field_state  # bare cart_pendulum field
+        for child in field_state.get("children", []):
+            if "spilled" in child:
+                return child
+        return {}

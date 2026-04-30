@@ -130,8 +130,8 @@ class TestMakeHapticInterface:
             with make_haptic_interface(cfg, zmq_cfg, mouse_queue=None):
                 pass
 
-    def test_dhd_backend_no_bridge_without_queue(self) -> None:
-        """dhd backend without mouse_queue → MouseBridge is NOT instantiated."""
+    def test_dhd_backend_no_bridge_when_mouse_input_false_and_no_queue(self) -> None:
+        """dhd backend with mouse_input=False (default) and no queue → MouseBridge is NOT instantiated."""
         cfg = HapticConfig(backend="dhd", dhd=DhdConfig())
         zmq_cfg = ZMQConfig()
 

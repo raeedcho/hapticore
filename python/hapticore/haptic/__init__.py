@@ -228,7 +228,12 @@ def make_haptic_interface(
         bridge: MouseBridge | None = None
         try:
             with client:
-                if mouse_queue is not None:
+                if cfg.dhd.mouse_input:
+                    if mouse_queue is None:
+                        raise ValueError(
+                            "DhdConfig.mouse_input=True but no mouse_queue was provided. "
+                            "Pass mouse_queue from the CLI (created when mouse_input=True)."
+                        )
                     bridge = MouseBridge(
                         mouse_queue=mouse_queue,
                         command_address=zmq_cfg.haptic_command_address,

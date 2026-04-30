@@ -62,7 +62,8 @@ def _run(args: argparse.Namespace) -> None:
 
     # Validate backend+display compatibility before launching anything.
     if (
-        config.haptic.dhd is not None
+        config.haptic.backend == "dhd"
+        and config.haptic.dhd is not None
         and config.haptic.dhd.mouse_input
         and config.display.backend != "psychopy"
     ):
@@ -92,7 +93,11 @@ def _run(args: argparse.Namespace) -> None:
 
     # Mouse queue for dhd.mouse_input. None otherwise.
     mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None
-    if config.haptic.dhd is not None and config.haptic.dhd.mouse_input:
+    if (
+        config.haptic.backend == "dhd"
+        and config.haptic.dhd is not None
+        and config.haptic.dhd.mouse_input
+    ):
         from multiprocessing import Queue as MpQueue
         mouse_queue = MpQueue(maxsize=4)
 

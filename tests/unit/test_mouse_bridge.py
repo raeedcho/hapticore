@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import multiprocessing.queues
+import threading
 import time
 from typing import Any
 
@@ -174,12 +175,12 @@ class TestMouseBridge:
             ctx.term()
 
     def test_bridge_fire_and_forget_does_not_block(self) -> None:
-        """Bridge should not hang even if the ROUTER never reads responses."""
+        """Bridge continues running when the server sends responses."""
         address = make_ipc_address("mb_test_noblock")
         ctx: zmq.Context[Any] = zmq.Context()
-        # Bind the router but never read from it
         router: zmq.Socket[Any] = ctx.socket(zmq.ROUTER)
         router.setsockopt(zmq.LINGER, 0)
+        router.setsockopt(zmq.RCVTIMEO, 100)
         router.bind(address)
 
         queue: multiprocessing.queues.Queue[tuple[float, float]] = (
@@ -187,19 +188,43 @@ class TestMouseBridge:
         )
         bridge = MouseBridge(mouse_queue=queue, command_address=address)
 
+        # Background thread emulates the server: read request, send dummy response.
+        server_stop = threading.Event()
+
+        def server_loop() -> None:
+            while not server_stop.is_set():
+                try:
+                    frames = router.recv_multipart(zmq.NOBLOCK)
+                    # frames: [identity, b"", payload]
+                    identity = frames[0]
+                    response = msgpack.packb({
+                        "command_id": "dummy",
+                        "success": True,
+                        "result": {},
+                        "error": "",
+                    }, use_bin_type=True)
+                    router.send_multipart([identity, b"", response])
+                except zmq.Again:
+                    time.sleep(0.005)
+
+        server_thread = threading.Thread(target=server_loop, daemon=True)
+
         try:
+            server_thread.start()
             bridge.start()
             time.sleep(0.02)
 
             for i in range(100):
                 queue.put((float(i) * 0.001, 0.0))
 
-            time.sleep(0.2)
+            time.sleep(0.5)  # give time for all sends + response drains
             bridge.request_stop()
             bridge.join(timeout=2.0)
 
-            assert not bridge.is_alive(), "Bridge hung — fire-and-forget may be blocking"
+            assert not bridge.is_alive(), "Bridge hung — response drain may not be working"
         finally:
+            server_stop.set()
+            server_thread.join(timeout=1.0)
             if bridge.is_alive():
                 bridge.request_stop()
                 bridge.join(timeout=1.0)

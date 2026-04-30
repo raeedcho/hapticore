@@ -4,9 +4,8 @@ Daemon thread that drains a mouse position queue (fed by DisplayProcess)
 and forwards position + finite-differenced velocity to the C++ haptic
 server via set_mock_position / set_mock_velocity ZMQ commands.
 
-This replaces the old MouseHapticInterface: instead of faking haptic
-state in Python, mouse input now flows through the real C++ haptic
-server and its force-field simulation.
+Mouse input flows through the real C++ haptic server and its force-field
+simulation rather than being faked in Python.
 """
 
 from __future__ import annotations
@@ -57,7 +56,8 @@ class MouseBridge(threading.Thread):
         ctx: zmq.Context[Any] = self._context if self._context is not None else zmq.Context()
         dealer = ctx.socket(zmq.DEALER)
         dealer.setsockopt(zmq.LINGER, 0)
-        dealer.setsockopt(zmq.SNDTIMEO, 50)  # 50ms send timeout — drop stale samples
+        # Sends are performed in non-blocking mode; SNDTIMEO is bypassed by
+        # NOBLOCK, so pure best-effort drops are the correct behaviour here.
         dealer.connect(self._command_address)
 
         position = [0.0, 0.0, 0.0]
@@ -94,6 +94,13 @@ class MouseBridge(threading.Thread):
                         dealer, f"mouse_vel_{cmd_seq}",
                         "set_mock_velocity", {"velocity": velocity},
                     )
+                    # Drain pending responses to prevent DEALER inbound HWM
+                    # from backing up and stalling the server's ROUTER send().
+                    while True:
+                        try:
+                            dealer.recv_multipart(zmq.NOBLOCK)
+                        except zmq.Again:
+                            break
                 else:
                     # No data this iteration; sleep briefly to avoid spinning.
                     # Display pushes at ~60 Hz; 8 ms sleep means we check
@@ -104,7 +111,7 @@ class MouseBridge(threading.Thread):
         finally:
             dealer.close(linger=0)
             if own_ctx:
-                ctx.destroy()
+                ctx.term()
 
     def request_stop(self) -> None:
         """Signal the bridge to exit its run loop."""
@@ -129,6 +136,6 @@ class MouseBridge(threading.Thread):
             "command_id": command_id,
             "method": method,
             "params": params,
-        })
+        }, use_bin_type=True)
         with contextlib.suppress(zmq.Again):
             dealer.send_multipart([b"", payload], zmq.NOBLOCK)

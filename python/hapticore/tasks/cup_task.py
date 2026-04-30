@@ -142,7 +142,7 @@ class CupTask(BaseTask):
         hw = self.params["target_half_width"]
         h = self.params["target_height"]
         self.display.show_stimulus("left_target", {
-            "type": "rect",
+            "type": "rectangle",
             "position": [lx, 0.0],
             "width": hw * 2,
             "height": h,
@@ -181,7 +181,7 @@ class CupTask(BaseTask):
 
         # Right target
         self.display.show_stimulus("right_target", {
-            "type": "rect",
+            "type": "rectangle",
             "position": [rx, 0.0],
             "width": hw * 2,
             "height": h,

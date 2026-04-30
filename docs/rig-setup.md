@@ -158,6 +158,7 @@ Run `hapticore list-screens` to list available monitors with their indices and r
 
 ```bash
 pixi run hapticore list-screens
+pixi run hapticore list-screens --display :1.1  # for Zaphod screens
 ```
 
 Example output:
@@ -168,6 +169,31 @@ Index  Resolution      Position
 ```
 
 Set `screen: 1` in the rig config to render on the second monitor. On Linux/X11, the screen index follows `xrandr` output order and is stable across reboots unless the physical cable connection order changes.
+
+### Zaphod heads (separate X screens)
+
+Some rigs use a Zaphod configuration to give the rig monitor its own dedicated rendering pipeline with no compositor interference. This is the gold standard for stimulus timing on Linux.
+
+**Detecting a Zaphod setup:** Run `xdpyinfo | grep "number of screens"`. If it shows `2`, the rig is running a Zaphod config. The control-room monitor and the rig monitor are separate X screens (e.g., `:1.0` and `:1.1`) rather than two outputs on one X screen. `xrandr` only shows the current screen, so the rig monitor is invisible from the default display — use `xrandr --display :1.1` to query it.
+
+**Why `screen: 1` doesn't work:** In a Zaphod setup, pyglet can only see monitors on the current X display. `screen: 1` selects the second monitor on `DISPLAY=:1.0`, which doesn't exist — the rig monitor lives on a completely separate X screen. The `x_display` config field solves this by telling the display process which X screen to target before pyglet initialises.
+
+**How to configure it:**
+
+```yaml
+display:
+  backend: psychopy
+  x_display: ":1.1"   # Zaphod screen 1 (DP-1, rig monitor)
+  screen: 0            # only screen on :1.1
+  resolution: [1920, 1080]
+  fullscreen: true
+```
+
+Run `pixi run hapticore list-screens --display :1.1` to verify the rig monitor is reachable before running a session.
+
+**Why `fullscreen: true` is safe:** When `x_display` is set, hapticore uses "fake fullscreen" — a positioned window at the screen's resolution — instead of pyglet's native fullscreen mode. Native fullscreen grabs exclusive keyboard and mouse input, which locks out the control-room screen on a WM-less Zaphod screen. Fake fullscreen is visually identical because there is no window manager or compositor on the target screen to reveal any difference.
+
+**Interaction with Xorg Reflect:** If the Xorg config includes `Option "Reflect"` on the rig monitor (common in Psychtoolbox setups for physical mirror compensation), this is a hardware-level image flip that PsychoPy doesn't know about. Hapticore's `mirror_horizontal` / `mirror_vertical` flags apply a separate software-level flip. Determine which axes the hardware reflects (draw an asymmetric test pattern) and set the mirror flags accordingly to avoid double-flipping. If the Xorg Reflect is compensating for a physical mirror and hapticore's mirror flags are also compensating for the same mirror, the effects will cancel out.
 
 ### Horizontal mirror for a canted mirror
 

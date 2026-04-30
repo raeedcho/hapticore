@@ -171,6 +171,15 @@ class DisplayConfig(BaseModel):
         default=False,
         description="Mirror the rendered image across the horizontal axis.",
     )
+    x_display: str | None = Field(
+        default=None,
+        description="X11 DISPLAY string for Zaphod multi-screen setups "
+                    "(e.g. ':1.1'). When set, DisplayProcess targets this "
+                    "X screen and uses fake-fullscreen to avoid input grabs "
+                    "on the WM-less screen. Has no effect on macOS or when "
+                    "backend='mock'. Run 'xdpyinfo -display :1.1' to verify "
+                    "the target screen exists.",
+    )
 
 
 class RippleRecordingConfig(BaseModel):

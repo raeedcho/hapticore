@@ -117,6 +117,18 @@ class DisplayProcess(multiprocessing.Process):
 
     def run(self) -> None:
         """Entry point executed in the child process."""
+        # Target a specific X screen for Zaphod multi-screen setups.
+        # Must happen before PsychoPy/pyglet import: pyglet reads DISPLAY at
+        # import time and creates its shadow window (a hidden 1x1 GL context
+        # probe) on the default screen. In a Zaphod config, the shadow window
+        # anchors the real window to the wrong X screen. Disabling it
+        # (PYGLET_SHADOW_WINDOW=0) defers GL context creation to the real
+        # window, which then opens on the correct screen.
+        if self._display_config.x_display:
+            import os
+            os.environ["DISPLAY"] = self._display_config.x_display
+            os.environ["PYGLET_SHADOW_WINDOW"] = "0"
+
         from psychopy import visual  # noqa: F811 — import ONLY here
 
         from hapticore.display.photodiode import PhotodiodePatch, remap_corner_for_mirror
@@ -447,6 +459,12 @@ class DisplayProcess(multiprocessing.Process):
 
         effective_fullscr = cfg.fullscreen and not self._headless
 
+        # On a Zaphod X screen (no WM), avoid native fullscreen — pyglet's
+        # exclusive keyboard/mouse grab locks out the operator's control-room
+        # screen. A positioned window at screen resolution is visually
+        # identical on a WM-less screen but does not grab input.
+        use_native_fullscr = effective_fullscr and not cfg.x_display
+
         view_scale: list[float] | None = None
         if cfg.mirror_horizontal or cfg.mirror_vertical:
             view_scale = [
@@ -454,9 +472,14 @@ class DisplayProcess(multiprocessing.Process):
                 -1.0 if cfg.mirror_vertical else 1.0,
             ]
 
+        window_kwargs: dict[str, Any] = {}
+        if effective_fullscr and not use_native_fullscr:
+            # Fake fullscreen: position at origin, disable GUI chrome
+            window_kwargs["pos"] = (0, 0)
+
         return visual_module.Window(
             size=list(cfg.resolution),
-            fullscr=effective_fullscr,
+            fullscr=use_native_fullscr,
             color=cfg.background_color,
             monitor=mon,
             units="cm",
@@ -465,6 +488,7 @@ class DisplayProcess(multiprocessing.Process):
             checkTiming=False,
             screen=cfg.screen,
             viewScale=view_scale,
+            **window_kwargs,
         )
 
     @staticmethod

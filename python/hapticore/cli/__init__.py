@@ -154,12 +154,18 @@ def _run(args: argparse.Namespace) -> None:
 
 def _list_screens(args: argparse.Namespace) -> None:
     """List available screens with their indices and resolutions."""
+    if args.display:
+        import os
+        os.environ["DISPLAY"] = args.display
+        os.environ["PYGLET_SHADOW_WINDOW"] = "0"
+
     try:
         import pyglet
     except ImportError:
         print(
-            "Error: list-screens requires the 'display' pixi environment.\n"
-            "Run with: pixi run -e display hapticore list-screens",
+            "Error: list-screens requires PsychoPy (pyglet). "
+            "Ensure 'pixi run install-psychopy' has been run.\n"
+            "Run with: pixi run hapticore list-screens",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -278,7 +284,11 @@ def main() -> None:
     # list-screens subcommand
     list_parser = subparsers.add_parser(
         "list-screens",
-        help="List available monitors (requires the display pixi environment)",
+        help="List available monitors",
+    )
+    list_parser.add_argument(
+        "--display",
+        help="X11 DISPLAY string to enumerate (e.g. ':1.1' for Zaphod screen 1)",
     )
     list_parser.set_defaults(func=_list_screens)
 

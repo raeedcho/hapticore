@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import time
 from typing import Any
 
@@ -43,63 +42,3 @@ class MockDisplay:
     def get_flip_timestamp(self) -> float | None:
         """Return the timestamp of the last display flip."""
         return self._flip_timestamp
-
-    def show_cart_pendulum(
-        self,
-        *,
-        cup_color: list[float] | None = None,
-        ball_color: list[float] | None = None,
-        string_color: list[float] | None = None,
-        cup_half_width: float = 0.015,
-        cup_depth: float = 0.03,
-        ball_radius: float = 0.008,
-        cup_position: list[float] | None = None,
-        initial_phi: float = 0.0,
-        pendulum_length: float = 0.3,
-    ) -> None:
-        """Create cup, ball, and string stimuli for the cart-pendulum field."""
-        cup_pos = cup_position if cup_position is not None else [0.0, 0.0]
-        cup_x, cup_y = cup_pos[0], cup_pos[1]
-
-        ball_x = cup_x + pendulum_length * math.sin(initial_phi)
-        ball_y = cup_y - pendulum_length * math.cos(initial_phi)
-
-        hw = cup_half_width
-        d = cup_depth
-        self.show_stimulus("__cup", {
-            "type": "polygon",
-            "vertices": [[-hw, 0.0], [-hw, -d], [hw, -d], [hw, 0.0]],
-            "color": cup_color or [0.8, 0.8, 0.8],
-            "fill": False,
-            "position": [cup_x, cup_y],
-        })
-        self.show_stimulus("__ball", {
-            "type": "circle",
-            "radius": ball_radius,
-            "color": ball_color or [0.2, 0.6, 1.0],
-            "position": [ball_x, ball_y],
-        })
-        self.show_stimulus("__string", {
-            "type": "line",
-            "start": [cup_x, cup_y],
-            "end": [ball_x, ball_y],
-            "color": string_color or [0.5, 0.5, 0.5],
-            "line_width": 2.0,
-        })
-
-    def hide_cart_pendulum(self) -> None:
-        """Remove cup, ball, and string stimuli."""
-        for sid in ("__cup", "__ball", "__string"):
-            self.hide_stimulus(sid)
-
-    def show_physics_bodies(
-        self, body_specs: dict[str, dict[str, Any]],
-    ) -> None:
-        """Create stimuli for physics body visuals with ``__body_`` prefix."""
-        for body_id, spec in body_specs.items():
-            self.show_stimulus(f"__body_{body_id}", spec)
-
-    def hide_physics_bodies(self, body_ids: list[str]) -> None:
-        """Remove physics body stimuli."""
-        for body_id in body_ids:
-            self.hide_stimulus(f"__body_{body_id}")

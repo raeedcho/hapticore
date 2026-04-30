@@ -236,13 +236,20 @@ Built-in field types: `null`, `spring_damper`, `constant`, `workspace_limit`, `c
 Example — cup-and-ball task with preview:
 
 ```python
+from hapticore.display._field_visuals import (
+    create_cart_pendulum_stimuli,
+    hide_cart_pendulum_stimuli,
+)
+
 # During the preview/delay state: show cup-and-ball at the starting
 # position with a random initial ball angle. The haptic field stays
-# null, so the visuals are frozen — the subject sees where the ball
-# will start but cannot move the cup yet.
+# null, so the cup-and-ball visuals are frozen at the previewed pose
+# (the device can still move freely, but the display won't update
+# the cup/ball positions until the cart_pendulum field is engaged).
 phi = self.current_condition["initial_phi"]      # e.g. 0.3 radians
 cup_pos = self.current_condition["start_position"]  # e.g. [-0.08, 0.0]
-self.display.show_cart_pendulum(
+create_cart_pendulum_stimuli(
+    self.display.show_stimulus,
     cup_position=cup_pos,
     initial_phi=phi,
     pendulum_length=0.3,
@@ -267,12 +274,14 @@ self.haptic.send_command(Command(
 ))
 ```
 
-The key contract: `initial_phi` passed to `show_cart_pendulum` must match `initial_phi` passed to `set_force_field` so the visual preview and the simulation start at the same angle. Any mismatch will cause a visible "jump" when the field engages.
+The key contract: both `initial_phi` and `pendulum_length` passed to `create_cart_pendulum_stimuli` must match the same parameters passed to `set_force_field` so the visual preview and the simulation start at the same pose. Any mismatch will cause a visible "jump" when the field engages.
+
+Note: the cart-pendulum model is 1D — the C++ simulation only tracks horizontal (X) motion. When the field engages, `_update_cart_pendulum` sets `cup_y` to the display offset (effectively Y=0 in workspace coordinates). If `cup_position[1]` in the preview is non-zero, the cup will jump vertically when the field takes over. For a smooth transition, always use `cup_position=[x, 0.0]`.
 
 To hide the visuals (e.g., in a trial-end or ITI callback):
 
 ```python
-self.display.hide_cart_pendulum()
+hide_cart_pendulum_stimuli(self.display.hide_stimulus)
 ```
 
 Example — constrain to a horizontal plane (free in X and Y, held at Z=0):

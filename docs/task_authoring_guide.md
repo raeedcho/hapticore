@@ -233,27 +233,41 @@ For tasks where forces can be expressed as mathematical functions of position an
 
 Built-in field types: `null`, `spring_damper`, `constant`, `workspace_limit`, `cart_pendulum`, `channel`, `composite`.
 
-Example — cup-and-ball task:
+Example — cup-and-ball task with preview:
 
 ```python
-# Show cup-and-ball visuals (can be called before setting the haptic field)
-self.display.show_cart_pendulum()
+# During the preview/delay state: show cup-and-ball at the starting
+# position with a random initial ball angle. The haptic field stays
+# null, so the visuals are frozen — the subject sees where the ball
+# will start but cannot move the cup yet.
+phi = self.current_condition["initial_phi"]      # e.g. 0.3 radians
+cup_pos = self.current_condition["start_position"]  # e.g. [-0.08, 0.0]
+self.display.show_cart_pendulum(
+    cup_position=cup_pos,
+    initial_phi=phi,
+    pendulum_length=0.3,
+)
 
-# Set the haptic force field
+# At the go cue: engage the cart-pendulum force field with the same
+# initial_phi so the simulation starts from the previewed pose.
+# _update_cart_pendulum takes over rendering from here.
 self.haptic.send_command(Command(
     command_id=self.new_command_id(),
     method="set_force_field",
     params={
         "type": "cart_pendulum",
         "params": {
-            "pendulum_length": 0.6,
+            "pendulum_length": 0.3,
             "ball_mass": 0.6,
             "cup_mass": 2.4,
             "angular_damping": 0.05,
+            "initial_phi": phi,
         }
     }
 ))
 ```
+
+The key contract: `initial_phi` passed to `show_cart_pendulum` must match `initial_phi` passed to `set_force_field` so the visual preview and the simulation start at the same angle. Any mismatch will cause a visible "jump" when the field engages.
 
 To hide the visuals (e.g., in a trial-end or ITI callback):
 

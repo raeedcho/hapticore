@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from hapticore.core.interfaces import (
     DisplayInterface,
     HapticInterface,
@@ -170,6 +172,30 @@ class TestMockDisplay:
         assert mock._visible_stimuli["__cup"]["type"] == "polygon"
         assert mock._visible_stimuli["__ball"]["type"] == "circle"
         assert mock._visible_stimuli["__string"]["type"] == "line"
+
+    def test_show_cart_pendulum_initial_pose(self) -> None:
+        import math
+        mock = MockDisplay()
+        phi = 0.5
+        length = 0.3
+        cup_pos = [0.05, 0.0]
+        mock.show_cart_pendulum(
+            cup_position=cup_pos, initial_phi=phi, pendulum_length=length,
+        )
+        cup = mock._visible_stimuli["__cup"]
+        ball = mock._visible_stimuli["__ball"]
+        string = mock._visible_stimuli["__string"]
+
+        assert cup["position"][0] == pytest.approx(0.05)
+        assert cup["position"][1] == pytest.approx(0.0)
+
+        expected_bx = 0.05 + 0.3 * math.sin(0.5)
+        expected_by = 0.0 - 0.3 * math.cos(0.5)
+        assert ball["position"][0] == pytest.approx(expected_bx, abs=1e-9)
+        assert ball["position"][1] == pytest.approx(expected_by, abs=1e-9)
+
+        assert string["start"] == [pytest.approx(0.05), pytest.approx(0.0)]
+        assert string["end"][0] == pytest.approx(expected_bx, abs=1e-9)
 
     def test_hide_cart_pendulum(self) -> None:
         mock = MockDisplay()

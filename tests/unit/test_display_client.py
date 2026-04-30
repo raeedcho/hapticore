@@ -201,6 +201,54 @@ class TestShowCartPendulum:
         pub.close()
         sub.close()
 
+    def test_initial_pose_params(self) -> None:
+        """show_cart_pendulum with initial_phi places ball at correct offset."""
+        import math
+
+        addr = _unique_ipc()
+        bus = EventBus(addr)
+        pub = bus.create_publisher()
+        sub = bus.create_subscriber(topics=[TOPIC_DISPLAY])
+        time.sleep(0.1)
+
+        client = DisplayClient(pub)
+        phi = 0.3
+        length = 0.4
+        cup_pos = [0.1, 0.0]
+        client.show_cart_pendulum(
+            cup_position=cup_pos, initial_phi=phi, pendulum_length=length,
+        )
+
+        msgs: list[dict] = []
+        for _ in range(3):
+            result = sub.recv(timeout_ms=500)
+            assert result is not None
+            _topic, payload = result
+            msgs.append(msgpack.unpackb(payload, raw=False))
+
+        by_id = {m["stim_id"]: m for m in msgs}
+
+        # Cup at specified position
+        cup_pos_actual = by_id["__cup"]["params"]["position"]
+        assert cup_pos_actual[0] == pytest.approx(0.1)
+        assert cup_pos_actual[1] == pytest.approx(0.0)
+
+        # Ball at cup + L*sin(phi), cup - L*cos(phi)
+        expected_bx = 0.1 + 0.4 * math.sin(0.3)
+        expected_by = 0.0 - 0.4 * math.cos(0.3)
+        ball_pos = by_id["__ball"]["params"]["position"]
+        assert ball_pos[0] == pytest.approx(expected_bx, abs=1e-9)
+        assert ball_pos[1] == pytest.approx(expected_by, abs=1e-9)
+
+        # String connects cup to ball
+        string_params = by_id["__string"]["params"]
+        assert string_params["start"][0] == pytest.approx(0.1)
+        assert string_params["end"][0] == pytest.approx(expected_bx, abs=1e-9)
+        assert string_params["end"][1] == pytest.approx(expected_by, abs=1e-9)
+
+        pub.close()
+        sub.close()
+
 
 class TestHideCartPendulum:
     def test_hides_three_stimuli(self) -> None:

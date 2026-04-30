@@ -6,6 +6,7 @@ msgpack-encoded ZMQ messages published on the ``b"display"`` topic.
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
@@ -71,8 +72,17 @@ class DisplayClient:
         cup_half_width: float = _DEFAULT_CUP_HALF_WIDTH,
         cup_depth: float = _DEFAULT_CUP_DEPTH,
         ball_radius: float = _DEFAULT_BALL_RADIUS,
+        cup_position: list[float] | None = None,
+        initial_phi: float = 0.0,
+        pendulum_length: float = 0.3,
     ) -> None:
         """Create cup, ball, and string stimuli for the cart-pendulum field."""
+        cup_pos = cup_position if cup_position is not None else [0.0, 0.0]
+        cup_x, cup_y = cup_pos[0], cup_pos[1]
+
+        ball_x = cup_x + pendulum_length * math.sin(initial_phi)
+        ball_y = cup_y - pendulum_length * math.cos(initial_phi)
+
         hw = cup_half_width
         d = cup_depth
         self.show_stimulus("__cup", {
@@ -80,18 +90,18 @@ class DisplayClient:
             "vertices": [[-hw, 0.0], [-hw, -d], [hw, -d], [hw, 0.0]],
             "color": cup_color or _DEFAULT_CUP_COLOR,
             "fill": False,
-            "position": [0.0, 0.0],
+            "position": [cup_x, cup_y],
         })
         self.show_stimulus("__ball", {
             "type": "circle",
             "radius": ball_radius,
             "color": ball_color or _DEFAULT_BALL_COLOR,
-            "position": [0.0, 0.0],
+            "position": [ball_x, ball_y],
         })
         self.show_stimulus("__string", {
             "type": "line",
-            "start": [0.0, 0.0],
-            "end": [0.0, 0.0],
+            "start": [cup_x, cup_y],
+            "end": [ball_x, ball_y],
             "color": string_color or _DEFAULT_STRING_COLOR,
             "line_width": 2.0,
         })

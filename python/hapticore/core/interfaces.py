@@ -78,6 +78,9 @@ class DisplayInterface(Protocol):
         cup_half_width: float = 0.015,
         cup_depth: float = 0.03,
         ball_radius: float = 0.008,
+        cup_position: list[float] | None = None,
+        initial_phi: float = 0.0,
+        pendulum_length: float = 0.3,
     ) -> None: ...
 
     def hide_cart_pendulum(self) -> None: ...

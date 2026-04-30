@@ -233,32 +233,55 @@ For tasks where forces can be expressed as mathematical functions of position an
 
 Built-in field types: `null`, `spring_damper`, `constant`, `workspace_limit`, `cart_pendulum`, `channel`, `composite`.
 
-Example — cup-and-ball task:
+Example — cup-and-ball task with preview:
 
 ```python
-# Show cup-and-ball visuals (can be called before setting the haptic field)
-self.display.show_cart_pendulum()
+from hapticore.display._field_visuals import (
+    create_cart_pendulum_stimuli,
+    hide_cart_pendulum_stimuli,
+)
 
-# Set the haptic force field
+# During the preview/delay state: show cup-and-ball at the starting
+# position with a random initial ball angle. The haptic field stays
+# null, so the cup-and-ball visuals are frozen at the previewed pose
+# (the device can still move freely, but the display won't update
+# the cup/ball positions until the cart_pendulum field is engaged).
+phi = self.current_condition["initial_phi"]      # e.g. 0.3 radians
+cup_pos = self.current_condition["start_position"]  # e.g. [-0.08, 0.0]
+create_cart_pendulum_stimuli(
+    self.display.show_stimulus,
+    cup_position=cup_pos,
+    initial_phi=phi,
+    pendulum_length=0.3,
+)
+
+# At the go cue: engage the cart-pendulum force field with the same
+# initial_phi so the simulation starts from the previewed pose.
+# _update_cart_pendulum takes over rendering from here.
 self.haptic.send_command(Command(
     command_id=self.new_command_id(),
     method="set_force_field",
     params={
         "type": "cart_pendulum",
         "params": {
-            "pendulum_length": 0.6,
+            "pendulum_length": 0.3,
             "ball_mass": 0.6,
             "cup_mass": 2.4,
             "angular_damping": 0.05,
+            "initial_phi": phi,
         }
     }
 ))
 ```
 
+The key contract: both `initial_phi` and `pendulum_length` passed to `create_cart_pendulum_stimuli` must match the same parameters passed to `set_force_field` so the visual preview and the simulation start at the same pose. Any mismatch will cause a visible "jump" when the field engages.
+
+Note: the cart-pendulum model is 1D — the C++ simulation only tracks horizontal (X) motion. When the field engages, `_update_cart_pendulum` sets `cup_y` to the display offset (effectively Y=0 in workspace coordinates). If `cup_position[1]` in the preview is non-zero, the cup will jump vertically when the field takes over. For a smooth transition, always use `cup_position=[x, 0.0]`.
+
 To hide the visuals (e.g., in a trial-end or ITI callback):
 
 ```python
-self.display.hide_cart_pendulum()
+hide_cart_pendulum_stimuli(self.display.hide_stimulus)
 ```
 
 Example — constrain to a horizontal plane (free in X and Y, held at Z=0):

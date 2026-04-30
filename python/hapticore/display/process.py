@@ -21,6 +21,7 @@ import zmq
 
 from hapticore.core.config import DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_EVENT, TOPIC_STATE, TrialEvent, serialize
+from hapticore.display._field_visuals import CART_PENDULUM_STIM_IDS, physics_body_stim_id
 
 if TYPE_CHECKING:
     from psychopy.event import Mouse as _PsychoPyMouse
@@ -375,8 +376,9 @@ class DisplayProcess(multiprocessing.Process):
 
         Positions are converted from meters to cm via _effective_scale/offset.
         Only updates stimuli that already exist — the task is responsible for
-        creating them via display.show_cart_pendulum().
+        creating them via create_cart_pendulum_stimuli().
         """
+        _CUP_ID, _BALL_ID, _STRING_ID = CART_PENDULUM_STIM_IDS
         eff_scale = self._effective_scale()
         eff_offset = self._effective_offset_cm()
 
@@ -391,19 +393,19 @@ class DisplayProcess(multiprocessing.Process):
         ball_cy = ball_y * eff_scale + eff_offset[1]
 
         # Update cup position
-        if scene.has_stimulus("__cup"):
-            scene.update("__cup", {"position": [cup_cx, cup_cy]})
+        if scene.has_stimulus(_CUP_ID):
+            scene.update(_CUP_ID, {"position": [cup_cx, cup_cy]})
 
         # Update ball position and spill color
-        if scene.has_stimulus("__ball"):
+        if scene.has_stimulus(_BALL_ID):
             ball_color = _SPILL_COLOR if spilled else _BALL_COLOR
-            scene.update("__ball", {
+            scene.update(_BALL_ID, {
                 "position": [ball_cx, ball_cy],
                 "color": ball_color,
             })
 
         # Update string endpoints
-        string_stim = scene.get_stimulus("__string")
+        string_stim = scene.get_stimulus(_STRING_ID)
         if string_stim is not None:
             string_stim.start = [cup_cx, cup_cy]
             string_stim.end = [ball_cx, ball_cy]
@@ -421,7 +423,7 @@ class DisplayProcess(multiprocessing.Process):
         eff_offset = self._effective_offset_cm()
         bodies = field_state.get("bodies", {})
         for body_id, body_state in bodies.items():
-            stim_id = f"__body_{body_id}"
+            stim_id = physics_body_stim_id(body_id)
             if scene.has_stimulus(stim_id):
                 pos = body_state.get("position", [0, 0])
                 angle_rad = body_state.get("angle", 0.0)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 
 import msgpack
@@ -10,6 +11,12 @@ import pytest
 from hapticore.core.interfaces import DisplayInterface
 from hapticore.core.messages import TOPIC_DISPLAY
 from hapticore.core.messaging import EventBus, make_ipc_address
+from hapticore.display._field_visuals import (
+    create_cart_pendulum_stimuli,
+    create_physics_body_stimuli,
+    hide_cart_pendulum_stimuli,
+    hide_physics_body_stimuli,
+)
 from hapticore.display.client import DisplayClient
 
 
@@ -141,9 +148,9 @@ class TestGetFlipTimestamp:
             pub.close()
 
 
-class TestShowCartPendulum:
+class TestCartPendulumVisuals:
     def test_creates_three_stimuli(self) -> None:
-        """show_cart_pendulum() should publish three show commands."""
+        """create_cart_pendulum_stimuli() should publish three show commands."""
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()
@@ -151,7 +158,7 @@ class TestShowCartPendulum:
         time.sleep(0.1)
 
         client = DisplayClient(pub)
-        client.show_cart_pendulum()
+        create_cart_pendulum_stimuli(client.show_stimulus)
 
         msgs: list[dict] = []
         for _ in range(3):
@@ -186,7 +193,7 @@ class TestShowCartPendulum:
 
         custom_color = [1.0, 0.0, 0.0]
         client = DisplayClient(pub)
-        client.show_cart_pendulum(cup_color=custom_color)
+        create_cart_pendulum_stimuli(client.show_stimulus, cup_color=custom_color)
 
         msgs: list[dict] = []
         for _ in range(3):
@@ -201,10 +208,8 @@ class TestShowCartPendulum:
         pub.close()
         sub.close()
 
-
-class TestHideCartPendulum:
-    def test_hides_three_stimuli(self) -> None:
-        """hide_cart_pendulum() should publish three hide commands."""
+    def test_initial_pose_params(self) -> None:
+        """create_cart_pendulum_stimuli with initial_phi places ball at correct offset."""
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()
@@ -212,7 +217,56 @@ class TestHideCartPendulum:
         time.sleep(0.1)
 
         client = DisplayClient(pub)
-        client.hide_cart_pendulum()
+        phi = 0.3
+        length = 0.4
+        cup_pos = [0.1, 0.0]
+        create_cart_pendulum_stimuli(
+            client.show_stimulus,
+            cup_position=cup_pos, initial_phi=phi, pendulum_length=length,
+        )
+
+        msgs: list[dict] = []
+        for _ in range(3):
+            result = sub.recv(timeout_ms=500)
+            assert result is not None
+            _topic, payload = result
+            msgs.append(msgpack.unpackb(payload, raw=False))
+
+        by_id = {m["stim_id"]: m for m in msgs}
+
+        # Cup at specified position
+        cup_pos_actual = by_id["__cup"]["params"]["position"]
+        assert cup_pos_actual[0] == pytest.approx(cup_pos[0])
+        assert cup_pos_actual[1] == pytest.approx(cup_pos[1])
+
+        # Ball at cup + L*sin(phi), cup - L*cos(phi)
+        expected_bx = cup_pos[0] + length * math.sin(phi)
+        expected_by = cup_pos[1] - length * math.cos(phi)
+        ball_pos = by_id["__ball"]["params"]["position"]
+        assert ball_pos[0] == pytest.approx(expected_bx, abs=1e-9)
+        assert ball_pos[1] == pytest.approx(expected_by, abs=1e-9)
+
+        # String connects cup to ball
+        string_params = by_id["__string"]["params"]
+        assert string_params["start"][0] == pytest.approx(cup_pos[0])
+        assert string_params["end"][0] == pytest.approx(expected_bx, abs=1e-9)
+        assert string_params["end"][1] == pytest.approx(expected_by, abs=1e-9)
+
+        pub.close()
+        sub.close()
+
+
+class TestHideCartPendulum:
+    def test_hides_three_stimuli(self) -> None:
+        """hide_cart_pendulum_stimuli() should publish three hide commands."""
+        addr = _unique_ipc()
+        bus = EventBus(addr)
+        pub = bus.create_publisher()
+        sub = bus.create_subscriber(topics=[TOPIC_DISPLAY])
+        time.sleep(0.1)
+
+        client = DisplayClient(pub)
+        hide_cart_pendulum_stimuli(client.hide_stimulus)
 
         stim_ids: set[str] = set()
         for _ in range(3):
@@ -229,9 +283,9 @@ class TestHideCartPendulum:
         sub.close()
 
 
-class TestShowPhysicsBodies:
+class TestPhysicsBodies:
     def test_creates_prefixed_stimuli(self) -> None:
-        """show_physics_bodies() should create __body_<id> stimuli."""
+        """create_physics_body_stimuli() should create __body_<id> stimuli."""
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()
@@ -239,7 +293,7 @@ class TestShowPhysicsBodies:
         time.sleep(0.1)
 
         client = DisplayClient(pub)
-        client.show_physics_bodies({
+        create_physics_body_stimuli(client.show_stimulus, {
             "puck": {"type": "circle", "radius": 0.02},
             "striker": {"type": "circle", "radius": 0.03},
         })
@@ -258,10 +312,8 @@ class TestShowPhysicsBodies:
         pub.close()
         sub.close()
 
-
-class TestHidePhysicsBodies:
     def test_hides_prefixed_stimuli(self) -> None:
-        """hide_physics_bodies() should hide __body_<id> stimuli."""
+        """hide_physics_body_stimuli() should hide __body_<id> stimuli."""
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()
@@ -269,7 +321,7 @@ class TestHidePhysicsBodies:
         time.sleep(0.1)
 
         client = DisplayClient(pub)
-        client.hide_physics_bodies(["puck", "striker"])
+        hide_physics_body_stimuli(client.hide_stimulus, ["puck", "striker"])
 
         stim_ids: set[str] = set()
         for _ in range(2):

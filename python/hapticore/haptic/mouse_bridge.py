@@ -11,6 +11,7 @@ server and its force-field simulation.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import multiprocessing.queues
 import threading
@@ -129,7 +130,5 @@ class MouseBridge(threading.Thread):
             "method": method,
             "params": params,
         })
-        try:
+        with contextlib.suppress(zmq.Again):
             dealer.send_multipart([b"", payload], zmq.NOBLOCK)
-        except zmq.Again:
-            pass

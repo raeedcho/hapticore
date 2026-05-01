@@ -190,7 +190,7 @@ class TestUpdateFromFieldState:
         }
         with unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp:
             proc._update_from_field_state(scene, state)
-            mock_cp.assert_called_once_with(scene, state, state["field_state"])
+            mock_cp.assert_called_once_with(scene, state["field_state"])
 
     def test_physics_world_calls_update_physics_bodies(self) -> None:
         proc = self._make_proc()

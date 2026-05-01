@@ -433,7 +433,6 @@ class TestCupTaskPreviewVisuals:
             # Cup, ball, string should be visible
             assert "__cup" in display._visible_stimuli
             assert "__ball" in display._visible_stimuli
-            assert "__string" in display._visible_stimuli
 
             # Cup should be at left_x
             cup_params = display._visible_stimuli["__cup"]

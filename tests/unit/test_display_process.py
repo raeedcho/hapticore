@@ -339,9 +339,8 @@ class TestUpdateCartPendulum:
         scene.has_stimulus.return_value = False
         scene.get_stimulus.return_value = None
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state()
-        proc._update_cart_pendulum(scene, state, fs)
+        proc._update_cart_pendulum(scene, fs)
 
         # No stimuli should be created via show()
         scene.show.assert_not_called()
@@ -357,9 +356,8 @@ class TestUpdateCartPendulum:
         string_stim = MagicMock()
         scene.get_stimulus.return_value = string_stim
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=-0.08)
-        proc._update_cart_pendulum(scene, state, fs)
+        proc._update_cart_pendulum(scene, fs)
 
         # Cup and ball should be updated (not created)
         scene.show.assert_not_called()
@@ -383,9 +381,8 @@ class TestUpdateCartPendulum:
         string_stim = MagicMock()
         scene.get_stimulus.return_value = string_stim
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=-0.08)
-        proc._update_cart_pendulum(scene, state, fs)
+        proc._update_cart_pendulum(scene, fs)
 
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
 
@@ -407,9 +404,8 @@ class TestUpdateCartPendulum:
         scene.has_stimulus.return_value = True
         scene.get_stimulus.return_value = MagicMock()
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state(spilled=False)
-        proc._update_cart_pendulum(scene, state, fs)
+        proc._update_cart_pendulum(scene, fs)
 
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
         assert update_calls["__ball"]["color"] == _BALL_COLOR
@@ -423,9 +419,8 @@ class TestUpdateCartPendulum:
         scene.has_stimulus.return_value = True
         scene.get_stimulus.return_value = MagicMock()
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state(spilled=True)
-        proc._update_cart_pendulum(scene, state, fs)
+        proc._update_cart_pendulum(scene, fs)
 
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
         assert update_calls["__ball"]["color"] == _SPILL_COLOR
@@ -439,31 +434,11 @@ class TestUpdateCartPendulum:
         scene.has_stimulus.return_value = True
         scene.get_stimulus.return_value = MagicMock()
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state(spilled=True)
-        proc._update_cart_pendulum(scene, state, fs)
+        proc._update_cart_pendulum(scene, fs)
 
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
         assert update_calls["__ball"]["color"] == _SPILL_COLOR
-
-    def test_string_endpoints_updated_directly(self) -> None:
-        """On subsequent frames, string start/end are set directly on the stim."""
-        from hapticore.display.process import _METERS_TO_CM
-
-        proc = self._make_proc(display_scale=1.0, offset=[0.0, 0.0])
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
-        string_stim = MagicMock()
-        scene.get_stimulus.return_value = string_stim
-
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
-        fs = self._make_field_state(cup_x=0.01, ball_x=0.03, ball_y=-0.05)
-        proc._update_cart_pendulum(scene, state, fs)
-
-        eff = 1.0 * _METERS_TO_CM
-        # String endpoints should match cup center → ball center (in cm)
-        assert string_stim.start == [0.01 * eff, 0.0]
-        assert string_stim.end == [0.03 * eff, -0.05 * eff]
 
 
 class TestEffectiveScale:

@@ -132,6 +132,7 @@ class DisplayProcess(multiprocessing.Process):
             from psychopy import event as psychopy_event
 
             mouse = psychopy_event.Mouse(win=win)
+            win.mouseVisible = False  # Hide the default PsychoPy cursor; we'll render our own
 
         ctx = zmq.Context()
         display_sub = ctx.socket(zmq.SUB)

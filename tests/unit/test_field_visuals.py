@@ -25,7 +25,7 @@ class TestCartPendulumStimuli:
         ball = mock._visible_stimuli["__ball"]
 
         assert cup["position"] == pytest.approx([0.0, 0.0])
-        assert ball["position"] == pytest.approx([0.0, -0.3])
+        assert ball["position"] == pytest.approx([0.0, 0.0])
 
     def test_initial_pose(self) -> None:
         mock = MockDisplay()
@@ -42,7 +42,7 @@ class TestCartPendulumStimuli:
         assert cup["position"] == pytest.approx([cup_pos[0], cup_pos[1]])
 
         expected_bx = cup_pos[0] + length * math.sin(phi)
-        expected_by = cup_pos[1] - length * math.cos(phi)
+        expected_by = cup_pos[1] + length * (1 - math.cos(phi))
         assert ball["position"][0] == pytest.approx(expected_bx, abs=1e-9)
         assert ball["position"][1] == pytest.approx(expected_by, abs=1e-9)
 

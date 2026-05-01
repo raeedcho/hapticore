@@ -782,18 +782,6 @@ class TestZaphodEnvSetup:
         """run() sets DISPLAY and PYGLET_SHADOW_WINDOW when x_display is set."""
         proc = self._make_proc_with_x_display(":1.1")
 
-        captured_env: dict[str, str] = {}
-
-        def fake_visual_window(*args: Any, **kwargs: Any) -> MagicMock:
-            captured_env["DISPLAY"] = os.environ.get("DISPLAY", "")
-            captured_env["PYGLET_SHADOW_WINDOW"] = os.environ.get(
-                "PYGLET_SHADOW_WINDOW", ""
-            )
-            return MagicMock()
-
-        mock_visual = MagicMock()
-        mock_visual.Window.side_effect = fake_visual_window
-
         original_display = os.environ.get("DISPLAY")
         original_shadow = os.environ.get("PYGLET_SHADOW_WINDOW")
         try:
@@ -801,7 +789,7 @@ class TestZaphodEnvSetup:
                 "sys.modules",
                 {
                     "psychopy": MagicMock(),
-                    "psychopy.visual": mock_visual,
+                    "psychopy.visual": MagicMock(),
                     "psychopy.monitors": MagicMock(),
                     "hapticore.display.photodiode": MagicMock(),
                     "hapticore.display.scene_manager": MagicMock(),
@@ -810,7 +798,9 @@ class TestZaphodEnvSetup:
                 with unittest.mock.patch.object(
                     proc, "_frame_loop", side_effect=KeyboardInterrupt
                 ):
-                    with unittest.mock.patch.object(proc, "_create_window", return_value=MagicMock()):
+                    with unittest.mock.patch.object(
+                        proc, "_create_window", return_value=MagicMock()
+                    ):
                         try:
                             proc.run()
                         except KeyboardInterrupt:
@@ -829,10 +819,11 @@ class TestZaphodEnvSetup:
                 os.environ["PYGLET_SHADOW_WINDOW"] = original_shadow
 
     def test_no_x_display_leaves_env_alone(self) -> None:
-        """run() does not modify DISPLAY when x_display is not set."""
+        """run() does not modify DISPLAY or PYGLET_SHADOW_WINDOW when x_display is not set."""
         proc = self._make_proc_with_x_display(None)
 
         original_display = os.environ.get("DISPLAY")
+        original_shadow = os.environ.get("PYGLET_SHADOW_WINDOW")
         try:
             with unittest.mock.patch.dict(
                 "sys.modules",
@@ -853,9 +844,54 @@ class TestZaphodEnvSetup:
                         except KeyboardInterrupt:
                             pass
             assert os.environ.get("DISPLAY") == original_display
+            assert os.environ.get("PYGLET_SHADOW_WINDOW") == original_shadow
         finally:
             if original_display is None:
                 os.environ.pop("DISPLAY", None)
             else:
                 os.environ["DISPLAY"] = original_display
+            if original_shadow is None:
+                os.environ.pop("PYGLET_SHADOW_WINDOW", None)
+            else:
+                os.environ["PYGLET_SHADOW_WINDOW"] = original_shadow
+
+    def test_x_display_ignored_on_non_linux(self) -> None:
+        """x_display env vars are not set on non-Linux platforms."""
+        proc = self._make_proc_with_x_display(":1.1")
+
+        original_display = os.environ.get("DISPLAY")
+        original_shadow = os.environ.get("PYGLET_SHADOW_WINDOW")
+        try:
+            with unittest.mock.patch("sys.platform", "darwin"):
+                with unittest.mock.patch.dict(
+                    "sys.modules",
+                    {
+                        "psychopy": MagicMock(),
+                        "psychopy.visual": MagicMock(),
+                        "psychopy.monitors": MagicMock(),
+                        "hapticore.display.photodiode": MagicMock(),
+                        "hapticore.display.scene_manager": MagicMock(),
+                    },
+                ):
+                    with unittest.mock.patch.object(
+                        proc, "_frame_loop", side_effect=KeyboardInterrupt
+                    ):
+                        with unittest.mock.patch.object(
+                            proc, "_create_window", return_value=MagicMock()
+                        ):
+                            try:
+                                proc.run()
+                            except KeyboardInterrupt:
+                                pass
+            assert os.environ.get("DISPLAY") == original_display
+            assert os.environ.get("PYGLET_SHADOW_WINDOW") == original_shadow
+        finally:
+            if original_display is None:
+                os.environ.pop("DISPLAY", None)
+            else:
+                os.environ["DISPLAY"] = original_display
+            if original_shadow is None:
+                os.environ.pop("PYGLET_SHADOW_WINDOW", None)
+            else:
+                os.environ["PYGLET_SHADOW_WINDOW"] = original_shadow
 

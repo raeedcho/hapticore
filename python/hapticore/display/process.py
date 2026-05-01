@@ -13,6 +13,7 @@ import multiprocessing
 import multiprocessing.queues
 import os
 import signal
+import sys
 import time
 from queue import Full
 from typing import TYPE_CHECKING, Any
@@ -126,8 +127,15 @@ class DisplayProcess(multiprocessing.Process):
         # (PYGLET_SHADOW_WINDOW=0) defers GL context creation to the real
         # window, which then opens on the correct screen.
         if self._display_config.x_display:
-            os.environ["DISPLAY"] = self._display_config.x_display
-            os.environ["PYGLET_SHADOW_WINDOW"] = "0"
+            if sys.platform == "linux":
+                os.environ["DISPLAY"] = self._display_config.x_display
+                os.environ["PYGLET_SHADOW_WINDOW"] = "0"
+            else:
+                logger.warning(
+                    "x_display=%r ignored on %s (X11/Zaphod is Linux-only)",
+                    self._display_config.x_display,
+                    sys.platform,
+                )
 
         from psychopy import visual  # noqa: F811 — import ONLY here
 

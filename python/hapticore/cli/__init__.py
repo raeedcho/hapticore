@@ -156,8 +156,15 @@ def _run(args: argparse.Namespace) -> None:
 def _list_screens(args: argparse.Namespace) -> None:
     """List available screens with their indices and resolutions."""
     if args.display:
-        os.environ["DISPLAY"] = args.display
-        os.environ["PYGLET_SHADOW_WINDOW"] = "0"
+        if sys.platform == "linux":
+            os.environ["DISPLAY"] = args.display
+            os.environ["PYGLET_SHADOW_WINDOW"] = "0"
+        else:
+            print(
+                f"Warning: --display {args.display} ignored on {sys.platform} "
+                "(X11/Zaphod is Linux-only)",
+                file=sys.stderr,
+            )
 
     try:
         import pyglet

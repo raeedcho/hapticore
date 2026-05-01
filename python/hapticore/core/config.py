@@ -173,10 +173,11 @@ class DisplayConfig(BaseModel):
     )
     x_display: str | None = Field(
         default=None,
-        description="X11 DISPLAY string for Zaphod multi-screen setups "
+        description="X11 DISPLAY string for Linux/X11 Zaphod multi-screen setups "
                     "(e.g. ':1.1'). When set, DisplayProcess targets this "
                     "X screen and uses fake-fullscreen to avoid input grabs "
-                    "on the WM-less screen. Has no effect on macOS or when "
+                    "on the WM-less screen. Linux/X11-only; ignored with a "
+                    "warning on other platforms. Has no effect when "
                     "backend='mock'. Run 'xdpyinfo -display :1.1' to verify "
                     "the target screen exists.",
     )

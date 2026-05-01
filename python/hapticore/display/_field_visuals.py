@@ -38,23 +38,32 @@ def _cup_vertices(
     radius: float,
     half_angle: float,
     thickness: float = 0.003,
-    center_offset: list[float] = [0.0, 0.0],
+    center_offset: list[float] | None = None,
     n_points: int = 40,
 ) -> list[list[float]]:
     """Generate vertices for a downward-opening arc.
-    
+
     Vertices are relative to the arc center (the cart/pivot).
     The arc spans from -half_angle to +half_angle, measured
     from the downward vertical.
     """
+    if center_offset is None:
+        center_offset = [0.0, 0.0]
+
     thetas = [-half_angle + (2 * half_angle) * i / (n_points - 1) for i in range(n_points)]
     vertices = (
         [
-            [center_offset[0] + (radius+thickness) * math.sin(theta), center_offset[1] - (radius+thickness) * math.cos(theta)]
+            [
+                center_offset[0] + (radius+thickness) * math.sin(theta),
+                center_offset[1] - (radius+thickness) * math.cos(theta)
+            ]
             for theta in thetas
         ]
         + [
-            [center_offset[0] + radius * math.sin(theta), center_offset[1] - radius * math.cos(theta)]
+            [
+                center_offset[0] + radius * math.sin(theta),
+                center_offset[1] - radius * math.cos(theta)
+            ]
             for theta in reversed(thetas)
         ]
     )

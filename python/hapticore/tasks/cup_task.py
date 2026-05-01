@@ -204,8 +204,8 @@ class CupTask(BaseTask):
         # Connecting line between targets
         self.display.show_stimulus("track_line", {
             "type": "line",
-            "start": [lx, -self.params["cup_thickness"]-self.params["ball_radius"]],
-            "end": [rx, -self.params["cup_thickness"]-self.params["ball_radius"]],
+            "start": [lx-hw, -self.params["cup_thickness"]-self.params["ball_radius"]],
+            "end": [rx+hw, -self.params["cup_thickness"]-self.params["ball_radius"]],
             "color": [0.7, 0.7, 0.7],
             "line_width": 1.0,
         })

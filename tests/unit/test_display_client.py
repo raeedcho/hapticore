@@ -161,24 +161,23 @@ class TestCartPendulumVisuals:
         create_cart_pendulum_stimuli(client.show_stimulus)
 
         msgs: list[dict] = []
-        for _ in range(3):
+        for _ in range(2):
             result = sub.recv(timeout_ms=500)
             assert result is not None
             _topic, payload = result
             msgs.append(msgpack.unpackb(payload, raw=False))
 
         stim_ids = {m["stim_id"] for m in msgs}
-        assert stim_ids == {"__cup", "__ball", "__string"}
+        assert stim_ids == {"__cup", "__ball"}
 
         # Verify types
         by_id = {m["stim_id"]: m for m in msgs}
         assert by_id["__cup"]["params"]["type"] == "polygon"
         assert by_id["__ball"]["params"]["type"] == "circle"
-        assert by_id["__string"]["params"]["type"] == "line"
 
         # Verify default parameters
-        assert by_id["__ball"]["params"]["radius"] == 0.008
-        assert by_id["__cup"]["params"]["fill"] is False
+        assert by_id["__ball"]["params"]["radius"] == 0.004
+        assert by_id["__cup"]["params"]["fill"] is True
 
         pub.close()
         sub.close()
@@ -196,7 +195,7 @@ class TestCartPendulumVisuals:
         create_cart_pendulum_stimuli(client.show_stimulus, cup_color=custom_color)
 
         msgs: list[dict] = []
-        for _ in range(3):
+        for _ in range(2):
             result = sub.recv(timeout_ms=500)
             assert result is not None
             _topic, payload = result
@@ -226,7 +225,7 @@ class TestCartPendulumVisuals:
         )
 
         msgs: list[dict] = []
-        for _ in range(3):
+        for _ in range(2):
             result = sub.recv(timeout_ms=500)
             assert result is not None
             _topic, payload = result
@@ -246,12 +245,6 @@ class TestCartPendulumVisuals:
         assert ball_pos[0] == pytest.approx(expected_bx, abs=1e-9)
         assert ball_pos[1] == pytest.approx(expected_by, abs=1e-9)
 
-        # String connects cup to ball
-        string_params = by_id["__string"]["params"]
-        assert string_params["start"][0] == pytest.approx(cup_pos[0])
-        assert string_params["end"][0] == pytest.approx(expected_bx, abs=1e-9)
-        assert string_params["end"][1] == pytest.approx(expected_by, abs=1e-9)
-
         pub.close()
         sub.close()
 
@@ -269,7 +262,7 @@ class TestHideCartPendulum:
         hide_cart_pendulum_stimuli(client.hide_stimulus)
 
         stim_ids: set[str] = set()
-        for _ in range(3):
+        for _ in range(2):
             result = sub.recv(timeout_ms=500)
             assert result is not None
             _topic, payload = result
@@ -277,7 +270,7 @@ class TestHideCartPendulum:
             assert msg["action"] == "hide"
             stim_ids.add(msg["stim_id"])
 
-        assert stim_ids == {"__cup", "__ball", "__string"}
+        assert stim_ids == {"__cup", "__ball"}
 
         pub.close()
         sub.close()

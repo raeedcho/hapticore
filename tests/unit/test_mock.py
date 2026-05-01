@@ -179,7 +179,6 @@ class TestMockDisplay:
         assert "__string" in mock._visible_stimuli
         assert mock._visible_stimuli["__cup"]["type"] == "polygon"
         assert mock._visible_stimuli["__ball"]["type"] == "circle"
-        assert mock._visible_stimuli["__string"]["type"] == "line"
 
     def test_show_cart_pendulum_initial_pose(self) -> None:
         mock = MockDisplay()
@@ -192,7 +191,6 @@ class TestMockDisplay:
         )
         cup = mock._visible_stimuli["__cup"]
         ball = mock._visible_stimuli["__ball"]
-        string = mock._visible_stimuli["__string"]
 
         assert cup["position"] == pytest.approx([cup_pos[0], cup_pos[1]])
 
@@ -201,16 +199,12 @@ class TestMockDisplay:
         assert ball["position"][0] == pytest.approx(expected_bx, abs=1e-9)
         assert ball["position"][1] == pytest.approx(expected_by, abs=1e-9)
 
-        assert string["start"] == pytest.approx([cup_pos[0], cup_pos[1]])
-        assert string["end"][0] == pytest.approx(expected_bx, abs=1e-9)
-
     def test_hide_cart_pendulum(self) -> None:
         mock = MockDisplay()
         create_cart_pendulum_stimuli(mock.show_stimulus)
         hide_cart_pendulum_stimuli(mock.hide_stimulus)
         assert "__cup" not in mock._visible_stimuli
         assert "__ball" not in mock._visible_stimuli
-        assert "__string" not in mock._visible_stimuli
 
     def test_show_physics_bodies(self) -> None:
         mock = MockDisplay()

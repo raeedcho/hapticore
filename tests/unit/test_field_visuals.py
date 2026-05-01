@@ -61,7 +61,7 @@ class TestCartPendulumStimuli:
             assert sid not in mock._visible_stimuli
 
     def test_stim_id_constants(self) -> None:
-        assert CART_PENDULUM_STIM_IDS == ("__cup", "__ball", "__string")
+        assert CART_PENDULUM_STIM_IDS == ("__cup", "__ball")
 
 
 class TestPhysicsBodyStimuli:

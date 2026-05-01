@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from hapticore.tasks.base import BaseTask, ParamSpec
 
@@ -122,3 +123,93 @@ class TestBaseTask:
         task = SimpleTestTask()
         # Should not raise
         task.cleanup()
+
+
+class TestBackgroundFields:
+    """Tests for BaseTask.background_fields and set_field."""
+
+    def _make_task_with_haptic(self) -> tuple[SimpleTestTask, Any]:
+        """Return (task, mock_haptic) with task wired into a minimal setup."""
+        from hapticore.haptic.mock import MockHapticInterface
+
+        task = SimpleTestTask()
+        haptic = MockHapticInterface()
+        task.haptic = haptic
+        task.params = {"hold_time": 0.5, "timeout": 2.0}
+        return task, haptic
+
+    def test_background_fields_default_empty(self) -> None:
+        task = SimpleTestTask()
+        assert task.background_fields == []
+
+    def test_background_fields_setter(self) -> None:
+        task = SimpleTestTask()
+        channel = {"type": "channel", "params": {"axes": [1, 2], "center": [0, 0, 0]}}
+        task.background_fields = [channel]
+        assert task.background_fields == [channel]
+
+    def test_background_fields_setter_copies_list(self) -> None:
+        """Setter stores a copy so mutations to the original don't affect stored value."""
+        task = SimpleTestTask()
+        fields = [{"type": "null", "params": {}}]
+        task.background_fields = fields
+        fields.clear()
+        assert len(task.background_fields) == 1
+
+    def test_set_field_no_background_sends_direct(self) -> None:
+        """With empty background_fields, set_field sends the primary field directly."""
+        task, haptic = self._make_task_with_haptic()
+        task.background_fields = []
+        task.set_field("null", {})
+
+        cmds = [c for c in haptic._command_log if c.method == "set_force_field"]
+        assert len(cmds) == 1
+        assert cmds[0].params == {"type": "null", "params": {}}
+
+    def test_set_field_with_background_wraps_in_composite(self) -> None:
+        """With background_fields, set_field wraps primary in composite."""
+        task, haptic = self._make_task_with_haptic()
+        channel = {
+            "type": "channel",
+            "params": {"axes": [1, 2], "center": [0, 0, 0]},
+        }
+        task.background_fields = [channel]
+        task.set_field("null", {})
+
+        cmds = [c for c in haptic._command_log if c.method == "set_force_field"]
+        assert len(cmds) == 1
+        params = cmds[0].params
+        assert params["type"] == "composite"
+        fields = params["params"]["fields"]
+        assert len(fields) == 2
+        assert fields[0] == channel
+        assert fields[1] == {"type": "null", "params": {}}
+
+    def test_set_field_composite_preserves_primary_params(self) -> None:
+        """Primary field params pass through correctly in composite wrapper."""
+        task, haptic = self._make_task_with_haptic()
+        task.background_fields = [{"type": "channel", "params": {}}]
+        task.set_field("spring_damper", {"center": [0.1, 0, 0], "stiffness": 200.0})
+
+        cmds = [c for c in haptic._command_log if c.method == "set_force_field"]
+        fields = cmds[-1].params["params"]["fields"]
+        primary = next(f for f in fields if f["type"] == "spring_damper")
+        assert primary["params"]["stiffness"] == 200.0
+        assert primary["params"]["center"] == [0.1, 0, 0]
+
+    def test_set_field_multiple_background_fields(self) -> None:
+        """All background fields appear in the composite alongside primary."""
+        task, haptic = self._make_task_with_haptic()
+        task.background_fields = [
+            {"type": "channel", "params": {}},
+            {"type": "workspace_limit", "params": {}},
+        ]
+        task.set_field("null", {})
+
+        cmds = [c for c in haptic._command_log if c.method == "set_force_field"]
+        fields = cmds[-1].params["params"]["fields"]
+        types = [f["type"] for f in fields]
+        assert "channel" in types
+        assert "workspace_limit" in types
+        assert "null" in types
+        assert len(types) == 3

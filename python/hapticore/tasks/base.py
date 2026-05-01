@@ -15,6 +15,8 @@ from abc import ABC
 from collections.abc import Callable
 from typing import Any
 
+from hapticore.core.messages import Command
+
 
 @dataclasses.dataclass(frozen=True)
 class ParamSpec:
@@ -129,3 +131,49 @@ class BaseTask(ABC):
     def distance(a: list[float], b: list[float]) -> float:
         """Euclidean distance between two 3D points."""
         return sum((ai - bi) ** 2 for ai, bi in zip(a, b, strict=True)) ** 0.5
+
+    @property
+    def background_fields(self) -> list[dict[str, Any]]:
+        """Background force fields applied to every set_field() call.
+
+        Set this in on_trial_start() to declare fields that should always
+        be active (e.g., channel constraints, workspace limits). When
+        non-empty, set_field() wraps the primary field in a composite
+        with these as siblings. When empty, set_field() sends the primary
+        field directly (no composite wrapper).
+        """
+        if not hasattr(self, "_background_fields"):
+            self._background_fields: list[dict[str, Any]] = []
+        return self._background_fields
+
+    @background_fields.setter
+    def background_fields(self, fields: list[dict[str, Any]]) -> None:
+        self._background_fields = list(fields)
+
+    def set_field(
+        self, field_type: str, field_params: dict[str, Any],
+    ) -> None:
+        """Send a set_force_field command, wrapping in composite if needed.
+
+        If background_fields is non-empty, wraps the primary field in a
+        composite alongside the background fields. When background_fields
+        is empty, sends the primary field directly (no composite wrapper).
+        """
+        if self.background_fields:
+            params: dict[str, Any] = {
+                "type": "composite",
+                "params": {
+                    "fields": [
+                        *self.background_fields,
+                        {"type": field_type, "params": field_params},
+                    ],
+                },
+            }
+        else:
+            params = {"type": field_type, "params": field_params}
+
+        self.haptic.send_command(Command(
+            command_id=self.new_command_id(),
+            method="set_force_field",
+            params=params,
+        ))

@@ -35,42 +35,6 @@ def physics_body_stim_id(body_id: str) -> str:
 _DEFAULT_CUP_COLOR: list[float] = [0.8, 0.8, 0.8]
 _DEFAULT_BALL_COLOR: list[float] = [0.2, 0.6, 1.0]
 
-def _cup_vertices(
-    radius: float,
-    half_angle: float,
-    thickness: float = 0.003,
-    center_offset: list[float] | None = None,
-    n_points: int = 40,
-) -> list[list[float]]:
-    """Generate vertices for a downward-opening arc.
-
-    Vertices are relative to the arc center (the cart/pivot).
-    The arc spans from -half_angle to +half_angle, measured
-    from the downward vertical.
-    """
-    if center_offset is None:
-        center_offset = [0.0, 0.0]
-
-    thetas = [-half_angle + (2 * half_angle) * i / (n_points - 1) for i in range(n_points)]
-    vertices = (
-        [
-            [
-                center_offset[0] + (radius+thickness) * math.sin(theta),
-                center_offset[1] - (radius+thickness) * math.cos(theta)
-            ]
-            for theta in thetas
-        ]
-        + [
-            [
-                center_offset[0] + radius * math.sin(theta),
-                center_offset[1] - radius * math.cos(theta)
-            ]
-            for theta in reversed(thetas)
-        ]
-    )
-
-    return vertices
-
 
 class CartPendulumVisuals:
     """Stateful visual helper for the cart-pendulum field.
@@ -137,12 +101,7 @@ class CartPendulumVisuals:
 
         self._display.show_stimulus(self._CUP_ID, {
             "type": "polygon",
-            "vertices": _cup_vertices(
-                radius=self._pendulum_length,
-                half_angle=self._spill_threshold,
-                thickness=self._cup_thickness,
-                center_offset=[0, self._pendulum_length - self._ball_radius],
-            ),
+            "vertices": self._cup_vertices(n_points=40),
             "color": self._cup_color,
             "fill": True,
             "position": [cup_x, cup_y],
@@ -168,6 +127,44 @@ class CartPendulumVisuals:
     def reset_ball_color(self) -> None:
         """Restore the ball to its default color."""
         self.set_ball_color(self._ball_color)
+
+    def _cup_vertices(
+        self,
+        n_points: int = 40,
+    ) -> list[list[float]]:
+        """Generate vertices for a downward-opening arc.
+
+        Vertices are relative to the arc center (the cart/pivot).
+        The arc spans from -half_angle to +half_angle, measured
+        from the downward vertical.
+        """
+        radius: float = self._pendulum_length
+        half_angle: float = self._spill_threshold
+        thickness: float = self._cup_thickness
+        center_offset: list[float] = [0, self._pendulum_length - self._ball_radius]
+
+        if center_offset is None:
+            center_offset = [0.0, 0.0]
+
+        thetas = [-half_angle + (2 * half_angle) * i / (n_points - 1) for i in range(n_points)]
+        vertices = (
+            [
+                [
+                    center_offset[0] + (radius+thickness) * math.sin(theta),
+                    center_offset[1] - (radius+thickness) * math.cos(theta)
+                ]
+                for theta in thetas
+            ]
+            + [
+                [
+                    center_offset[0] + radius * math.sin(theta),
+                    center_offset[1] - radius * math.cos(theta)
+                ]
+                for theta in reversed(thetas)
+            ]
+        )
+
+        return vertices
 
 
 # ---------------------------------------------------------------------------

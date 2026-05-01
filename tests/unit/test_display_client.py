@@ -149,8 +149,8 @@ class TestGetFlipTimestamp:
 
 
 class TestCartPendulumVisuals:
-    def test_creates_three_stimuli(self) -> None:
-        """create_cart_pendulum_stimuli() should publish three show commands."""
+    def test_creates_two_stimuli(self) -> None:
+        """create_cart_pendulum_stimuli() should publish two show commands."""
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()
@@ -250,8 +250,8 @@ class TestCartPendulumVisuals:
 
 
 class TestHideCartPendulum:
-    def test_hides_three_stimuli(self) -> None:
-        """hide_cart_pendulum_stimuli() should publish three hide commands."""
+    def test_hides_two_stimuli(self) -> None:
+        """hide_cart_pendulum_stimuli() should publish two hide commands."""
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()

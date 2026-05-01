@@ -58,6 +58,10 @@ class CupTask(BaseTask):
             type=float, default=5.0, unit="s",
             description="Maximum time to reach the right target",
         ),
+        "spill_timeout": ParamSpec(
+            type=float, default=1.0, unit="s",
+            description="Time to remain in spill state before starting next trial",
+        ),
         "iti_duration": ParamSpec(
             type=float, default=1.0, unit="s",
             description="Inter-trial interval duration",
@@ -129,6 +133,7 @@ class CupTask(BaseTask):
         "hold_right",
         "success",
         "spill",
+        "spill_end",
         "timeout",
     ]
 
@@ -142,8 +147,9 @@ class CupTask(BaseTask):
         {"trigger": "hold_complete", "source": "hold_right", "dest": "success"},
         {"trigger": "broke_hold", "source": "hold_right", "dest": "reach"},
         {"trigger": "spilled", "source": ["reach", "hold_right"], "dest": "spill"},
+        {"trigger": "spill_timeout", "source": "spill", "dest": "spill_end"},
         {"trigger": "time_expired", "source": "reach", "dest": "timeout"},
-        {"trigger": "trial_end", "source": ["success", "spill", "timeout"], "dest": "iti"},
+        {"trigger": "trial_end", "source": ["success", "spill_end", "timeout"], "dest": "iti"},
     ]
 
     INITIAL_STATE = "iti"
@@ -253,6 +259,10 @@ class CupTask(BaseTask):
         self._end_trial()
 
     def on_enter_spill(self, event: Any = None) -> None:
+        self.timer.cancel_all()  # Cancel any pending timers from reach state
+        self.timer.set("spill_timeout", self.params['spill_timeout'])
+
+    def on_enter_spill_end(self, event: Any = None) -> None:
         self.log_trial(outcome="spill")
         self._end_trial()
 
@@ -279,12 +289,14 @@ class CupTask(BaseTask):
             # Spill check BEFORE position check — if both are true on the
             # same tick, the trial should fail, not start a hold.
             if cart_pendulum_state.get("spilled", False):
+                self._freeze_spill(cart_pendulum_state)
                 self.trigger("spilled")
             elif self._in_target(pos[0], self.params["right_x"]):
                 self.trigger("at_right")
 
         elif self.state == "hold_right":
             if cart_pendulum_state.get("spilled", False):
+                self._freeze_spill(cart_pendulum_state)
                 self.trigger("spilled")
             elif not self._in_target(pos[0], self.params["right_x"]):
                 self.timer.cancel("hold_complete")
@@ -353,3 +365,15 @@ class CupTask(BaseTask):
             if "spilled" in child:
                 return child
         return {}
+
+    def _freeze_spill(self, cart_pendulum_state: dict[str, Any]) -> None:
+        """When spill is triggered, freeze system for spill_timeout duration."""
+        cup_x = cart_pendulum_state.get("cup_x", 0.0)
+        cup_y = cart_pendulum_state.get("cup_y", 0.0)
+        # Spring-damper holds hand still during spill, similar to preview.
+        # The subject sees the cup and ball frozen until end of spill.
+        self._set_channeled_field("spring_damper", {
+            "center": [cup_x, cup_y, 0.0],
+            "stiffness": self.params["preview_stiffness"],
+            "damping": self.params["preview_damping"],
+        })

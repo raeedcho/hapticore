@@ -171,8 +171,7 @@ class CupTask(BaseTask):
         ]
         # Fresh visuals instance per trial — owns creation, spill color, teardown.
         self._visuals = CartPendulumVisuals(
-            self.display.show_stimulus,
-            self.display.hide_stimulus,
+            self.display,
             pendulum_length=self.params["pendulum_length"],
             spill_threshold=self.params["spill_threshold"],
             ball_radius=self.params["ball_radius"],
@@ -351,7 +350,7 @@ class CupTask(BaseTask):
         # Change ball color to spill color before switching the force field.
         # The renderer only updates ball position, so this call is the only
         # mechanism that changes ball color on spill.
-        self._visuals.mark_spilled(cart_pendulum_state)
+        self._visuals.mark_spilled()
         # Spring-damper holds hand still during spill, similar to preview.
         # The subject sees the cup and ball frozen until end of spill.
         self.set_field("spring_damper", {

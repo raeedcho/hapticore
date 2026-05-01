@@ -1,12 +1,13 @@
-"""Field-visual creation helpers and stimulus ID constants.
+"""Field-visual helpers and stimulus ID constants.
 
-These free functions compose generic show_stimulus / hide_stimulus calls
-into field-specific visual setups. They live in the display package
-(not tasks/) because the stimulus ID constants are shared with the
-per-frame renderers in DisplayProcess.
+CartPendulumVisuals and free helper functions compose generic
+show_stimulus / hide_stimulus calls into field-specific visual setups.
+They live in the display package (not tasks/) because the stimulus ID
+constants are shared with the per-frame renderers in DisplayProcess.
 
-Tasks import the creation functions; DisplayProcess imports the ID
-constants. The IDs are the contract between creation and rendering.
+Tasks import CartPendulumVisuals or the physics-body functions;
+DisplayProcess imports the ID constants. The IDs are the contract
+between creation and rendering.
 """
 
 from __future__ import annotations
@@ -70,66 +71,6 @@ def _cup_vertices(
 
     return vertices
 
-def create_cart_pendulum_stimuli(
-    show_stimulus: Callable[[str, dict[str, Any]], None],
-    *,
-    cup_color: list[float] | None = None,
-    ball_color: list[float] | None = None,
-    cup_thickness: float = 0.003,
-    spill_threshold: float = math.pi / 2,
-    ball_radius: float = 0.004,
-    cup_position: list[float] | None = None,
-    initial_phi: float = 0.0,
-    pendulum_length: float = 0.3,
-) -> None:
-    """Create cup and ball stimuli for the cart-pendulum field.
-
-    All positions are in meters (SI). The DisplayProcess converts to cm.
-    Ball position is computed from cup_position + pendulum geometry,
-    matching the C++ CartPendulumField::pack_state() convention.
-
-    Note: the cart-pendulum simulation is 1D (horizontal/X only). When
-    the cart_pendulum field engages, _update_cart_pendulum fixes cup_y to
-    the display offset (Y=0 in workspace coordinates). A non-zero
-    cup_position[1] in the preview will cause a vertical jump when the
-    field takes over. For a smooth transition, always pass
-    cup_position=[x, 0.0].
-    """
-    cup_pos = cup_position if cup_position is not None else [0.0, 0.0]
-    cup_x, cup_y = cup_pos[0], cup_pos[1]
-
-    ball_x = cup_x + pendulum_length * math.sin(initial_phi)
-    ball_y = cup_y + pendulum_length * (1 - math.cos(initial_phi))
-
-    show_stimulus("__cup", {
-        "type": "polygon",
-        "vertices": _cup_vertices(
-            radius=pendulum_length,
-            half_angle=spill_threshold,
-            thickness=cup_thickness,
-            center_offset=[0, pendulum_length-ball_radius],
-        ),
-        "color": cup_color or _DEFAULT_CUP_COLOR,
-        "fill": True,
-        "position": [cup_x, cup_y],
-    })
-    show_stimulus("__ball", {
-        "type": "circle",
-        "radius": ball_radius,
-        "color": ball_color or _DEFAULT_BALL_COLOR,
-        "position": [ball_x, ball_y],
-    })
-
-def hide_cart_pendulum_stimuli(
-    hide_stimulus: Callable[[str], None],
-) -> None:
-    """Remove cup and ball stimuli."""
-    for sid in CART_PENDULUM_STIM_IDS:
-        hide_stimulus(sid)
-
-
-_SPILL_COLOR: list[float] = [1.0, 0.3, 0.3]
-
 
 class CartPendulumVisuals:
     """Stateful visual helper for the cart-pendulum field.
@@ -176,49 +117,57 @@ class CartPendulumVisuals:
         self._cup_thickness = cup_thickness
         self._cup_color: list[float] = cup_color or list(_DEFAULT_CUP_COLOR)
         self._ball_color: list[float] = ball_color or list(_DEFAULT_BALL_COLOR)
-        self._visible = False
 
-    def create(
+    def show(
         self,
+        *,
         cup_position: list[float] | None = None,
         initial_phi: float = 0.0,
     ) -> None:
-        """Create cup and ball stimuli at the given position.
+        """Create cup and ball stimuli at the given pose.
 
-        All positions are in meters (SI). The DisplayProcess converts to cm.
+        All positions in meters. Ball position computed from cup_position
+        + pendulum geometry, matching C++ CartPendulumField::pack_state().
         """
-        create_cart_pendulum_stimuli(
-            self._display.show_stimulus,
-            cup_color=self._cup_color,
-            ball_color=self._ball_color,
-            cup_thickness=self._cup_thickness,
-            spill_threshold=self._spill_threshold,
-            ball_radius=self._ball_radius,
-            cup_position=cup_position,
-            initial_phi=initial_phi,
-            pendulum_length=self._pendulum_length,
-        )
-        self._visible = True
+        cup_pos = cup_position if cup_position is not None else [0.0, 0.0]
+        cup_x, cup_y = cup_pos[0], cup_pos[1]
 
-    def mark_spilled(self) -> None:
-        """Change ball color to indicate a spill.
+        ball_x = cup_x + self._pendulum_length * math.sin(initial_phi)
+        ball_y = cup_y + self._pendulum_length * (1 - math.cos(initial_phi))
 
-        Uses update_scene for a lightweight color-only update. Should be
-        called by the task controller when spill is detected, before
-        transitioning to the spill state.
-
-        The display process renderer only updates ball *position* — it does
-        not change ball color — so this call is the only mechanism that
-        changes the ball color on spill.
-        """
-        if not self._visible:
-            return
-        self._display.update_scene({self._BALL_ID: {"color": _SPILL_COLOR}})
+        self._display.show_stimulus(self._CUP_ID, {
+            "type": "polygon",
+            "vertices": _cup_vertices(
+                radius=self._pendulum_length,
+                half_angle=self._spill_threshold,
+                thickness=self._cup_thickness,
+                center_offset=[0, self._pendulum_length - self._ball_radius],
+            ),
+            "color": self._cup_color,
+            "fill": True,
+            "position": [cup_x, cup_y],
+        })
+        self._display.show_stimulus(self._BALL_ID, {
+            "type": "circle",
+            "radius": self._ball_radius,
+            "color": self._ball_color,
+            "position": [ball_x, ball_y],
+        })
 
     def hide(self) -> None:
         """Remove cup and ball stimuli."""
-        hide_cart_pendulum_stimuli(self._display.hide_stimulus)
-        self._visible = False
+        for sid in CART_PENDULUM_STIM_IDS:
+            self._display.hide_stimulus(sid)
+
+    def set_ball_color(self, color: list[float]) -> None:
+        """Change the ball's color (e.g., to indicate a spill)."""
+        self._display.update_scene({
+            self._BALL_ID: {"color": color},
+        })
+
+    def reset_ball_color(self) -> None:
+        """Restore the ball to its default color."""
+        self.set_ball_color(self._ball_color)
 
 
 # ---------------------------------------------------------------------------

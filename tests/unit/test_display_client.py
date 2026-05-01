@@ -12,9 +12,8 @@ from hapticore.core.interfaces import DisplayInterface
 from hapticore.core.messages import TOPIC_DISPLAY
 from hapticore.core.messaging import EventBus, make_ipc_address
 from hapticore.display._field_visuals import (
-    create_cart_pendulum_stimuli,
+    CartPendulumVisuals,
     create_physics_body_stimuli,
-    hide_cart_pendulum_stimuli,
     hide_physics_body_stimuli,
 )
 from hapticore.display.client import DisplayClient
@@ -150,7 +149,7 @@ class TestGetFlipTimestamp:
 
 class TestCartPendulumVisuals:
     def test_creates_two_stimuli(self) -> None:
-        """create_cart_pendulum_stimuli() should publish two show commands."""
+        """CartPendulumVisuals.show() should publish two show commands."""
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()
@@ -158,7 +157,8 @@ class TestCartPendulumVisuals:
         time.sleep(0.1)
 
         client = DisplayClient(pub)
-        create_cart_pendulum_stimuli(client.show_stimulus)
+        vis = CartPendulumVisuals(client)
+        vis.show()
 
         msgs: list[dict] = []
         for _ in range(2):
@@ -192,7 +192,8 @@ class TestCartPendulumVisuals:
 
         custom_color = [1.0, 0.0, 0.0]
         client = DisplayClient(pub)
-        create_cart_pendulum_stimuli(client.show_stimulus, cup_color=custom_color)
+        vis = CartPendulumVisuals(client, cup_color=custom_color)
+        vis.show()
 
         msgs: list[dict] = []
         for _ in range(2):
@@ -208,7 +209,7 @@ class TestCartPendulumVisuals:
         sub.close()
 
     def test_initial_pose_params(self) -> None:
-        """create_cart_pendulum_stimuli with initial_phi places ball at correct offset."""
+        """CartPendulumVisuals.show() with initial_phi places ball at correct offset."""
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()
@@ -219,10 +220,8 @@ class TestCartPendulumVisuals:
         phi = 0.3
         length = 0.4
         cup_pos = [0.1, 0.0]
-        create_cart_pendulum_stimuli(
-            client.show_stimulus,
-            cup_position=cup_pos, initial_phi=phi, pendulum_length=length,
-        )
+        vis = CartPendulumVisuals(client, pendulum_length=length)
+        vis.show(cup_position=cup_pos, initial_phi=phi)
 
         msgs: list[dict] = []
         for _ in range(2):
@@ -238,7 +237,7 @@ class TestCartPendulumVisuals:
         assert cup_pos_actual[0] == pytest.approx(cup_pos[0])
         assert cup_pos_actual[1] == pytest.approx(cup_pos[1])
 
-        # Ball at cup + L*sin(phi), cup - L*cos(phi)
+        # Ball at cup + L*sin(phi), cup + L*(1-cos(phi))
         expected_bx = cup_pos[0] + length * math.sin(phi)
         expected_by = cup_pos[1] + length * (1 - math.cos(phi))
         ball_pos = by_id["__ball"]["params"]["position"]
@@ -251,7 +250,7 @@ class TestCartPendulumVisuals:
 
 class TestHideCartPendulum:
     def test_hides_two_stimuli(self) -> None:
-        """hide_cart_pendulum_stimuli() should publish two hide commands."""
+        """CartPendulumVisuals.hide() should publish two hide commands."""
         addr = _unique_ipc()
         bus = EventBus(addr)
         pub = bus.create_publisher()
@@ -259,7 +258,8 @@ class TestHideCartPendulum:
         time.sleep(0.1)
 
         client = DisplayClient(pub)
-        hide_cart_pendulum_stimuli(client.hide_stimulus)
+        vis = CartPendulumVisuals(client)
+        vis.hide()
 
         stim_ids: set[str] = set()
         for _ in range(2):

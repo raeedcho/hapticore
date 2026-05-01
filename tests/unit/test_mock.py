@@ -14,9 +14,8 @@ from hapticore.core.interfaces import (
 )
 from hapticore.core.messages import Command
 from hapticore.display._field_visuals import (
-    create_cart_pendulum_stimuli,
+    CartPendulumVisuals,
     create_physics_body_stimuli,
-    hide_cart_pendulum_stimuli,
     hide_physics_body_stimuli,
 )
 from hapticore.display.mock import MockDisplay
@@ -173,7 +172,8 @@ class TestMockDisplay:
 
     def test_show_cart_pendulum(self) -> None:
         mock = MockDisplay()
-        create_cart_pendulum_stimuli(mock.show_stimulus)
+        vis = CartPendulumVisuals(mock)
+        vis.show()
         assert "__cup" in mock._visible_stimuli
         assert "__ball" in mock._visible_stimuli
         assert mock._visible_stimuli["__cup"]["type"] == "polygon"
@@ -184,10 +184,8 @@ class TestMockDisplay:
         phi = 0.5
         length = 0.3
         cup_pos = [0.05, 0.0]
-        create_cart_pendulum_stimuli(
-            mock.show_stimulus,
-            cup_position=cup_pos, initial_phi=phi, pendulum_length=length,
-        )
+        vis = CartPendulumVisuals(mock, pendulum_length=length)
+        vis.show(cup_position=cup_pos, initial_phi=phi)
         cup = mock._visible_stimuli["__cup"]
         ball = mock._visible_stimuli["__ball"]
 
@@ -200,8 +198,9 @@ class TestMockDisplay:
 
     def test_hide_cart_pendulum(self) -> None:
         mock = MockDisplay()
-        create_cart_pendulum_stimuli(mock.show_stimulus)
-        hide_cart_pendulum_stimuli(mock.hide_stimulus)
+        vis = CartPendulumVisuals(mock)
+        vis.show()
+        vis.hide()
         assert "__cup" not in mock._visible_stimuli
         assert "__ball" not in mock._visible_stimuli
 

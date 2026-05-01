@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from hapticore.core.messages import Command, HapticState
+from hapticore.core.messages import HapticState
 from hapticore.tasks.base import BaseTask, ParamSpec
 
 
@@ -96,18 +96,11 @@ class CenterOutTask(BaseTask):
 
     def on_enter_move_to_center(self, event: Any = None) -> None:
         """Guide monkey to the center position."""
-        self.haptic.send_command(Command(
-            command_id=self.new_command_id(),
-            method="set_force_field",
-            params={
-                "type": "spring_damper",
-                "params": {
-                    "center": [0.0, 0.0, 0.0],
-                    "stiffness": 200.0,
-                    "damping": 5.0,
-                },
-            },
-        ))
+        self.set_field("spring_damper", {
+            "center": [0.0, 0.0, 0.0],
+            "stiffness": 200.0,
+            "damping": 5.0,
+        })
         self.display.show_stimulus("center_target", {
             "type": "circle",
             "position": [0.0, 0.0],
@@ -122,11 +115,7 @@ class CenterOutTask(BaseTask):
 
     def on_enter_reach(self, event: Any = None) -> None:
         """Go signal — show peripheral target, start timeout."""
-        self.haptic.send_command(Command(
-            command_id=self.new_command_id(),
-            method="set_force_field",
-            params={"type": "null", "params": {}},
-        ))
+        self.set_field("null", {})
         target_pos = self.current_condition["target_position"]
         self.display.show_stimulus("peripheral_target", {
             "type": "circle",

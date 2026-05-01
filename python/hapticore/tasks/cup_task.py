@@ -237,7 +237,7 @@ class CupTask(BaseTask):
         # Cup-ball at left target with initial angle.
         # Visuals are frozen because active_field != "cart_pendulum",
         # so _update_cart_pendulum in DisplayProcess doesn't run.
-        self._visuals.create(
+        self._visuals.show(
             cup_position=[lx, 0.0],
             initial_phi=phi,
         )
@@ -350,7 +350,7 @@ class CupTask(BaseTask):
         # Change ball color to spill color before switching the force field.
         # The renderer only updates ball position, so this call is the only
         # mechanism that changes ball color on spill.
-        self._visuals.mark_spilled()
+        self._visuals.set_ball_color([1.0, 0.3, 0.3])
         # Spring-damper holds hand still during spill, similar to preview.
         # The subject sees the cup and ball frozen until end of spill.
         self.set_field("spring_damper", {

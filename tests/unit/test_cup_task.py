@@ -22,6 +22,7 @@ def _setup_cup_task(
     hold_time: float = 0.001,
     preview_duration: float = 0.001,
     reach_timeout: float = 2.0,
+    spill_timeout: float = 0.001,
     iti_duration: float = 0.001,
     initial_phi: float = 0.3,
     start_trial: bool = True,
@@ -61,6 +62,7 @@ def _setup_cup_task(
             "preview_duration": preview_duration,
             "reach_timeout": reach_timeout,
             "iti_duration": iti_duration,
+            "spill_timeout": spill_timeout,
         },
         poll_rate_hz=1000.0,
     )
@@ -255,7 +257,7 @@ class TestCupTaskCompositeFields:
 class TestCupTaskSpillDuringReach:
     def test_spill_in_reach(self) -> None:
         task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task(
-            hold_time=0.001, preview_duration=0.001,
+            hold_time=0.001, preview_duration=0.001, spill_timeout=0.001,
         )
         try:
             # Navigate to reach
@@ -273,6 +275,12 @@ class TestCupTaskSpillDuringReach:
             haptic._field_state = {"spilled": True}
             task.check_triggers(haptic.get_latest_state())
             assert task.state == "spill"
+
+            # Wait for spill_timeout to elapse
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            assert task.state == "spill_end"
 
             # Verify trial was logged with spill outcome
             log = tm.get_trial_log()
@@ -510,7 +518,7 @@ class TestCupTaskClearVisuals:
             assert task.state == "success"
 
             # All task stimuli should be removed
-            for stim_id in ("__cup", "__ball", "__string",
+            for stim_id in ("__cup", "__ball",
                             "left_target", "right_target", "track_line"):
                 assert stim_id not in display._visible_stimuli, (
                     f"Stale stimulus still visible: {stim_id}"

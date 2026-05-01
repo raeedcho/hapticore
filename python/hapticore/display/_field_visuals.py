@@ -19,7 +19,7 @@ from typing import Any
 # Stimulus ID constants — shared between creation helpers and renderers
 # ---------------------------------------------------------------------------
 
-CART_PENDULUM_STIM_IDS: tuple[str, str, str] = ("__cup", "__ball")
+CART_PENDULUM_STIM_IDS: tuple[str, str] = ("__cup", "__ball")
 
 
 def physics_body_stim_id(body_id: str) -> str:

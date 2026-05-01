@@ -131,13 +131,7 @@ class SceneManager:
             self._cursor_stim.pos = position
 
     def set_cursor_visible(self, visible: bool) -> None:
-        """Toggle cursor visibility at runtime.
-
-        Unlike DisplayConfig.cursor_visible (which disables cursor creation
-        entirely), this hides/shows an already-created cursor by setting
-        opacity. The cursor continues to be position-updated while hidden
-        so it reappears in the right place.
-        """
+        """Toggle cursor visibility at runtime."""
         self._cursor_hidden = not visible
 
     def draw_all(self) -> None:

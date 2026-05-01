@@ -254,3 +254,73 @@ class TestUpdate:
         with patch("hapticore.display.scene_manager.update_stimulus") as mock_update:
             scene.update("nonexistent", {"position": [0.0, 0.0]})
             mock_update.assert_not_called()
+
+
+class TestRuntimeCursorToggle:
+    """Verify set_cursor_visible toggles drawing without destroying the cursor."""
+
+    def _make_scene(self, **display_kwargs: object) -> SceneManager:
+        win = MagicMock()
+        config = DisplayConfig(**display_kwargs)  # type: ignore[arg-type]
+        return SceneManager(win, config)
+
+    def test_hidden_cursor_not_drawn(self) -> None:
+        """After set_cursor_visible(False), draw_all skips the cursor."""
+        scene = self._make_scene(cursor_visible=True)
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            cursor = MagicMock()
+            mock_create.return_value = cursor
+            scene.set_cursor_position([0.0, 0.0])
+
+            scene.set_cursor_visible(False)
+            cursor.draw.reset_mock()
+            scene.draw_all()
+            cursor.draw.assert_not_called()
+
+    def test_re_shown_cursor_drawn(self) -> None:
+        """After hide then show, draw_all draws the cursor again."""
+        scene = self._make_scene(cursor_visible=True)
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            cursor = MagicMock()
+            mock_create.return_value = cursor
+            scene.set_cursor_position([0.0, 0.0])
+
+            scene.set_cursor_visible(False)
+            scene.set_cursor_visible(True)
+            cursor.draw.reset_mock()
+            scene.draw_all()
+            cursor.draw.assert_called_once()
+
+    def test_position_updates_while_hidden(self) -> None:
+        """Cursor position updates even when hidden, so it reappears correctly."""
+        scene = self._make_scene(cursor_visible=True)
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            cursor = MagicMock()
+            mock_create.return_value = cursor
+            scene.set_cursor_position([0.0, 0.0])
+
+            scene.set_cursor_visible(False)
+            scene.set_cursor_position([0.5, 0.3])
+            assert list(cursor.pos) == [0.5, 0.3]
+
+    def test_hidden_state_persists_across_clear(self) -> None:
+        """clear() destroys the cursor stim but _cursor_hidden persists.
+        
+        The next set_cursor_position recreates the cursor, but draw_all
+        still skips it because the task hasn't called set_cursor_visible(True).
+        """
+        scene = self._make_scene(cursor_visible=True)
+        with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
+            cursor1 = MagicMock()
+            cursor2 = MagicMock()
+            mock_create.side_effect = [cursor1, cursor2]
+
+            scene.set_cursor_position([0.0, 0.0])
+            scene.set_cursor_visible(False)
+            scene.clear()
+
+            # Recreate cursor after clear
+            scene.set_cursor_position([0.1, 0.0])
+            cursor2.draw.reset_mock()
+            scene.draw_all()
+            cursor2.draw.assert_not_called()

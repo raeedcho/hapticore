@@ -385,7 +385,7 @@ class DisplayProcess(multiprocessing.Process):
         scene: SceneManager,
         field_state: dict[str, Any],
     ) -> None:
-        """Update cup, ball, and string positions from CartPendulumField state.
+        """Update cup and ball positions from CartPendulumField state.
 
         Positions are converted from meters to cm via _effective_scale/offset.
         Only updates stimuli that already exist — the task is responsible for

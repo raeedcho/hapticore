@@ -82,7 +82,7 @@ def create_cart_pendulum_stimuli(
     initial_phi: float = 0.0,
     pendulum_length: float = 0.3,
 ) -> None:
-    """Create cup, ball, and string stimuli for the cart-pendulum field.
+    """Create cup and ball stimuli for the cart-pendulum field.
 
     All positions are in meters (SI). The DisplayProcess converts to cm.
     Ball position is computed from cup_position + pendulum geometry,

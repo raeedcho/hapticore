@@ -311,7 +311,7 @@ class TestCupTaskSpillDuringReach:
             # Composite-shaped field_state (what the real server produces)
             haptic._field_state = {
                 "children": [
-                    {"cup_x": 0.0, "ball_x": 0.1, "ball_y": -0.05,
+                    {"cup_x": 0.0, "ball_x": 0.1, "ball_y": 0.05,
                      "spilled": True, "phi": 1.6, "phi_dot": 0.0,
                      "coupling_stretch": 0.0},
                     {"in_bounds": True},

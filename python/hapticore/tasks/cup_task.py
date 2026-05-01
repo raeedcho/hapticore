@@ -18,11 +18,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from hapticore.core.messages import Command, HapticState
-from hapticore.display._field_visuals import (
-    create_cart_pendulum_stimuli,
-    hide_cart_pendulum_stimuli,
-)
+from hapticore.core.messages import HapticState
+from hapticore.display._field_visuals import CartPendulumVisuals
 from hapticore.tasks.base import BaseTask, ParamSpec
 
 
@@ -159,12 +156,34 @@ class CupTask(BaseTask):
     def on_trial_start(self, condition: dict[str, Any]) -> None:
         super().on_trial_start(condition)
         self.current_condition.setdefault("initial_phi", 0.0)
+        # Set the channel constraint as a background field so every set_field()
+        # call automatically wraps in a composite. This enforces 1D X transport.
+        self.background_fields = [
+            {
+                "type": "channel",
+                "params": {
+                    "axes": [1, 2],
+                    "center": [0.0, 0.0, 0.0],
+                    "stiffness": self.params["channel_stiffness"],
+                    "damping": self.params["channel_damping"],
+                },
+            }
+        ]
+        # Fresh visuals instance per trial — owns creation, spill color, teardown.
+        self._visuals = CartPendulumVisuals(
+            self.display.show_stimulus,
+            self.display.hide_stimulus,
+            pendulum_length=self.params["pendulum_length"],
+            spill_threshold=self.params["spill_threshold"],
+            ball_radius=self.params["ball_radius"],
+            cup_thickness=self.params["cup_thickness"],
+        )
 
     # --- State callbacks ---
 
     def on_enter_move_to_left(self, event: Any = None) -> None:
         """Show left target, channel-only field (free in X)."""
-        self._set_channeled_field("null", {})
+        self.set_field("null", {})
         lx = self.params["left_x"]
         hw = self.params["target_half_width"]
         h = self.params["target_height"]
@@ -191,7 +210,7 @@ class CupTask(BaseTask):
 
         # Spring-damper holds cursor at the left target during preview.
         # The subject sees the ball angle but can't drift away.
-        self._set_channeled_field("spring_damper", {
+        self.set_field("spring_damper", {
             "center": [lx, 0.0, 0.0],
             "stiffness": self.params["preview_stiffness"],
             "damping": self.params["preview_damping"],
@@ -219,14 +238,9 @@ class CupTask(BaseTask):
         # Cup-ball at left target with initial angle.
         # Visuals are frozen because active_field != "cart_pendulum",
         # so _update_cart_pendulum in DisplayProcess doesn't run.
-        create_cart_pendulum_stimuli(
-            self.display.show_stimulus,
+        self._visuals.create(
             cup_position=[lx, 0.0],
             initial_phi=phi,
-            pendulum_length=self.params["pendulum_length"],
-            spill_threshold=self.params["spill_threshold"],
-            ball_radius=self.params["ball_radius"],
-            cup_thickness=self.params["cup_thickness"],
         )
 
         self.timer.set("go_cue", self.params["preview_duration"])
@@ -236,7 +250,7 @@ class CupTask(BaseTask):
         self.display.hide_stimulus("left_target")
 
         phi = self.current_condition["initial_phi"]
-        self._set_channeled_field("cart_pendulum", {
+        self.set_field("cart_pendulum", {
             "pendulum_length": self.params["pendulum_length"],
             "ball_mass": self.params["ball_mass"],
             "cup_mass": self.params["cup_mass"],
@@ -304,48 +318,13 @@ class CupTask(BaseTask):
 
     # --- Helpers ---
 
-    def _set_channeled_field(
-        self, primary_type: str, primary_params: dict[str, Any],
-    ) -> None:
-        """Set a composite field: channel (Y/Z constraint) + primary field.
-
-        Every force field in this task is wrapped in a composite so the
-        subject is always constrained to horizontal (X-axis) movement.
-        The channel axes [1, 2] and center [0, 0, 0] are task-design
-        constants, not tunable parameters.
-        """
-        self.haptic.send_command(Command(
-            command_id=self.new_command_id(),
-            method="set_force_field",
-            params={
-                "type": "composite",
-                "params": {
-                    "fields": [
-                        {
-                            "type": "channel",
-                            "params": {
-                                "axes": [1, 2],
-                                "center": [0.0, 0.0, 0.0],
-                                "stiffness": self.params["channel_stiffness"],
-                                "damping": self.params["channel_damping"],
-                            },
-                        },
-                        {
-                            "type": primary_type,
-                            "params": primary_params,
-                        },
-                    ],
-                },
-            },
-        ))
-
     def _in_target(self, x: float, target_x: float) -> bool:
         """Check if x-position is within the target's horizontal bounds."""
         return abs(x - target_x) < self.params["target_half_width"]
 
     def _end_trial(self) -> None:
         """Clean up visuals, reset field, start ITI timer."""
-        self._set_channeled_field("null", {})
+        self.set_field("null", {})
         self._clear_task_visuals()
         self.timer.cancel_all()  # Cancel any pending timers from the trial
         self.display.update_scene({"__cursor": {"visible": True}})
@@ -353,7 +332,7 @@ class CupTask(BaseTask):
 
     def _clear_task_visuals(self) -> None:
         """Remove all task-created stimuli."""
-        hide_cart_pendulum_stimuli(self.display.hide_stimulus)
+        self._visuals.hide()
         for sid in ("left_target", "right_target", "track_line"):
             self.display.hide_stimulus(sid)
 
@@ -369,9 +348,13 @@ class CupTask(BaseTask):
     def _freeze_spill(self, cart_pendulum_state: dict[str, Any]) -> None:
         """When spill is triggered, freeze system for spill_timeout duration."""
         cup_x = cart_pendulum_state.get("cup_x", 0.0)
+        # Change ball color to spill color before switching the force field.
+        # The renderer only updates ball position, so this call is the only
+        # mechanism that changes ball color on spill.
+        self._visuals.mark_spilled(cart_pendulum_state)
         # Spring-damper holds hand still during spill, similar to preview.
         # The subject sees the cup and ball frozen until end of spill.
-        self._set_channeled_field("spring_damper", {
+        self.set_field("spring_damper", {
             "center": [cup_x, 0.0, 0.0],
             "stiffness": self.params["preview_stiffness"],
             "damping": self.params["preview_damping"],

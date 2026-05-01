@@ -46,10 +46,8 @@ _SPATIAL_VERTEX_KEYS = frozenset({"vertices"})
 
 # ---------------------------------------------------------------------------
 # Cup-and-ball visual constants used by the renderer's per-frame updates.
-# Creation-time defaults live in display_client.py (task-controlled lifecycle).
+# Creation-time defaults live in _field_visuals.py (task-controlled lifecycle).
 # ---------------------------------------------------------------------------
-_BALL_COLOR: list[float] = [0.2, 0.6, 1.0]
-_SPILL_COLOR: list[float] = [1.0, 0.3, 0.3]
 
 
 class DisplayProcess(multiprocessing.Process):
@@ -389,7 +387,12 @@ class DisplayProcess(multiprocessing.Process):
 
         Positions are converted from meters to cm via _effective_scale/offset.
         Only updates stimuli that already exist — the task is responsible for
-        creating them via create_cart_pendulum_stimuli().
+        creating them via CartPendulumVisuals.create().
+
+        Note: ball color is NOT changed here. The task controller calls
+        CartPendulumVisuals.mark_spilled() to change the ball color on spill,
+        avoiding a race between this renderer reading field_state and the
+        task controller transitioning state.
         """
         _CUP_ID, _BALL_ID = CART_PENDULUM_STIM_IDS
         eff_scale = self._effective_scale()
@@ -398,7 +401,6 @@ class DisplayProcess(multiprocessing.Process):
         cup_x = field_state.get("cup_x", 0.0)
         ball_x = field_state.get("ball_x", 0.0)
         ball_y = field_state.get("ball_y", 0.0)
-        spilled = field_state.get("spilled", False)
 
         cup_cx = cup_x * eff_scale + eff_offset[0]
         cup_cy = eff_offset[1]
@@ -409,13 +411,9 @@ class DisplayProcess(multiprocessing.Process):
         if scene.has_stimulus(_CUP_ID):
             scene.update(_CUP_ID, {"position": [cup_cx, cup_cy]})
 
-        # Update ball position and spill color
+        # Update ball position only — color is managed by the task controller
         if scene.has_stimulus(_BALL_ID):
-            ball_color = _SPILL_COLOR if spilled else _BALL_COLOR
-            scene.update(_BALL_ID, {
-                "position": [ball_cx, ball_cy],
-                "color": ball_color,
-            })
+            scene.update(_BALL_ID, {"position": [ball_cx, ball_cy]})
 
     def _update_physics_bodies(
         self, scene: SceneManager, field_state: dict[str, Any],

@@ -231,7 +231,7 @@ class TestUpdateFromFieldState:
         """Composite field dispatches to _update_cart_pendulum for cup_x child."""
         proc = self._make_proc()
         scene = MagicMock()
-        cp_child = {"cup_x": 0.01, "ball_x": 0.02, "ball_y": -0.05, "spilled": False}
+        cp_child = {"cup_x": 0.01, "ball_x": 0.02, "ball_y": 0.05, "spilled": False}
         state = {
             "active_field": "composite",
             "field_state": {
@@ -374,7 +374,7 @@ class TestUpdatePhysicsBodies:
 
 
 class TestUpdateCartPendulum:
-    """Verify _update_cart_pendulum creates and updates cup/ball/string stimuli."""
+    """Verify _update_cart_pendulum updates cup/ball positions only."""
 
     def _make_proc(
         self, display_scale: float = 1.0, offset: list[float] | None = None,
@@ -393,7 +393,7 @@ class TestUpdateCartPendulum:
         *,
         cup_x: float = 0.0,
         ball_x: float = 0.02,
-        ball_y: float = -0.1,
+        ball_y: float = 0.1,
         spilled: bool = False,
     ) -> dict[str, Any]:
         return {
@@ -426,10 +426,8 @@ class TestUpdateCartPendulum:
         scene = MagicMock()
         # Simulate stimuli already existing
         scene.has_stimulus.return_value = True
-        string_stim = MagicMock()
-        scene.get_stimulus.return_value = string_stim
 
-        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=-0.08)
+        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=0.08)
         proc._update_cart_pendulum(scene, fs)
 
         # Cup and ball should be updated (not created)
@@ -437,10 +435,6 @@ class TestUpdateCartPendulum:
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
         assert "__cup" in update_calls
         assert "__ball" in update_calls
-
-        # String endpoints should be set directly on the stimulus object
-        assert string_stim.start is not None
-        assert string_stim.end is not None
 
     def test_positions_scaled_by_display_scale_and_offset(self) -> None:
         """Positions from field_state (meters) are converted via eff_scale + offset."""
@@ -451,10 +445,9 @@ class TestUpdateCartPendulum:
         proc = self._make_proc(display_scale=1.0, offset=[0.05, 0.1])
         scene = MagicMock()
         scene.has_stimulus.return_value = True
-        string_stim = MagicMock()
-        scene.get_stimulus.return_value = string_stim
 
-        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=-0.08)
+        # ball_y=0.08 m is non-negative (L*(1-cos(phi)) convention)
+        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=0.08)
         proc._update_cart_pendulum(scene, fs)
 
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
@@ -465,53 +458,25 @@ class TestUpdateCartPendulum:
         # Ball: ball_x * eff + off_x, ball_y * eff + off_y
         assert update_calls["__ball"]["position"] == [
             0.05 * eff + 0.05 * eff,
-            -0.08 * eff + 0.1 * eff,
+            0.08 * eff + 0.1 * eff,
         ]
 
-    def test_ball_color_blue_when_not_spilled(self) -> None:
-        """Ball should be blue when spilled=False."""
-        from hapticore.display.process import _BALL_COLOR
+    def test_renderer_does_not_change_ball_color(self) -> None:
+        """Renderer only updates position — ball color is managed by task controller.
 
+        CartPendulumVisuals.mark_spilled() is the sole mechanism for changing
+        ball color on spill, avoiding a race with the continuous renderer.
+        """
         proc = self._make_proc()
         scene = MagicMock()
         scene.has_stimulus.return_value = True
-        scene.get_stimulus.return_value = MagicMock()
 
-        fs = self._make_field_state(spilled=False)
-        proc._update_cart_pendulum(scene, fs)
-
-        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
-        assert update_calls["__ball"]["color"] == _BALL_COLOR
-
-    def test_ball_color_red_when_spilled(self) -> None:
-        """Ball should turn red when spilled=True."""
-        from hapticore.display.process import _SPILL_COLOR
-
-        proc = self._make_proc()
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
-        scene.get_stimulus.return_value = MagicMock()
-
+        # Even with spilled=True, the renderer must not set ball color
         fs = self._make_field_state(spilled=True)
         proc._update_cart_pendulum(scene, fs)
 
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
-        assert update_calls["__ball"]["color"] == _SPILL_COLOR
-
-    def test_spill_color_change_on_update(self) -> None:
-        """When updating existing ball, spill color should be passed to update()."""
-        from hapticore.display.process import _SPILL_COLOR
-
-        proc = self._make_proc()
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
-        scene.get_stimulus.return_value = MagicMock()
-
-        fs = self._make_field_state(spilled=True)
-        proc._update_cart_pendulum(scene, fs)
-
-        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
-        assert update_calls["__ball"]["color"] == _SPILL_COLOR
+        assert "color" not in update_calls.get("__ball", {})
 
 
 class TestEffectiveScale:

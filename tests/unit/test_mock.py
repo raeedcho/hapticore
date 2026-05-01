@@ -194,7 +194,7 @@ class TestMockDisplay:
         assert cup["position"] == pytest.approx([cup_pos[0], cup_pos[1]])
 
         expected_bx = cup_pos[0] + length * math.sin(phi)
-        expected_by = cup_pos[1] - length * math.cos(phi)
+        expected_by = cup_pos[1] + length * (1 - math.cos(phi))
         assert ball["position"][0] == pytest.approx(expected_bx, abs=1e-9)
         assert ball["position"][1] == pytest.approx(expected_by, abs=1e-9)
 

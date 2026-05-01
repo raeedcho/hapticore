@@ -240,7 +240,7 @@ class TestCartPendulumVisuals:
 
         # Ball at cup + L*sin(phi), cup - L*cos(phi)
         expected_bx = cup_pos[0] + length * math.sin(phi)
-        expected_by = cup_pos[1] - length * math.cos(phi)
+        expected_by = cup_pos[1] + length * (1 - math.cos(phi))
         ball_pos = by_id["__ball"]["params"]["position"]
         assert ball_pos[0] == pytest.approx(expected_bx, abs=1e-9)
         assert ball_pos[1] == pytest.approx(expected_by, abs=1e-9)

@@ -266,9 +266,7 @@ self.set_field("cart_pendulum", {
 })
 ```
 
-Semantic visual changes (e.g., spill indication) are handled through
-the visual helper, not the display renderer. This avoids a race between
-the display process and task controller:
+Semantic visual changes (e.g., spill indication) are handled through the visual helper, not the display renderer. This avoids a race between the display process and task controller:
 
 ```python
 # On spill detection:
@@ -284,18 +282,9 @@ To hide the visuals (e.g., at trial end):
 self._cup_visuals.hide()
 ```
 
-The key contract: both `initial_phi` and `pendulum_length` passed to
-`CartPendulumVisuals.show()` must match the same parameters passed to
-`set_field("cart_pendulum", ...)` so the visual preview and the
-simulation start at the same pose. Any mismatch will cause a visible
-"jump" when the field engages.
+The key contract: both `initial_phi` and `pendulum_length` passed to `CartPendulumVisuals.show()` must match the same parameters passed to `set_field("cart_pendulum", ...)` so the visual preview and the simulation start at the same pose. Any mismatch will cause a visible "jump" when the field engages.
 
-Note: the cart-pendulum model is 1D — the C++ simulation only tracks
-horizontal (X) motion. When the field engages, `_update_cart_pendulum`
-sets `cup_y` to the display offset (effectively Y=0 in workspace
-coordinates). If `cup_position[1]` in the preview is non-zero, the cup
-will jump vertically when the field takes over. For a smooth transition,
-always use `cup_position=[x, 0.0]`.
+Note: the cart-pendulum model is 1D — the C++ simulation only tracks horizontal (X) motion. When the field engages, `_update_cart_pendulum` sets `cup_y` to the display offset (effectively Y=0 in workspace coordinates). If `cup_position[1]` in the preview is non-zero, the cup will jump vertically when the field takes over. For a smooth transition, always use `cup_position=[x, 0.0]`.
 
 ### Background fields
 

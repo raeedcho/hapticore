@@ -259,7 +259,7 @@ class CupTask(BaseTask):
         self._end_trial()
 
     def on_enter_spill(self, event: Any = None) -> None:
-        self.timer.cancel_all()  # Cancel any pending timers from reach state
+        self.timer.cancel_all()  # Cancel any pending timers
         self.timer.set("spill_timeout", self.params['spill_timeout'])
 
     def on_enter_spill_end(self, event: Any = None) -> None:
@@ -369,11 +369,10 @@ class CupTask(BaseTask):
     def _freeze_spill(self, cart_pendulum_state: dict[str, Any]) -> None:
         """When spill is triggered, freeze system for spill_timeout duration."""
         cup_x = cart_pendulum_state.get("cup_x", 0.0)
-        cup_y = cart_pendulum_state.get("cup_y", 0.0)
         # Spring-damper holds hand still during spill, similar to preview.
         # The subject sees the cup and ball frozen until end of spill.
         self._set_channeled_field("spring_damper", {
-            "center": [cup_x, cup_y, 0.0],
+            "center": [cup_x, 0.0, 0.0],
             "stiffness": self.params["preview_stiffness"],
             "damping": self.params["preview_damping"],
         })

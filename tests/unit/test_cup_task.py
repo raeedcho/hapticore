@@ -291,6 +291,39 @@ class TestCupTaskSpillDuringReach:
             pub.close()
             ctx.term()
 
+    def test_spill_detected_in_composite_field_state(self) -> None:
+        """Spill is detected when field_state is wrapped in composite children."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task(
+            hold_time=0.001, preview_duration=0.001,
+        )
+        try:
+            # Navigate to reach
+            haptic.set_position([-0.06, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            assert task.state == "reach"
+
+            # Composite-shaped field_state (what the real server produces)
+            haptic._field_state = {
+                "children": [
+                    {"cup_x": 0.0, "ball_x": 0.1, "ball_y": -0.05,
+                     "spilled": True, "phi": 1.6, "phi_dot": 0.0,
+                     "coupling_stretch": 0.0},
+                    {"in_bounds": True},
+                ]
+            }
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "spill"
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
 
 class TestCupTaskSpillDuringHoldRight:
     def test_spill_in_hold_right(self) -> None:
@@ -523,6 +556,152 @@ class TestCupTaskClearVisuals:
                 assert stim_id not in display._visible_stimuli, (
                     f"Stale stimulus still visible: {stim_id}"
                 )
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+
+class TestCupTaskSpillTimeout:
+    def test_spill_waits_then_transitions_to_spill_end(self) -> None:
+        """Spill state waits for spill_timeout before ending the trial."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task(
+            hold_time=0.001, preview_duration=0.001, spill_timeout=0.01,
+        )
+        try:
+            # Navigate to reach
+            haptic.set_position([-0.06, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            assert task.state == "reach"
+
+            # Trigger spill
+            haptic._field_state = {"spilled": True}
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "spill"
+
+            # Wait for spill_timeout → spill_end
+            time.sleep(0.02)
+            for name in task.timer.check():
+                task.trigger(name)
+            assert task.state == "spill_end"
+
+            # Verify trial logged with spill outcome
+            log = tm.get_trial_log()
+            assert len(log) >= 1
+            assert log[-1]["outcome"] == "spill"
+
+            # Wait for trial_end → iti
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            assert task.state == "iti"
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_spill_does_not_end_trial_immediately(self) -> None:
+        """Entering spill does NOT immediately log trial or clear visuals."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task(
+            hold_time=0.001, preview_duration=0.001, spill_timeout=5.0,
+        )
+        try:
+            # Navigate to reach then spill
+            haptic.set_position([-0.06, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            assert task.state == "reach"
+
+            haptic._field_state = {"spilled": True}
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "spill"
+
+            # Visuals should still be visible during spill timeout
+            assert "__cup" in display._visible_stimuli
+            assert "__ball" in display._visible_stimuli
+
+            # Trial should NOT be logged yet
+            log = tm.get_trial_log()
+            spill_entries = [e for e in log if e.get("outcome") == "spill"]
+            assert len(spill_entries) == 0
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+
+class TestCupTaskFreezeSpill:
+    def test_spill_sets_spring_damper_at_cup_position(self) -> None:
+        """On spill, field switches to spring_damper centered at the cup's X."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task(
+            hold_time=0.001, preview_duration=0.001,
+        )
+        try:
+            # Navigate to reach
+            haptic.set_position([-0.06, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            assert task.state == "reach"
+
+            # Spill with cup at a known X position
+            haptic._field_state = {"spilled": True, "cup_x": 0.02}
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "spill"
+
+            # Verify the spring_damper is centered at the cup's position
+            cmd_params = _last_field_command(haptic)
+            children = _assert_composite_contains(
+                cmd_params, ["channel", "spring_damper"],
+            )
+            assert children["spring_damper"]["center"][0] == 0.02
+            assert children["spring_damper"]["center"][1] == 0.0
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_spill_cancels_reach_timeout(self) -> None:
+        """Entering spill cancels the reach timeout timer."""
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task(
+            hold_time=0.001, preview_duration=0.001, reach_timeout=10.0,
+        )
+        try:
+            # Navigate to reach
+            haptic.set_position([-0.06, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            assert task.state == "reach"
+            assert "time_expired" in task.timer._timers
+
+            # Spill
+            haptic._field_state = {"spilled": True}
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "spill"
+
+            # reach timeout should be cancelled, only spill_timeout active
+            assert "time_expired" not in task.timer._timers
+            assert "spill_timeout" in task.timer._timers
         finally:
             controller.teardown()
             pub.close()

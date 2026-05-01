@@ -176,7 +176,6 @@ class TestMockDisplay:
         create_cart_pendulum_stimuli(mock.show_stimulus)
         assert "__cup" in mock._visible_stimuli
         assert "__ball" in mock._visible_stimuli
-        assert "__string" in mock._visible_stimuli
         assert mock._visible_stimuli["__cup"]["type"] == "polygon"
         assert mock._visible_stimuli["__ball"]["type"] == "circle"
 

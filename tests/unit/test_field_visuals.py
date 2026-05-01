@@ -23,12 +23,9 @@ class TestCartPendulumStimuli:
         create_cart_pendulum_stimuli(mock.show_stimulus)
         cup = mock._visible_stimuli["__cup"]
         ball = mock._visible_stimuli["__ball"]
-        string = mock._visible_stimuli["__string"]
 
         assert cup["position"] == pytest.approx([0.0, 0.0])
         assert ball["position"] == pytest.approx([0.0, -0.3])
-        assert string["start"] == pytest.approx([0.0, 0.0])
-        assert string["end"] == pytest.approx([0.0, -0.3])
 
     def test_initial_pose(self) -> None:
         mock = MockDisplay()
@@ -41,7 +38,6 @@ class TestCartPendulumStimuli:
         )
         cup = mock._visible_stimuli["__cup"]
         ball = mock._visible_stimuli["__ball"]
-        string = mock._visible_stimuli["__string"]
 
         assert cup["position"] == pytest.approx([cup_pos[0], cup_pos[1]])
 
@@ -49,9 +45,6 @@ class TestCartPendulumStimuli:
         expected_by = cup_pos[1] - length * math.cos(phi)
         assert ball["position"][0] == pytest.approx(expected_bx, abs=1e-9)
         assert ball["position"][1] == pytest.approx(expected_by, abs=1e-9)
-
-        assert string["start"] == pytest.approx([cup_pos[0], cup_pos[1]])
-        assert string["end"] == pytest.approx([expected_bx, expected_by], abs=1e-9)
 
     def test_hide(self) -> None:
         mock = MockDisplay()

@@ -119,23 +119,14 @@ class DisplayProcess(multiprocessing.Process):
 
     def run(self) -> None:
         """Entry point executed in the child process."""
-        # Target a specific X screen for Zaphod multi-screen setups.
-        # Must happen before PsychoPy/pyglet import: pyglet reads DISPLAY at
-        # import time and creates its shadow window (a hidden 1x1 GL context
-        # probe) on the default screen. In a Zaphod config, the shadow window
-        # anchors the real window to the wrong X screen. Disabling it
-        # (PYGLET_SHADOW_WINDOW=0) defers GL context creation to the real
-        # window, which then opens on the correct screen.
-        if self._display_config.x_display:
-            if sys.platform == "linux":
-                os.environ["DISPLAY"] = self._display_config.x_display
-                os.environ["PYGLET_SHADOW_WINDOW"] = "0"
-            else:
-                logger.warning(
-                    "x_display=%r ignored on %s (X11/Zaphod is Linux-only)",
-                    self._display_config.x_display,
-                    sys.platform,
-                )
+        # Disable pyglet's shadow window on Linux. The shadow window is a
+        # hidden 1x1 GL context probe created at import time. In Zaphod
+        # multi-screen setups, it anchors the real window to the wrong X
+        # screen. Disabling it defers GL context creation to the real
+        # window, which respects the ``screen`` parameter correctly.
+        # Harmless on single-screen setups.
+        if sys.platform == "linux":
+            os.environ["PYGLET_SHADOW_WINDOW"] = "0"
 
         from psychopy import visual  # noqa: F811 — import ONLY here
 
@@ -145,6 +136,7 @@ class DisplayProcess(multiprocessing.Process):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
         win = self._create_window(visual)
+        self._restore_pointer_focus()
 
         # In mouse mode, create a PsychoPy Mouse bound to the window.
         mouse = None
@@ -465,14 +457,6 @@ class DisplayProcess(multiprocessing.Process):
         mon.setSizePix(list(cfg.resolution))       # pixel resolution
         mon.setDistance(cfg.monitor_distance_cm)    # viewing distance
 
-        effective_fullscr = cfg.fullscreen and not self._headless
-
-        # On a Zaphod X screen (no WM), avoid native fullscreen — pyglet's
-        # exclusive keyboard/mouse grab locks out the operator's control-room
-        # screen. A positioned window at screen resolution is visually
-        # identical on a WM-less screen but does not grab input.
-        use_native_fullscr = effective_fullscr and not cfg.x_display
-
         view_scale: list[float] | None = None
         if cfg.mirror_horizontal or cfg.mirror_vertical:
             view_scale = [
@@ -480,24 +464,55 @@ class DisplayProcess(multiprocessing.Process):
                 -1.0 if cfg.mirror_vertical else 1.0,
             ]
 
-        window_kwargs: dict[str, Any] = {}
-        if effective_fullscr and not use_native_fullscr:
-            # Fake fullscreen: position at origin, disable GUI chrome
-            window_kwargs["pos"] = (0, 0)
-
         return visual_module.Window(
             size=list(cfg.resolution),
-            fullscr=use_native_fullscr,
+            fullscr=False,
             color=cfg.background_color,
             monitor=mon,
             units="cm",
-            allowGUI=not effective_fullscr,
+            allowGUI=False,
             winType="pyglet",
             checkTiming=False,
             screen=cfg.screen,
             viewScale=view_scale,
-            **window_kwargs,
         )
+
+    def _restore_pointer_focus(self) -> None:
+        """Restore X11 keyboard focus to follow the mouse pointer.
+
+        After creating a PsychoPy window on a WM-less Zaphod screen, pyglet
+        calls XSetInputFocus on the new window, which moves keyboard focus
+        away from the control-room screen. Without a window manager on the
+        rig screen, nothing returns focus when the operator interacts with
+        the control room. Setting focus to PointerRoot causes keyboard
+        input to follow the mouse pointer across X screens.
+        """
+        if sys.platform != "linux":
+            return
+        import ctypes
+        import ctypes.util
+
+        try:
+            x11_path = ctypes.util.find_library("X11")
+            if not x11_path:
+                return
+            x11 = ctypes.cdll.LoadLibrary(x11_path)
+            display = x11.XOpenDisplay(None)
+            if not display:
+                return
+            POINTER_ROOT = 1
+            REVERT_TO_POINTER_ROOT = 1
+            CURRENT_TIME = 0
+            try:
+                x11.XSetInputFocus(
+                    display, POINTER_ROOT, REVERT_TO_POINTER_ROOT, CURRENT_TIME
+                )
+                x11.XFlush(display)
+            finally:
+                x11.XCloseDisplay(display)
+        except (OSError, AttributeError):
+            logger.debug("Could not restore X11 keyboard focus to PointerRoot")
+
 
     @staticmethod
     def _drain_messages(socket: zmq.Socket[Any]) -> list[dict[str, Any]]:

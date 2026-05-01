@@ -25,13 +25,11 @@ haptic:
 
 display:
   backend: psychopy  # real PsychoPy window for the rig monitor
-  x_display: ":1.1"  # Zaphod screen 1 (DP-1, rig monitor); remove if using xrandr multi-monitor
   resolution: [1920, 1080]
   refresh_rate_hz: 60
-  fullscreen: true
+  screen: 1             # rig monitor
   monitor_distance_cm: 50.0
   background_color: [0.0, 0.0, 0.0]
-  screen: 1
   # Horizontal mirror compensates for a canted mirror that reflects
   # the image left-right before it reaches the subject's eyes.
   mirror_horizontal: false

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import os
 import subprocess
 import sys
 
@@ -153,37 +152,6 @@ def _run(args: argparse.Namespace) -> None:
     print(f"Accuracy: {summary['accuracy']:.1%}")
 
 
-def _list_screens(args: argparse.Namespace) -> None:
-    """List available screens with their indices and resolutions."""
-    if args.display:
-        if sys.platform == "linux":
-            os.environ["DISPLAY"] = args.display
-            os.environ["PYGLET_SHADOW_WINDOW"] = "0"
-        else:
-            print(
-                f"Warning: --display {args.display} ignored on {sys.platform} "
-                "(X11/Zaphod is Linux-only)",
-                file=sys.stderr,
-            )
-
-    try:
-        import pyglet
-    except ImportError:
-        print(
-            "Error: list-screens requires PsychoPy (pyglet). "
-            "Ensure 'pixi run install-psychopy' has been run.\n"
-            "Run with: pixi run hapticore list-screens",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    screens = pyglet.canvas.get_display().get_screens()
-    print(f"{'Index':<6} {'Resolution':<15} {'Position':<15}")
-    for i, s in enumerate(screens):
-        res = f"{s.width}x{s.height}"
-        print(f"{i:<6} {res:<15} ({s.x}, {s.y})")
-
-
 def _graph_task(args: argparse.Namespace) -> None:
     """Generate a state machine diagram for a task class."""
     # Import the task class
@@ -287,17 +255,6 @@ def main() -> None:
         help="Output file path (default: <ClassName>.png)",
     )
     graph_parser.set_defaults(func=_graph_task)
-
-    # list-screens subcommand
-    list_parser = subparsers.add_parser(
-        "list-screens",
-        help="List available monitors",
-    )
-    list_parser.add_argument(
-        "--display",
-        help="X11 DISPLAY string to enumerate (e.g. ':1.1' for Zaphod screen 1)",
-    )
-    list_parser.set_defaults(func=_list_screens)
 
     args = parser.parse_args()
     if hasattr(args, "func"):

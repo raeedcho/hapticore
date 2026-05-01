@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import multiprocessing
 import os
 import time
@@ -657,7 +659,7 @@ class TestHandleDisplayCommandConversion:
 
 
 class TestCreateWindowKwargs:
-    """Verify _create_window passes screen and viewScale from DisplayConfig."""
+    """Verify _create_window passes correct kwargs to visual.Window."""
 
     def _make_visual_mock(self) -> MagicMock:
         """Return a MagicMock that records Window constructor calls."""
@@ -680,8 +682,6 @@ class TestCreateWindowKwargs:
         self, proc: DisplayProcess, visual: MagicMock,
     ) -> dict[str, Any]:
         """Call _create_window with mocked psychopy.monitors; return Window kwargs."""
-        mock_monitors = MagicMock()
-        mock_monitors.Monitor.return_value = MagicMock()
         sys_modules_patch = {
             "psychopy": MagicMock(),
         }
@@ -704,6 +704,20 @@ class TestCreateWindowKwargs:
         kwargs = self._call_create_window(proc, visual)
         assert kwargs["screen"] == 1
 
+    def test_always_fullscr_false(self) -> None:
+        """fullscr=False is always passed to visual.Window."""
+        proc = self._make_proc()
+        visual = self._make_visual_mock()
+        kwargs = self._call_create_window(proc, visual)
+        assert kwargs["fullscr"] is False
+
+    def test_always_allow_gui_false(self) -> None:
+        """allowGUI=False is always passed to visual.Window."""
+        proc = self._make_proc()
+        visual = self._make_visual_mock()
+        kwargs = self._call_create_window(proc, visual)
+        assert kwargs["allowGUI"] is False
+
     def test_mirror_horizontal_only(self) -> None:
         """mirror_horizontal=True → viewScale=[-1.0, 1.0]."""
         proc = self._make_proc(mirror_horizontal=True)
@@ -725,173 +739,118 @@ class TestCreateWindowKwargs:
         kwargs = self._call_create_window(proc, visual)
         assert kwargs["viewScale"] == [-1.0, -1.0]
 
-    def test_x_display_disables_native_fullscreen(self) -> None:
-        """x_display + fullscreen=True → fullscr=False (fake fullscreen)."""
-        proc = DisplayProcess(
-            display_config=DisplayConfig(x_display=":1.1", fullscreen=True),
-            zmq_config=ZMQConfig(),
-            headless=False,
-        )
-        visual = self._make_visual_mock()
-        kwargs = self._call_create_window(proc, visual)
-        assert kwargs["fullscr"] is False
 
-    def test_x_display_sets_pos_zero(self) -> None:
-        """x_display + fullscreen=True → pos=(0, 0) passed to Window."""
-        proc = DisplayProcess(
-            display_config=DisplayConfig(x_display=":1.1", fullscreen=True),
-            zmq_config=ZMQConfig(),
-            headless=False,
-        )
-        visual = self._make_visual_mock()
-        kwargs = self._call_create_window(proc, visual)
-        assert kwargs["pos"] == (0, 0)
+class TestShadowWindowEnv:
+    """Verify DisplayProcess.run() manages PYGLET_SHADOW_WINDOW correctly."""
 
-    def test_x_display_no_fullscreen_no_pos(self) -> None:
-        """x_display + fullscreen=False → pos not passed (window is movable)."""
-        proc = self._make_proc(x_display=":1.1", fullscreen=False)
-        visual = self._make_visual_mock()
-        kwargs = self._call_create_window(proc, visual)
-        assert "pos" not in kwargs
-
-    def test_no_x_display_uses_native_fullscreen(self) -> None:
-        """No x_display + fullscreen=True → fullscr=True, no pos."""
-        # headless=True overrides fullscreen, so use headless=False here
-        proc = DisplayProcess(
-            display_config=DisplayConfig(fullscreen=True),
-            zmq_config=ZMQConfig(),
-            headless=False,
-        )
-        visual = self._make_visual_mock()
-        kwargs = self._call_create_window(proc, visual)
-        assert kwargs["fullscr"] is True
-        assert "pos" not in kwargs
-
-
-class TestZaphodEnvSetup:
-    """Verify DisplayProcess.run() sets env vars for Zaphod x_display."""
-
-    def _make_proc_with_x_display(self, x_display: str | None) -> DisplayProcess:
+    def _make_proc(self) -> DisplayProcess:
         return DisplayProcess(
-            display_config=DisplayConfig(x_display=x_display),
+            display_config=DisplayConfig(),
             zmq_config=ZMQConfig(),
             headless=True,
         )
 
-    def test_x_display_sets_env_vars(self) -> None:
-        """run() sets DISPLAY and PYGLET_SHADOW_WINDOW when x_display is set."""
-        proc = self._make_proc_with_x_display(":1.1")
-
-        original_display = os.environ.get("DISPLAY")
-        original_shadow = os.environ.get("PYGLET_SHADOW_WINDOW")
-        try:
-            with unittest.mock.patch.dict(
-                "sys.modules",
-                {
-                    "psychopy": MagicMock(),
-                    "psychopy.visual": MagicMock(),
-                    "psychopy.monitors": MagicMock(),
-                    "hapticore.display.photodiode": MagicMock(),
-                    "hapticore.display.scene_manager": MagicMock(),
-                },
+    def _run_proc(self, proc: DisplayProcess) -> None:
+        with unittest.mock.patch.dict(
+            "sys.modules",
+            {
+                "psychopy": MagicMock(),
+                "psychopy.visual": MagicMock(),
+                "psychopy.monitors": MagicMock(),
+                "hapticore.display.photodiode": MagicMock(),
+                "hapticore.display.scene_manager": MagicMock(),
+            },
+        ):
+            with unittest.mock.patch.object(
+                proc, "_frame_loop", side_effect=KeyboardInterrupt
             ):
                 with unittest.mock.patch.object(
-                    proc, "_frame_loop", side_effect=KeyboardInterrupt
+                    proc, "_create_window", return_value=MagicMock()
                 ):
                     with unittest.mock.patch.object(
-                        proc, "_create_window", return_value=MagicMock()
+                        proc, "_restore_pointer_focus"
                     ):
                         try:
                             proc.run()
                         except KeyboardInterrupt:
                             pass
-            assert os.environ.get("DISPLAY") == ":1.1"
-            assert os.environ.get("PYGLET_SHADOW_WINDOW") == "0"
-        finally:
-            # Restore original env
-            if original_display is None:
-                os.environ.pop("DISPLAY", None)
-            else:
-                os.environ["DISPLAY"] = original_display
-            if original_shadow is None:
-                os.environ.pop("PYGLET_SHADOW_WINDOW", None)
-            else:
-                os.environ["PYGLET_SHADOW_WINDOW"] = original_shadow
 
-    def test_no_x_display_leaves_env_alone(self) -> None:
-        """run() does not modify DISPLAY or PYGLET_SHADOW_WINDOW when x_display is not set."""
-        proc = self._make_proc_with_x_display(None)
-
-        original_display = os.environ.get("DISPLAY")
+    def test_shadow_window_disabled_on_linux(self) -> None:
+        """run() sets PYGLET_SHADOW_WINDOW=0 on Linux."""
+        proc = self._make_proc()
         original_shadow = os.environ.get("PYGLET_SHADOW_WINDOW")
         try:
-            with unittest.mock.patch.dict(
-                "sys.modules",
-                {
-                    "psychopy": MagicMock(),
-                    "psychopy.visual": MagicMock(),
-                    "psychopy.monitors": MagicMock(),
-                    "hapticore.display.photodiode": MagicMock(),
-                    "hapticore.display.scene_manager": MagicMock(),
-                },
-            ):
-                with unittest.mock.patch.object(
-                    proc, "_frame_loop", side_effect=KeyboardInterrupt
-                ):
-                    with unittest.mock.patch.object(proc, "_create_window", return_value=MagicMock()):
-                        try:
-                            proc.run()
-                        except KeyboardInterrupt:
-                            pass
-            assert os.environ.get("DISPLAY") == original_display
-            assert os.environ.get("PYGLET_SHADOW_WINDOW") == original_shadow
+            with unittest.mock.patch("sys.platform", "linux"):
+                self._run_proc(proc)
+            assert os.environ.get("PYGLET_SHADOW_WINDOW") == "0"
         finally:
-            if original_display is None:
-                os.environ.pop("DISPLAY", None)
-            else:
-                os.environ["DISPLAY"] = original_display
             if original_shadow is None:
                 os.environ.pop("PYGLET_SHADOW_WINDOW", None)
             else:
                 os.environ["PYGLET_SHADOW_WINDOW"] = original_shadow
 
-    def test_x_display_ignored_on_non_linux(self) -> None:
-        """x_display env vars are not set on non-Linux platforms."""
-        proc = self._make_proc_with_x_display(":1.1")
-
-        original_display = os.environ.get("DISPLAY")
+    def test_shadow_window_not_set_on_darwin(self) -> None:
+        """run() does not modify PYGLET_SHADOW_WINDOW on non-Linux platforms."""
+        proc = self._make_proc()
         original_shadow = os.environ.get("PYGLET_SHADOW_WINDOW")
         try:
             with unittest.mock.patch("sys.platform", "darwin"):
-                with unittest.mock.patch.dict(
-                    "sys.modules",
-                    {
-                        "psychopy": MagicMock(),
-                        "psychopy.visual": MagicMock(),
-                        "psychopy.monitors": MagicMock(),
-                        "hapticore.display.photodiode": MagicMock(),
-                        "hapticore.display.scene_manager": MagicMock(),
-                    },
-                ):
-                    with unittest.mock.patch.object(
-                        proc, "_frame_loop", side_effect=KeyboardInterrupt
-                    ):
-                        with unittest.mock.patch.object(
-                            proc, "_create_window", return_value=MagicMock()
-                        ):
-                            try:
-                                proc.run()
-                            except KeyboardInterrupt:
-                                pass
-            assert os.environ.get("DISPLAY") == original_display
+                self._run_proc(proc)
             assert os.environ.get("PYGLET_SHADOW_WINDOW") == original_shadow
         finally:
-            if original_display is None:
-                os.environ.pop("DISPLAY", None)
-            else:
-                os.environ["DISPLAY"] = original_display
             if original_shadow is None:
                 os.environ.pop("PYGLET_SHADOW_WINDOW", None)
             else:
                 os.environ["PYGLET_SHADOW_WINDOW"] = original_shadow
 
+
+class TestRestorePointerFocus:
+    """Verify _restore_pointer_focus() is safe in all environments."""
+
+    def _make_proc(self) -> DisplayProcess:
+        return DisplayProcess(
+            display_config=DisplayConfig(),
+            zmq_config=ZMQConfig(),
+            headless=True,
+        )
+
+    def test_restore_pointer_focus_does_not_crash(self) -> None:
+        """_restore_pointer_focus() raises no exception on Linux without a display.
+
+        On CI, XOpenDisplay(None) returns null and the method returns early.
+        """
+        proc = self._make_proc()
+        with unittest.mock.patch("sys.platform", "linux"):
+            proc._restore_pointer_focus()  # must not raise
+
+    def test_restore_pointer_focus_no_op_on_non_linux(self) -> None:
+        """_restore_pointer_focus() is a no-op on non-Linux platforms."""
+        proc = self._make_proc()
+        with unittest.mock.patch("sys.platform", "darwin"):
+            with unittest.mock.patch.object(
+                ctypes.util, "find_library"
+            ) as mock_find:
+                proc._restore_pointer_focus()
+                mock_find.assert_not_called()
+
+    def test_restore_pointer_focus_x11_sequence(self) -> None:
+        """_restore_pointer_focus() calls XOpenDisplay → XSetInputFocus → XFlush → XCloseDisplay."""
+        proc = self._make_proc()
+
+        mock_x11 = MagicMock()
+        mock_display = MagicMock()
+        mock_x11.XOpenDisplay.return_value = mock_display
+
+        with unittest.mock.patch("sys.platform", "linux"):
+            with unittest.mock.patch.object(
+                ctypes.util, "find_library", return_value="libX11.so.6"
+            ):
+                with unittest.mock.patch.object(
+                    ctypes.cdll, "LoadLibrary", return_value=mock_x11
+                ):
+                    proc._restore_pointer_focus()
+
+        mock_x11.XOpenDisplay.assert_called_once_with(None)
+        mock_x11.XSetInputFocus.assert_called_once()
+        mock_x11.XFlush.assert_called_once_with(mock_display)
+        mock_x11.XCloseDisplay.assert_called_once_with(mock_display)

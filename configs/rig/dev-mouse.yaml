@@ -17,7 +17,6 @@ display:
   backend: psychopy  # mouse_input requires the real PsychoPy window
   resolution: [1280, 800]
   refresh_rate_hz: 60
-  fullscreen: false
   monitor_distance_cm: 50.0
   background_color: [0.0, 0.0, 0.0]
   photodiode_enabled: false

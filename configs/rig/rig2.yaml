@@ -31,9 +31,7 @@ display:
   fullscreen: true
   monitor_distance_cm: 50.0
   background_color: [0.0, 0.0, 0.0]
-  # With x_display set, screen: 0 selects the only screen on :1.1.
-  # Run 'pixi run hapticore list-screens --display :1.1' to verify.
-  screen: 0
+  screen: 1
   # Horizontal mirror compensates for a canted mirror that reflects
   # the image left-right before it reaches the subject's eyes.
   mirror_horizontal: false

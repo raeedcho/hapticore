@@ -706,3 +706,84 @@ class TestCupTaskFreezeSpill:
             controller.teardown()
             pub.close()
             ctx.term()
+
+class TestSetFieldBackgroundFields:
+    """Verify BaseTask.set_field wraps with background_fields."""
+
+    def test_set_field_with_background_wraps_composite(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task()
+        try:
+            assert len(task.background_fields) > 0
+            cmd_params = _last_field_command(haptic)
+            assert cmd_params["type"] == "composite"
+            fields = cmd_params["params"]["fields"]
+            types = [f["type"] for f in fields]
+            assert "channel" in types
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_set_field_without_background_sends_bare(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task(
+            start_trial=False,
+        )
+        try:
+            task.background_fields = []
+            task.set_field("spring_damper", {
+                "center": [0.0, 0.0, 0.0], "stiffness": 100.0, "damping": 5.0,
+            })
+            cmd_params = _last_field_command(haptic)
+            assert cmd_params["type"] == "spring_damper"
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_background_fields_default_empty(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task(
+            start_trial=False,
+        )
+        try:
+            assert task.background_fields == []
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+
+class TestCupTaskSpillColor:
+    """Verify ball color changes on spill via set_ball_color."""
+
+    def test_spill_changes_ball_color(self) -> None:
+        task, controller, haptic, sync, display, pub, tm, ctx = _setup_cup_task(
+            hold_time=0.001, preview_duration=0.001,
+        )
+        try:
+            # Navigate to reach
+            haptic.set_position([-0.06, 0.0, 0.0])
+            task.check_triggers(haptic.get_latest_state())
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            time.sleep(0.01)
+            for name in task.timer.check():
+                task.trigger(name)
+            assert task.state == "reach"
+
+            # Trigger spill
+            haptic._field_state = {"spilled": True, "cup_x": 0.0}
+            task.check_triggers(haptic.get_latest_state())
+            assert task.state == "spill"
+
+            # Verify update_scene was called with spill color on __ball
+            spill_calls = [
+                args for method, args in display._call_log
+                if method == "update_scene" and isinstance(args, dict) and "__ball" in args
+            ]
+            assert len(spill_calls) >= 1
+            assert spill_calls[-1]["__ball"]["color"] == [1.0, 0.3, 0.3]
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()

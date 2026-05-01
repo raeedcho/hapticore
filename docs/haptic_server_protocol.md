@@ -225,9 +225,9 @@ Dynamics: 2D cart-pendulum with virtual coupling. The device connects to a simul
 | `phi` | float | Pendulum angle (rad, 0 = hanging down) |
 | `phi_dot` | float | Pendulum angular velocity (rad/s) |
 | `spilled` | bool | Whether `|phi|` > spill_threshold |
-| `cup_x` | float | Simulated cart position in meters (`x_sim`, not device position) |
+| `cup_x` | float | Simulated cup position in meters (`x_sim`, not device position) |
 | `ball_x` | float | Ball world x position: `x_sim + L*sin(phi)` |
-| `ball_y` | float | Ball y position relative to cup: `-L*cos(phi)` |
+| `ball_y` | float | Ball y position relative to cup: `L*(1-cos(phi))` |
 | `coupling_stretch` | float | `x_dev - x_sim` in meters (for debugging) |
 
 ### `channel`

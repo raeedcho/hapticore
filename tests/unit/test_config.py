@@ -114,7 +114,6 @@ class TestDefaults:
             task=TaskConfig(task_class="hapticore.tasks.example.Task"),
         )
         assert config.haptic.dhd is None
-        assert config.display.fullscreen is True
         assert config.recording.lsl_enabled is True
         assert config.sync.sync_pulse_rate_hz == 1.0
         assert config.zmq.transport == "ipc"
@@ -497,4 +496,3 @@ class TestDisplayConfigBackends:
         restored = DisplayConfig.model_validate(dumped)
         assert restored.backend == "psychopy"
         assert restored.resolution == (1280, 720)
-

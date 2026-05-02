@@ -126,7 +126,6 @@ class DisplayConfig(BaseModel):
 
     resolution: tuple[int, int] = (1920, 1080)
     refresh_rate_hz: int = Field(default=60, gt=0, le=240)
-    fullscreen: bool = True
     monitor_distance_cm: float = Field(default=50.0, gt=0)
     monitor_width_cm: float = Field(default=53.0, gt=0, description="Physical screen width in cm")
     background_color: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
@@ -158,8 +157,10 @@ class DisplayConfig(BaseModel):
     )
     screen: int = Field(
         default=0, ge=0,
-        description="Monitor index (0 = first monitor in enumeration order). "
-                    "Run 'hapticore list-screens' to enumerate available monitors.",
+        description="Monitor index for PsychoPy window placement (0-based). "
+                    "On Linux/X11, use 'xrandr' to identify monitor indices. "
+                    "In Zaphod multi-screen setups, screen 0 is the control-room "
+                    "monitor and screen 1 is the rig monitor.",
     )
     mirror_horizontal: bool = Field(
         default=False,

@@ -11,7 +11,9 @@ import logging
 import math
 import multiprocessing
 import multiprocessing.queues
+import os
 import signal
+import sys
 import time
 from queue import Full
 from typing import TYPE_CHECKING, Any
@@ -117,6 +119,15 @@ class DisplayProcess(multiprocessing.Process):
 
     def run(self) -> None:
         """Entry point executed in the child process."""
+        # Disable pyglet's shadow window on Linux. The shadow window is a
+        # hidden 1x1 GL context probe created at import time. In Zaphod
+        # multi-screen setups, it anchors the real window to the wrong X
+        # screen. Disabling it defers GL context creation to the real
+        # window, which respects the ``screen`` parameter correctly.
+        # Harmless on single-screen setups.
+        if sys.platform == "linux":
+            os.environ["PYGLET_SHADOW_WINDOW"] = "0"
+
         from psychopy import visual  # noqa: F811 — import ONLY here
 
         from hapticore.display.photodiode import PhotodiodePatch, remap_corner_for_mirror
@@ -125,6 +136,7 @@ class DisplayProcess(multiprocessing.Process):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
         win = self._create_window(visual)
+        self._restore_pointer_focus()
 
         # In mouse mode, create a PsychoPy Mouse bound to the window.
         mouse = None
@@ -445,8 +457,6 @@ class DisplayProcess(multiprocessing.Process):
         mon.setSizePix(list(cfg.resolution))       # pixel resolution
         mon.setDistance(cfg.monitor_distance_cm)    # viewing distance
 
-        effective_fullscr = cfg.fullscreen and not self._headless
-
         view_scale: list[float] | None = None
         if cfg.mirror_horizontal or cfg.mirror_vertical:
             view_scale = [
@@ -456,16 +466,73 @@ class DisplayProcess(multiprocessing.Process):
 
         return visual_module.Window(
             size=list(cfg.resolution),
-            fullscr=effective_fullscr,
+            fullscr=False,
             color=cfg.background_color,
             monitor=mon,
             units="cm",
-            allowGUI=not effective_fullscr,
+            allowGUI=False,
             winType="pyglet",
             checkTiming=False,
             screen=cfg.screen,
             viewScale=view_scale,
         )
+
+    def _restore_pointer_focus(self) -> None:
+        """Restore X11 keyboard focus to follow the mouse pointer.
+
+        After creating a PsychoPy window on a WM-less Zaphod screen, pyglet
+        calls XSetInputFocus on the new window, which moves keyboard focus
+        away from the control-room screen. Without a window manager on the
+        rig screen, nothing returns focus when the operator interacts with
+        the control room. Setting focus to PointerRoot causes keyboard
+        input to follow the mouse pointer across X screens.
+
+        No-op on non-Linux platforms or when libX11 / a display connection
+        is unavailable (e.g. headless CI).
+        """
+        if sys.platform != "linux":
+            return
+        import ctypes
+        import ctypes.util
+
+        try:
+            x11_path = ctypes.util.find_library("X11")
+            if not x11_path:
+                return
+            x11 = ctypes.cdll.LoadLibrary(x11_path)
+
+            # Declare C signatures — without these, ctypes assumes c_int for
+            # all args/returns, truncating 64-bit pointers on x86_64.
+            x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+            x11.XOpenDisplay.restype = ctypes.c_void_p
+            x11.XSetInputFocus.argtypes = [
+                ctypes.c_void_p,  # display
+                ctypes.c_long,    # focus (Window / PointerRoot)
+                ctypes.c_int,     # revert_to
+                ctypes.c_ulong,   # time
+            ]
+            x11.XSetInputFocus.restype = ctypes.c_int
+            x11.XFlush.argtypes = [ctypes.c_void_p]
+            x11.XFlush.restype = ctypes.c_int
+            x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+            x11.XCloseDisplay.restype = ctypes.c_int
+
+            display = x11.XOpenDisplay(None)
+            if not display:
+                return
+            POINTER_ROOT = 1
+            REVERT_TO_POINTER_ROOT = 1
+            CURRENT_TIME = 0
+            try:
+                x11.XSetInputFocus(
+                    display, POINTER_ROOT, REVERT_TO_POINTER_ROOT, CURRENT_TIME
+                )
+                x11.XFlush(display)
+            finally:
+                x11.XCloseDisplay(display)
+        except (OSError, AttributeError):
+            logger.debug("Could not restore X11 keyboard focus to PointerRoot")
+
 
     @staticmethod
     def _drain_messages(socket: zmq.Socket[Any]) -> list[dict[str, Any]]:

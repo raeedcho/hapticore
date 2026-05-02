@@ -78,12 +78,12 @@ class TemplateTask(BaseTask):
 
         Set up force fields, show stimuli, start timers.
         """
-        # Example: set a spring force field
-        # self.haptic.send_command(Command(
-        #     command_id=self.new_command_id(),
-        #     method="set_force_field",
-        #     params={"type": "spring_damper", "params": {"center": [0, 0, 0], "stiffness": 200}},
-        # ))
+        # Set a force field (automatically wrapped with background_fields):
+        # self.set_field("spring_damper", {
+        #     "center": [0.0, 0.0, 0.0],
+        #     "stiffness": 200.0,
+        #     "damping": 5.0,
+        # })
 
         # Example: show a target
         # self.display.show_stimulus("target", {

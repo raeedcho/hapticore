@@ -46,10 +46,8 @@ _SPATIAL_VERTEX_KEYS = frozenset({"vertices"})
 
 # ---------------------------------------------------------------------------
 # Cup-and-ball visual constants used by the renderer's per-frame updates.
-# Creation-time defaults live in display_client.py (task-controlled lifecycle).
+# Creation-time defaults live in _field_visuals.py (task-controlled lifecycle).
 # ---------------------------------------------------------------------------
-_BALL_COLOR: list[float] = [0.2, 0.6, 1.0]
-_SPILL_COLOR: list[float] = [1.0, 0.3, 0.3]
 
 
 class DisplayProcess(multiprocessing.Process):
@@ -132,6 +130,7 @@ class DisplayProcess(multiprocessing.Process):
             from psychopy import event as psychopy_event
 
             mouse = psychopy_event.Mouse(win=win)
+            win.mouseVisible = False  # Hide the default PsychoPy cursor; we'll render our own
 
         ctx = zmq.Context()
         display_sub = ctx.socket(zmq.SUB)
@@ -341,6 +340,11 @@ class DisplayProcess(multiprocessing.Process):
                 scene.clear()
             elif action == "update_scene":
                 params = cmd.get("params", {})
+                # Handle cursor visibility as a special key before
+                # iterating over normal stimulus updates.
+                cursor_cmd = params.pop("__cursor", None)
+                if cursor_cmd is not None and "visible" in cursor_cmd:
+                    scene.set_cursor_visible(cursor_cmd["visible"])
                 for stim_id, stim_params in params.items():
                     scene.update(stim_id, self._convert_spatial_params(stim_params))
             else:
@@ -359,9 +363,17 @@ class DisplayProcess(multiprocessing.Process):
         field_state = state.get("field_state", {})
 
         if active_field == "cart_pendulum":
-            self._update_cart_pendulum(scene, state, field_state)
+            self._update_cart_pendulum(scene, field_state)
         elif active_field == "physics_world":
             self._update_physics_bodies(scene, field_state)
+        elif active_field == "composite":
+            # Composite wraps multiple children. Scan for recognizable
+            # child states and dispatch to the appropriate renderer.
+            for child_state in field_state.get("children", []):
+                if "cup_x" in child_state:
+                    self._update_cart_pendulum(scene, child_state)
+                elif "bodies" in child_state:
+                    self._update_physics_bodies(scene, child_state)
         # Other field types (null, spring_damper, constant, workspace_limit, channel):
         # no continuous visual updates needed — task controller manages
         # discrete stimuli via show/hide commands.
@@ -369,23 +381,28 @@ class DisplayProcess(multiprocessing.Process):
     def _update_cart_pendulum(
         self,
         scene: SceneManager,
-        state: dict[str, Any],
         field_state: dict[str, Any],
     ) -> None:
-        """Update cup, ball, and string positions from CartPendulumField state.
+        """Update cup and ball positions from CartPendulumField state.
 
         Positions are converted from meters to cm via _effective_scale/offset.
         Only updates stimuli that already exist — the task is responsible for
-        creating them via create_cart_pendulum_stimuli().
+        showing and hiding them via CartPendulumVisuals.show() /
+        CartPendulumVisuals.hide().
+
+        Note: ball color is NOT changed here. The task controller calls
+        CartPendulumVisuals.set_ball_color() / reset_ball_color() to manage
+        the ball color on spill and reset, avoiding a race between this
+        renderer reading field_state and the task controller transitioning
+        state.
         """
-        _CUP_ID, _BALL_ID, _STRING_ID = CART_PENDULUM_STIM_IDS
+        _CUP_ID, _BALL_ID = CART_PENDULUM_STIM_IDS
         eff_scale = self._effective_scale()
         eff_offset = self._effective_offset_cm()
 
         cup_x = field_state.get("cup_x", 0.0)
         ball_x = field_state.get("ball_x", 0.0)
         ball_y = field_state.get("ball_y", 0.0)
-        spilled = field_state.get("spilled", False)
 
         cup_cx = cup_x * eff_scale + eff_offset[0]
         cup_cy = eff_offset[1]
@@ -396,19 +413,9 @@ class DisplayProcess(multiprocessing.Process):
         if scene.has_stimulus(_CUP_ID):
             scene.update(_CUP_ID, {"position": [cup_cx, cup_cy]})
 
-        # Update ball position and spill color
+        # Update ball position only — color is managed by the task controller
         if scene.has_stimulus(_BALL_ID):
-            ball_color = _SPILL_COLOR if spilled else _BALL_COLOR
-            scene.update(_BALL_ID, {
-                "position": [ball_cx, ball_cy],
-                "color": ball_color,
-            })
-
-        # Update string endpoints
-        string_stim = scene.get_stimulus(_STRING_ID)
-        if string_stim is not None:
-            string_stim.start = [cup_cx, cup_cy]
-            string_stim.end = [ball_cx, ball_cy]
+            scene.update(_BALL_ID, {"position": [ball_cx, ball_cy]})
 
     def _update_physics_bodies(
         self, scene: SceneManager, field_state: dict[str, Any],

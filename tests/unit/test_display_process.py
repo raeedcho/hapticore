@@ -186,11 +186,11 @@ class TestUpdateFromFieldState:
         scene = MagicMock()
         state = {
             "active_field": "cart_pendulum",
-            "field_state": {"cup_x": 0.0, "ball_x": 0.02, "ball_y": -0.1},
+            "field_state": {"cup_x": 0.0, "ball_x": 0.02, "ball_y": 0.1},
         }
         with unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp:
             proc._update_from_field_state(scene, state)
-            mock_cp.assert_called_once_with(scene, state, state["field_state"])
+            mock_cp.assert_called_once_with(scene, state["field_state"])
 
     def test_physics_world_calls_update_physics_bodies(self) -> None:
         proc = self._make_proc()
@@ -219,6 +219,79 @@ class TestUpdateFromFieldState:
         proc = self._make_proc()
         scene = MagicMock()
         state = {"active_field": "spring_damper", "field_state": {}}
+        with (
+            unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp,
+            unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb,
+        ):
+            proc._update_from_field_state(scene, state)
+            mock_cp.assert_not_called()
+            mock_pb.assert_not_called()
+
+    def test_composite_with_cart_pendulum_child(self) -> None:
+        """Composite field dispatches to _update_cart_pendulum for cup_x child."""
+        proc = self._make_proc()
+        scene = MagicMock()
+        cp_child = {"cup_x": 0.01, "ball_x": 0.02, "ball_y": 0.05, "spilled": False}
+        state = {
+            "active_field": "composite",
+            "field_state": {
+                "children": [
+                    cp_child,
+                    {"in_bounds": True},  # channel child
+                ],
+            },
+        }
+        with unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp:
+            proc._update_from_field_state(scene, state)
+            mock_cp.assert_called_once_with(scene, cp_child)
+
+    def test_composite_with_physics_world_child(self) -> None:
+        """Composite field dispatches to _update_physics_bodies for bodies child."""
+        proc = self._make_proc()
+        scene = MagicMock()
+        pw_child = {"bodies": {"puck": {"position": [0, 0], "angle": 0.0}}}
+        state = {
+            "active_field": "composite",
+            "field_state": {
+                "children": [
+                    pw_child,
+                    {"in_bounds": True},
+                ],
+            },
+        }
+        with unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb:
+            proc._update_from_field_state(scene, state)
+            mock_pb.assert_called_once_with(scene, pw_child)
+
+    def test_composite_with_no_visual_children(self) -> None:
+        """Composite with only channel/spring_damper children calls neither renderer."""
+        proc = self._make_proc()
+        scene = MagicMock()
+        state = {
+            "active_field": "composite",
+            "field_state": {
+                "children": [
+                    {"in_bounds": True},  # channel
+                    {},                    # spring_damper (empty pack_state)
+                ],
+            },
+        }
+        with (
+            unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp,
+            unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb,
+        ):
+            proc._update_from_field_state(scene, state)
+            mock_cp.assert_not_called()
+            mock_pb.assert_not_called()
+
+    def test_composite_with_empty_children(self) -> None:
+        """Composite with empty children list calls neither renderer."""
+        proc = self._make_proc()
+        scene = MagicMock()
+        state = {
+            "active_field": "composite",
+            "field_state": {"children": []},
+        }
         with (
             unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp,
             unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb,
@@ -301,7 +374,7 @@ class TestUpdatePhysicsBodies:
 
 
 class TestUpdateCartPendulum:
-    """Verify _update_cart_pendulum creates and updates cup/ball/string stimuli."""
+    """Verify _update_cart_pendulum updates cup/ball positions only."""
 
     def _make_proc(
         self, display_scale: float = 1.0, offset: list[float] | None = None,
@@ -320,7 +393,7 @@ class TestUpdateCartPendulum:
         *,
         cup_x: float = 0.0,
         ball_x: float = 0.02,
-        ball_y: float = -0.1,
+        ball_y: float = 0.1,
         spilled: bool = False,
     ) -> dict[str, Any]:
         return {
@@ -339,9 +412,8 @@ class TestUpdateCartPendulum:
         scene.has_stimulus.return_value = False
         scene.get_stimulus.return_value = None
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
         fs = self._make_field_state()
-        proc._update_cart_pendulum(scene, state, fs)
+        proc._update_cart_pendulum(scene, fs)
 
         # No stimuli should be created via show()
         scene.show.assert_not_called()
@@ -354,22 +426,15 @@ class TestUpdateCartPendulum:
         scene = MagicMock()
         # Simulate stimuli already existing
         scene.has_stimulus.return_value = True
-        string_stim = MagicMock()
-        scene.get_stimulus.return_value = string_stim
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
-        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=-0.08)
-        proc._update_cart_pendulum(scene, state, fs)
+        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=0.08)
+        proc._update_cart_pendulum(scene, fs)
 
         # Cup and ball should be updated (not created)
         scene.show.assert_not_called()
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
         assert "__cup" in update_calls
         assert "__ball" in update_calls
-
-        # String endpoints should be set directly on the stimulus object
-        assert string_stim.start is not None
-        assert string_stim.end is not None
 
     def test_positions_scaled_by_display_scale_and_offset(self) -> None:
         """Positions from field_state (meters) are converted via eff_scale + offset."""
@@ -380,12 +445,10 @@ class TestUpdateCartPendulum:
         proc = self._make_proc(display_scale=1.0, offset=[0.05, 0.1])
         scene = MagicMock()
         scene.has_stimulus.return_value = True
-        string_stim = MagicMock()
-        scene.get_stimulus.return_value = string_stim
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
-        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=-0.08)
-        proc._update_cart_pendulum(scene, state, fs)
+        # ball_y=0.08 m is non-negative (L*(1-cos(phi)) convention)
+        fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=0.08)
+        proc._update_cart_pendulum(scene, fs)
 
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
 
@@ -395,75 +458,26 @@ class TestUpdateCartPendulum:
         # Ball: ball_x * eff + off_x, ball_y * eff + off_y
         assert update_calls["__ball"]["position"] == [
             0.05 * eff + 0.05 * eff,
-            -0.08 * eff + 0.1 * eff,
+            0.08 * eff + 0.1 * eff,
         ]
 
-    def test_ball_color_blue_when_not_spilled(self) -> None:
-        """Ball should be blue when spilled=False."""
-        from hapticore.display.process import _BALL_COLOR
+    def test_renderer_does_not_change_ball_color(self) -> None:
+        """Renderer only updates position — ball color is managed by task controller.
 
+        CartPendulumVisuals.set_ball_color()/reset_ball_color() are the public
+        helpers for changing ball color, avoiding a race with the continuous
+        renderer.
+        """
         proc = self._make_proc()
         scene = MagicMock()
         scene.has_stimulus.return_value = True
-        scene.get_stimulus.return_value = MagicMock()
 
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
-        fs = self._make_field_state(spilled=False)
-        proc._update_cart_pendulum(scene, state, fs)
-
-        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
-        assert update_calls["__ball"]["color"] == _BALL_COLOR
-
-    def test_ball_color_red_when_spilled(self) -> None:
-        """Ball should turn red when spilled=True."""
-        from hapticore.display.process import _SPILL_COLOR
-
-        proc = self._make_proc()
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
-        scene.get_stimulus.return_value = MagicMock()
-
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
+        # Even with spilled=True, the renderer must not set ball color
         fs = self._make_field_state(spilled=True)
-        proc._update_cart_pendulum(scene, state, fs)
+        proc._update_cart_pendulum(scene, fs)
 
         update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
-        assert update_calls["__ball"]["color"] == _SPILL_COLOR
-
-    def test_spill_color_change_on_update(self) -> None:
-        """When updating existing ball, spill color should be passed to update()."""
-        from hapticore.display.process import _SPILL_COLOR
-
-        proc = self._make_proc()
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
-        scene.get_stimulus.return_value = MagicMock()
-
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
-        fs = self._make_field_state(spilled=True)
-        proc._update_cart_pendulum(scene, state, fs)
-
-        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
-        assert update_calls["__ball"]["color"] == _SPILL_COLOR
-
-    def test_string_endpoints_updated_directly(self) -> None:
-        """On subsequent frames, string start/end are set directly on the stim."""
-        from hapticore.display.process import _METERS_TO_CM
-
-        proc = self._make_proc(display_scale=1.0, offset=[0.0, 0.0])
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
-        string_stim = MagicMock()
-        scene.get_stimulus.return_value = string_stim
-
-        state: dict[str, Any] = {"active_field": "cart_pendulum"}
-        fs = self._make_field_state(cup_x=0.01, ball_x=0.03, ball_y=-0.05)
-        proc._update_cart_pendulum(scene, state, fs)
-
-        eff = 1.0 * _METERS_TO_CM
-        # String endpoints should match cup center → ball center (in cm)
-        assert string_stim.start == [0.01 * eff, 0.0]
-        assert string_stim.end == [0.03 * eff, -0.05 * eff]
+        assert "color" not in update_calls.get("__ball", {})
 
 
 class TestEffectiveScale:
@@ -653,6 +667,39 @@ class TestHandleDisplayCommandConversion:
         eff = 1.0 * _METERS_TO_CM
         args = scene.update.call_args
         assert args[0][1]["position"] == [0.05 * eff, 0.1 * eff]
+
+    def test_update_scene_cursor_visibility(self) -> None:
+        """update_scene with __cursor key calls set_cursor_visible."""
+        proc = self._make_proc()
+        scene = MagicMock()
+        cmd = {
+            "action": "update_scene",
+            "params": {"__cursor": {"visible": False}},
+        }
+        proc._handle_display_command(scene, cmd)
+        scene.set_cursor_visible.assert_called_once_with(False)
+
+    def test_update_scene_cursor_visibility_with_other_params(self) -> None:
+        """__cursor is handled and other stimulus updates still process."""
+        from hapticore.display.process import _METERS_TO_CM
+
+        proc = self._make_proc()
+        scene = MagicMock()
+        cmd = {
+            "action": "update_scene",
+            "params": {
+                "__cursor": {"visible": True},
+                "target": {"position": [0.05, 0.0]},
+            },
+        }
+        proc._handle_display_command(scene, cmd)
+        scene.set_cursor_visible.assert_called_once_with(True)
+        # Normal stimulus update should also fire
+        eff = 1.0 * _METERS_TO_CM
+        scene.update.assert_called_once()
+        args = scene.update.call_args
+        assert args[0][0] == "target"
+        assert args[0][1]["position"] == [0.05 * eff, 0.0]
 
 
 class TestCreateWindowKwargs:

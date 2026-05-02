@@ -1,12 +1,13 @@
-"""Field-visual creation helpers and stimulus ID constants.
+"""Field-visual helpers and stimulus ID constants.
 
-These free functions compose generic show_stimulus / hide_stimulus calls
-into field-specific visual setups. They live in the display package
-(not tasks/) because the stimulus ID constants are shared with the
-per-frame renderers in DisplayProcess.
+CartPendulumVisuals and free helper functions compose generic
+show_stimulus / hide_stimulus calls into field-specific visual setups.
+They live in the display package (not tasks/) because the stimulus ID
+constants are shared with the per-frame renderers in DisplayProcess.
 
-Tasks import the creation functions; DisplayProcess imports the ID
-constants. The IDs are the contract between creation and rendering.
+Tasks import CartPendulumVisuals or the physics-body functions;
+DisplayProcess imports the ID constants. The IDs are the contract
+between creation and rendering.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from typing import Any
 # Stimulus ID constants — shared between creation helpers and renderers
 # ---------------------------------------------------------------------------
 
-CART_PENDULUM_STIM_IDS: tuple[str, str, str] = ("__cup", "__ball", "__string")
+CART_PENDULUM_STIM_IDS: tuple[str, str] = ("__cup", "__ball")
 
 
 def physics_body_stim_id(body_id: str) -> str:
@@ -31,76 +32,136 @@ def physics_body_stim_id(body_id: str) -> str:
 # Cart-pendulum visuals
 # ---------------------------------------------------------------------------
 
-_DEFAULT_CUP_HALF_WIDTH: float = 0.015
-_DEFAULT_CUP_DEPTH: float = 0.03
-_DEFAULT_BALL_RADIUS: float = 0.008
 _DEFAULT_CUP_COLOR: list[float] = [0.8, 0.8, 0.8]
 _DEFAULT_BALL_COLOR: list[float] = [0.2, 0.6, 1.0]
-_DEFAULT_STRING_COLOR: list[float] = [0.5, 0.5, 0.5]
 
 
-def create_cart_pendulum_stimuli(
-    show_stimulus: Callable[[str, dict[str, Any]], None],
-    *,
-    cup_color: list[float] | None = None,
-    ball_color: list[float] | None = None,
-    string_color: list[float] | None = None,
-    cup_half_width: float = _DEFAULT_CUP_HALF_WIDTH,
-    cup_depth: float = _DEFAULT_CUP_DEPTH,
-    ball_radius: float = _DEFAULT_BALL_RADIUS,
-    cup_position: list[float] | None = None,
-    initial_phi: float = 0.0,
-    pendulum_length: float = 0.3,
-) -> None:
-    """Create cup, ball, and string stimuli for the cart-pendulum field.
+class CartPendulumVisuals:
+    """Stateful visual helper for the cart-pendulum field.
 
-    All positions are in meters (SI). The DisplayProcess converts to cm.
-    Ball position is computed from cup_position + pendulum geometry,
-    matching the C++ CartPendulumField::pack_state() convention.
+    Owns creation, teardown, and semantic visual changes (e.g., ball
+    color) for the cup and ball stimuli. Tasks construct one instance
+    per trial and call named methods for visual state changes.
 
-    Note: the cart-pendulum simulation is 1D (horizontal/X only). When
-    the cart_pendulum field engages, _update_cart_pendulum fixes cup_y to
-    the display offset (Y=0 in workspace coordinates). A non-zero
-    cup_position[1] in the preview will cause a vertical jump when the
-    field takes over. For a smooth transition, always pass
-    cup_position=[x, 0.0].
+    The per-frame position updates remain in DisplayProcess
+    (_update_cart_pendulum), which imports CART_PENDULUM_STIM_IDS
+    for the stimulus ID contract.
+
+    Args:
+        display: Object with show_stimulus, hide_stimulus, and
+            update_scene methods (e.g., DisplayClient, MockDisplay).
+        pendulum_length: String length in meters. Default 0.3 matches
+            the C++ CartPendulumField default.
+        spill_threshold: Angle in radians at which the ball spills.
+            Default π/2 matches C++ default.
+        ball_radius: Ball radius in meters.
+        cup_thickness: Thickness of the arc polygon in meters.
+        cup_color: RGB color list for the cup arc.
+        ball_color: RGB color list for the ball (default state).
     """
-    cup_pos = cup_position if cup_position is not None else [0.0, 0.0]
-    cup_x, cup_y = cup_pos[0], cup_pos[1]
 
-    ball_x = cup_x + pendulum_length * math.sin(initial_phi)
-    ball_y = cup_y - pendulum_length * math.cos(initial_phi)
+    _CUP_ID = CART_PENDULUM_STIM_IDS[0]
+    _BALL_ID = CART_PENDULUM_STIM_IDS[1]
 
-    hw = cup_half_width
-    d = cup_depth
-    show_stimulus("__cup", {
-        "type": "polygon",
-        "vertices": [[-hw, 0.0], [-hw, -d], [hw, -d], [hw, 0.0]],
-        "color": cup_color or _DEFAULT_CUP_COLOR,
-        "fill": False,
-        "position": [cup_x, cup_y],
-    })
-    show_stimulus("__ball", {
-        "type": "circle",
-        "radius": ball_radius,
-        "color": ball_color or _DEFAULT_BALL_COLOR,
-        "position": [ball_x, ball_y],
-    })
-    show_stimulus("__string", {
-        "type": "line",
-        "start": [cup_x, cup_y],
-        "end": [ball_x, ball_y],
-        "color": string_color or _DEFAULT_STRING_COLOR,
-        "line_width": 2.0,
-    })
+    def __init__(
+        self,
+        display: Any,
+        *,
+        pendulum_length: float = 0.3,
+        spill_threshold: float = math.pi / 2,
+        ball_radius: float = 0.004,
+        cup_thickness: float = 0.003,
+        cup_color: list[float] | None = None,
+        ball_color: list[float] | None = None,
+    ) -> None:
+        self._display = display
+        self._pendulum_length = pendulum_length
+        self._spill_threshold = spill_threshold
+        self._ball_radius = ball_radius
+        self._cup_thickness = cup_thickness
+        self._cup_color: list[float] = cup_color or list(_DEFAULT_CUP_COLOR)
+        self._ball_color: list[float] = ball_color or list(_DEFAULT_BALL_COLOR)
 
+    def show(
+        self,
+        *,
+        cup_position: list[float] | None = None,
+        initial_phi: float = 0.0,
+    ) -> None:
+        """Create cup and ball stimuli at the given pose.
 
-def hide_cart_pendulum_stimuli(
-    hide_stimulus: Callable[[str], None],
-) -> None:
-    """Remove cup, ball, and string stimuli."""
-    for sid in CART_PENDULUM_STIM_IDS:
-        hide_stimulus(sid)
+        All positions in meters. Ball position computed from cup_position
+        + pendulum geometry, matching C++ CartPendulumField::pack_state().
+        """
+        cup_pos = cup_position if cup_position is not None else [0.0, 0.0]
+        cup_x, cup_y = cup_pos[0], cup_pos[1]
+
+        ball_x = cup_x + self._pendulum_length * math.sin(initial_phi)
+        ball_y = cup_y + self._pendulum_length * (1 - math.cos(initial_phi))
+
+        self._display.show_stimulus(self._CUP_ID, {
+            "type": "polygon",
+            "vertices": self._cup_vertices(n_points=40),
+            "color": self._cup_color,
+            "fill": True,
+            "position": [cup_x, cup_y],
+        })
+        self._display.show_stimulus(self._BALL_ID, {
+            "type": "circle",
+            "radius": self._ball_radius,
+            "color": self._ball_color,
+            "position": [ball_x, ball_y],
+        })
+
+    def hide(self) -> None:
+        """Remove cup and ball stimuli."""
+        for sid in CART_PENDULUM_STIM_IDS:
+            self._display.hide_stimulus(sid)
+
+    def set_ball_color(self, color: list[float]) -> None:
+        """Change the ball's color (e.g., to indicate a spill)."""
+        self._display.update_scene({
+            self._BALL_ID: {"color": color},
+        })
+
+    def reset_ball_color(self) -> None:
+        """Restore the ball to its default color."""
+        self.set_ball_color(self._ball_color)
+
+    def _cup_vertices(
+        self,
+        n_points: int = 40,
+    ) -> list[list[float]]:
+        """Generate vertices for a downward-opening arc.
+
+        Vertices are relative to the arc center (the cart/pivot).
+        The arc spans from -half_angle to +half_angle, measured
+        from the downward vertical.
+        """
+        radius: float = self._pendulum_length
+        half_angle: float = self._spill_threshold
+        thickness: float = self._cup_thickness
+        center_offset: list[float] = [0, self._pendulum_length - self._ball_radius]
+
+        thetas = [-half_angle + (2 * half_angle) * i / (n_points - 1) for i in range(n_points)]
+        vertices = (
+            [
+                [
+                    center_offset[0] + (radius+thickness) * math.sin(theta),
+                    center_offset[1] - (radius+thickness) * math.cos(theta)
+                ]
+                for theta in thetas
+            ]
+            + [
+                [
+                    center_offset[0] + radius * math.sin(theta),
+                    center_offset[1] - radius * math.cos(theta)
+                ]
+                for theta in reversed(thetas)
+            ]
+        )
+
+        return vertices
 
 
 # ---------------------------------------------------------------------------

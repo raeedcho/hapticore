@@ -1,0 +1,40 @@
+# Cup-and-ball transport task configuration
+#
+# The subject moves a cup-and-ball from a left target to a right target
+# without spilling. Each condition varies the initial ball angle.
+#
+# All force fields are wrapped in a composite with a horizontal channel
+# (Y/Z constraint), so this task is always 1D transport along X.
+
+task:
+  task_class: "hapticore.tasks.cup_task.CupTask"
+  params:
+    left_x: -0.08
+    right_x: 0.08
+    target_half_width: 0.04
+    target_height: 0.02
+    hold_time: 0.5
+    preview_duration: 1.0
+    reach_timeout: 5.0
+    iti_duration: 1.0
+    pendulum_length: 0.05
+    spill_threshold: 0.7
+    ball_mass: 0.6
+    cup_mass: 2.4
+    angular_damping: 0.05
+    coupling_stiffness: 1200.0
+    coupling_damping: 20.0
+    channel_stiffness: 800.0
+    channel_damping: 15.0
+    preview_stiffness: 200.0
+    preview_damping: 5.0
+    reward_ms: 100
+  conditions:
+    - initial_phi: 0.0
+    - initial_phi: 0.2
+    - initial_phi: -0.2
+    - initial_phi: 0.4
+    - initial_phi: -0.4
+  block_size: 5
+  num_blocks: 20
+  randomization: "pseudorandom"

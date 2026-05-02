@@ -497,7 +497,7 @@ class DisplayProcess(multiprocessing.Process):
             if not x11_path:
                 return
             x11 = ctypes.cdll.LoadLibrary(x11_path)
-            
+
             # Declare C signatures — without these, ctypes assumes c_int for
             # all args/returns, truncating 64-bit pointers on x86_64.
             x11.XOpenDisplay.argtypes = [ctypes.c_char_p]

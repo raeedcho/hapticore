@@ -497,6 +497,23 @@ class DisplayProcess(multiprocessing.Process):
             if not x11_path:
                 return
             x11 = ctypes.cdll.LoadLibrary(x11_path)
+            
+            # Declare C signatures — without these, ctypes assumes c_int for
+            # all args/returns, truncating 64-bit pointers on x86_64.
+            x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+            x11.XOpenDisplay.restype = ctypes.c_void_p
+            x11.XSetInputFocus.argtypes = [
+                ctypes.c_void_p,  # display
+                ctypes.c_long,    # focus (Window / PointerRoot)
+                ctypes.c_int,     # revert_to
+                ctypes.c_ulong,   # time
+            ]
+            x11.XSetInputFocus.restype = ctypes.c_int
+            x11.XFlush.argtypes = [ctypes.c_void_p]
+            x11.XFlush.restype = ctypes.c_int
+            x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+            x11.XCloseDisplay.restype = ctypes.c_int
+
             display = x11.XOpenDisplay(None)
             if not display:
                 return

@@ -486,6 +486,9 @@ class DisplayProcess(multiprocessing.Process):
         rig screen, nothing returns focus when the operator interacts with
         the control room. Setting focus to PointerRoot causes keyboard
         input to follow the mouse pointer across X screens.
+
+        No-op on non-Linux platforms or when libX11 / a display connection
+        is unavailable (e.g. headless CI).
         """
         if sys.platform != "linux":
             return

@@ -143,9 +143,6 @@ class CartPendulumVisuals:
         thickness: float = self._cup_thickness
         center_offset: list[float] = [0, self._pendulum_length - self._ball_radius]
 
-        if center_offset is None:
-            center_offset = [0.0, 0.0]
-
         thetas = [-half_angle + (2 * half_angle) * i / (n_points - 1) for i in range(n_points)]
         vertices = (
             [

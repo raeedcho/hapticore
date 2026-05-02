@@ -89,18 +89,11 @@ For each state, you can implement `on_enter_<state>()` and `on_exit_<state>()` m
     def on_enter_move_to_center(self):
         """Guide monkey to the center position."""
         # Set a spring force field pulling toward center
-        self.haptic.send_command(Command(
-            command_id=self.new_command_id(),
-            method="set_force_field",
-            params={
-                "type": "spring_damper",
-                "params": {
-                    "center": [0.0, 0.0, 0.0],
-                    "stiffness": 200.0,  # N/m
-                    "damping": 5.0,      # N·s/m
-                }
-            }
-        ))
+        self.set_field("spring_damper",{
+            "center": [0.0, 0.0, 0.0],
+            "stiffness": 200.0,  # N/m
+            "damping": 5.0,      # N·s/m
+        })
         # Show the center target on display
         self.display.show_stimulus("center_target", {
             "type": "circle",
@@ -118,11 +111,7 @@ For each state, you can implement `on_enter_<state>()` and `on_exit_<state>()` m
     def on_enter_reach(self):
         """Go signal — show peripheral target, start timeout."""
         # Remove the guiding spring, just keep workspace limits
-        self.haptic.send_command(Command(
-            command_id=self.new_command_id(),
-            method="set_force_field",
-            params={"type": "null"}
-        ))
+        self.set_field("null",{})
         # Get target position from current trial condition
         target_pos = self.current_condition["target_position"]
         self.display.show_stimulus("peripheral_target", {
@@ -364,74 +353,64 @@ You describe the physics world declaratively from Python: define bodies (with sh
 Example — air hockey task:
 
 ```python
-self.haptic.send_command(Command(
-    command_id=self.new_command_id(),
-    method="set_force_field",
-    params={
-        "type": "physics_world",
-        "gravity": [0.0, 0.0],           # top-down, no gravity
-        "bodies": [
-            {
-                "id": "striker",
-                "type": "kinematic",       # controlled by the robot
-                "shape": {"type": "circle", "radius": 0.02},
-            },
-            {
-                "id": "puck",
-                "type": "dynamic",
-                "shape": {"type": "circle", "radius": 0.015},
-                "position": [0.0, 0.05],
-                "mass": 0.1,
-                "restitution": 0.9,        # elastic bouncing
-                "friction": 0.1,
-                "linear_damping": 0.3,     # simulates table friction
-            },
-            {
-                "id": "wall_top",
-                "type": "static",
-                "shape": {"type": "box", "width": 0.3, "height": 0.005},
-                "position": [0.0, 0.12],
-            },
-            # ... more walls, goal gaps, etc.
-        ],
-        "hand_body": "striker",
-    }
-))
+self.set_field("physics_world", {
+    "gravity": [0.0, 0.0],           # top-down, no gravity
+    "bodies": [
+        {
+            "id": "striker",
+            "type": "kinematic",       # controlled by the robot
+            "shape": {"type": "circle", "radius": 0.02},
+        },
+        {
+            "id": "puck",
+            "type": "dynamic",
+            "shape": {"type": "circle", "radius": 0.015},
+            "position": [0.0, 0.05],
+            "mass": 0.1,
+            "restitution": 0.9,        # elastic bouncing
+            "friction": 0.1,
+            "linear_damping": 0.3,     # simulates table friction
+        },
+        {
+            "id": "wall_top",
+            "type": "static",
+            "shape": {"type": "box", "width": 0.3, "height": 0.005},
+            "position": [0.0, 0.12],
+        },
+        # ... more walls, goal gaps, etc.
+    ],
+    "hand_body": "striker",
+})
 ```
 
 Example — pivoted rod with barriers:
 
 ```python
-self.haptic.send_command(Command(
-    command_id=self.new_command_id(),
-    method="set_force_field",
-    params={
-        "type": "physics_world",
-        "gravity": [0.0, -9.81],
-        "bodies": [
-            {
-                "id": "rod",
-                "type": "dynamic",
-                "shape": {"type": "box", "width": 0.2, "height": 0.01},
-                "joint": {"type": "revolute", "anchor": "hand", "offset": [0.0, 0.0]},
-                "mass": 0.3,
-            },
-            {
-                "id": "barrier_left",
-                "type": "static",
-                "shape": {"type": "box", "width": 0.01, "height": 0.1},
-                "position": [-0.08, 0.0],
-            },
-            {
-                "id": "barrier_right",
-                "type": "static",
-                "shape": {"type": "box", "width": 0.01, "height": 0.1},
-                "position": [0.08, 0.0],
-            },
-        ],
-        "hand_body": "rod",
-    }
-))
+self.set_field("physics_world",{
+    "gravity": [0.0, -9.81],
+    "bodies": [
+        {
+            "id": "rod",
+            "type": "dynamic",
+            "shape": {"type": "box", "width": 0.2, "height": 0.01},
+            "joint": {"type": "revolute", "anchor": "hand", "offset": [0.0, 0.0]},
+            "mass": 0.3,
+        },
+        {
+            "id": "barrier_left",
+            "type": "static",
+            "shape": {"type": "box", "width": 0.01, "height": 0.1},
+            "position": [-0.08, 0.0],
+        },
+        {
+            "id": "barrier_right",
+            "type": "static",
+            "shape": {"type": "box", "width": 0.01, "height": 0.1},
+            "position": [0.08, 0.0],
+        },
+    ],
+    "hand_body": "rod",
+})
 ```
 
 #### How the display renders physics worlds

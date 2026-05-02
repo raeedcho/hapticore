@@ -387,12 +387,14 @@ class DisplayProcess(multiprocessing.Process):
 
         Positions are converted from meters to cm via _effective_scale/offset.
         Only updates stimuli that already exist — the task is responsible for
-        creating them via CartPendulumVisuals.create().
+        showing and hiding them via CartPendulumVisuals.show() /
+        CartPendulumVisuals.hide().
 
         Note: ball color is NOT changed here. The task controller calls
-        CartPendulumVisuals.mark_spilled() to change the ball color on spill,
-        avoiding a race between this renderer reading field_state and the
-        task controller transitioning state.
+        CartPendulumVisuals.set_ball_color() / reset_ball_color() to manage
+        the ball color on spill and reset, avoiding a race between this
+        renderer reading field_state and the task controller transitioning
+        state.
         """
         _CUP_ID, _BALL_ID = CART_PENDULUM_STIM_IDS
         eff_scale = self._effective_scale()

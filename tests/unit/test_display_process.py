@@ -464,8 +464,9 @@ class TestUpdateCartPendulum:
     def test_renderer_does_not_change_ball_color(self) -> None:
         """Renderer only updates position — ball color is managed by task controller.
 
-        CartPendulumVisuals.mark_spilled() is the sole mechanism for changing
-        ball color on spill, avoiding a race with the continuous renderer.
+        CartPendulumVisuals.set_ball_color()/reset_ball_color() are the public
+        helpers for changing ball color, avoiding a race with the continuous
+        renderer.
         """
         proc = self._make_proc()
         scene = MagicMock()

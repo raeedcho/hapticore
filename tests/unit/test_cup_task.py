@@ -163,7 +163,7 @@ class TestCupTaskCompositeFields:
         try:
             assert task.state == "move_to_left"
             cmd_params = _last_field_command(haptic)
-            children = _assert_composite_contains(cmd_params, ["channel", "null"])
+            children = _assert_composite_contains(cmd_params, ["channel", "null", "workspace_limit"])
             assert children["channel"]["axes"] == [1, 2]
         finally:
             controller.teardown()
@@ -184,7 +184,7 @@ class TestCupTaskCompositeFields:
 
             cmd_params = _last_field_command(haptic)
             children = _assert_composite_contains(
-                cmd_params, ["channel", "spring_damper"],
+                cmd_params, ["channel", "spring_damper", "workspace_limit"],
             )
 
             assert children["channel"]["axes"] == [1, 2]
@@ -212,7 +212,7 @@ class TestCupTaskCompositeFields:
 
             cmd_params = _last_field_command(haptic)
             children = _assert_composite_contains(
-                cmd_params, ["channel", "cart_pendulum"],
+                cmd_params, ["channel", "cart_pendulum", "workspace_limit"],
             )
 
             assert children["channel"]["axes"] == [1, 2]
@@ -246,7 +246,7 @@ class TestCupTaskCompositeFields:
             assert task.state == "success"
 
             cmd_params = _last_field_command(haptic)
-            children = _assert_composite_contains(cmd_params, ["channel", "null"])
+            children = _assert_composite_contains(cmd_params, ["channel", "null", "workspace_limit"])
             assert children["channel"]["axes"] == [1, 2]
         finally:
             controller.teardown()
@@ -667,7 +667,7 @@ class TestCupTaskFreezeSpill:
             # Verify the spring_damper is centered at the cup's position
             cmd_params = _last_field_command(haptic)
             children = _assert_composite_contains(
-                cmd_params, ["channel", "spring_damper"],
+                cmd_params, ["channel", "spring_damper", "workspace_limit"],
             )
             assert children["spring_damper"]["center"][0] == 0.02
             assert children["spring_damper"]["center"][1] == 0.0

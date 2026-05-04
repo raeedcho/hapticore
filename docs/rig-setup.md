@@ -154,20 +154,33 @@ Rig 2 uses two monitors: one that the subject views through a canted mirror, and
 
 ### Identifying monitor indices
 
-Run `hapticore list-screens` to list available monitors with their indices and resolutions:
+On Linux/X11, run `xrandr` to list connected monitors and their indices:
 
 ```bash
-pixi run hapticore list-screens
+xrandr --listmonitors
 ```
 
-Example output:
-```
-Index  Resolution      Position
-0      1920x1080       (0, 0)
-1      1920x1080       (1920, 0)
+The monitor order corresponds to the `screen` index in the hapticore config (0-based). Set `screen: 1` in the rig config to render on the second monitor.
+
+### Zaphod heads (separate X screens)
+
+Some rigs use a Zaphod configuration to give the rig monitor its own dedicated rendering pipeline with no compositor interference. This is the gold standard for stimulus timing on Linux.
+
+**Detecting a Zaphod setup:** Run `xdpyinfo | grep "number of screens"`. If it shows `2`, the rig is running a Zaphod config. The control-room monitor and the rig monitor are on separate X screens rather than two outputs on one X screen.
+
+**How to configure it:** Set `screen: 1` to target the rig monitor — that's it.
+
+```yaml
+display:
+  backend: psychopy
+  screen: 1              # rig monitor (Zaphod screen 1)
+  resolution: [1920, 1080]
+  mirror_horizontal: true  # if physical mirror reflects left-right
 ```
 
-Set `screen: 1` in the rig config to render on the second monitor. On Linux/X11, the screen index follows `xrandr` output order and is stable across reboots unless the physical cable connection order changes.
+Hapticore automatically disables pyglet's shadow window on Linux (by setting `PYGLET_SHADOW_WINDOW=0` before importing PsychoPy). The shadow window is pyglet's hidden 1×1 GL context probe that, if created on the wrong X screen, anchors the real window there. Disabling it is what makes `screen: 1` select the correct Zaphod screen. This is applied unconditionally on Linux — it has no cost on single-screen setups.
+
+**Interaction with Xorg Reflect:** If the Xorg config includes `Option "Reflect"` on the rig monitor, this is a hardware-level image flip applied by the driver. In practice, `Reflect` behaviour varies by driver and output — test empirically with an asymmetric stimulus. Use hapticore's `mirror_horizontal` / `mirror_vertical` flags to correct orientation; these are software-level flips independent of any Xorg `Reflect` option.
 
 ### Horizontal mirror for a canted mirror
 

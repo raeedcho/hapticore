@@ -89,18 +89,11 @@ For each state, you can implement `on_enter_<state>()` and `on_exit_<state>()` m
     def on_enter_move_to_center(self):
         """Guide monkey to the center position."""
         # Set a spring force field pulling toward center
-        self.haptic.send_command(Command(
-            command_id=self.new_command_id(),
-            method="set_force_field",
-            params={
-                "type": "spring_damper",
-                "params": {
-                    "center": [0.0, 0.0, 0.0],
-                    "stiffness": 200.0,  # N/m
-                    "damping": 5.0,      # N·s/m
-                }
-            }
-        ))
+        self.set_field("spring_damper",{
+            "center": [0.0, 0.0, 0.0],
+            "stiffness": 200.0,  # N/m
+            "damping": 5.0,      # N·s/m
+        })
         # Show the center target on display
         self.display.show_stimulus("center_target", {
             "type": "circle",
@@ -118,11 +111,7 @@ For each state, you can implement `on_enter_<state>()` and `on_exit_<state>()` m
     def on_enter_reach(self):
         """Go signal — show peripheral target, start timeout."""
         # Remove the guiding spring, just keep workspace limits
-        self.haptic.send_command(Command(
-            command_id=self.new_command_id(),
-            method="set_force_field",
-            params={"type": "null"}
-        ))
+        self.set_field("null",{})
         # Get target position from current trial condition
         target_pos = self.current_condition["target_position"]
         self.display.show_stimulus("peripheral_target", {
@@ -236,97 +225,121 @@ Built-in field types: `null`, `spring_damper`, `constant`, `workspace_limit`, `c
 Example — cup-and-ball task with preview:
 
 ```python
-from hapticore.display._field_visuals import (
-    create_cart_pendulum_stimuli,
-    hide_cart_pendulum_stimuli,
+from hapticore.display._field_visuals import CartPendulumVisuals
+
+# In on_trial_start — construct the visual helper once per trial:
+self._cup_visuals = CartPendulumVisuals(
+    self.display,
+    pendulum_length=self.params["pendulum_length"],
 )
 
 # During the preview/delay state: show cup-and-ball at the starting
 # position with a random initial ball angle. The haptic field stays
-# null, so the cup-and-ball visuals are frozen at the previewed pose
-# (the device can still move freely, but the display won't update
-# the cup/ball positions until the cart_pendulum field is engaged).
+# null (or spring_damper), so the cup-and-ball visuals are frozen at
+# the previewed pose (the device can still move freely, but the display
+# won't update the cup/ball positions until the cart_pendulum field is
+# engaged).
 phi = self.current_condition["initial_phi"]      # e.g. 0.3 radians
 cup_pos = self.current_condition["start_position"]  # e.g. [-0.08, 0.0]
-create_cart_pendulum_stimuli(
-    self.display.show_stimulus,
-    cup_position=cup_pos,
-    initial_phi=phi,
-    pendulum_length=0.3,
-)
+self._cup_visuals.show(cup_position=cup_pos, initial_phi=phi)
 
 # At the go cue: engage the cart-pendulum force field with the same
 # initial_phi so the simulation starts from the previewed pose.
-# _update_cart_pendulum takes over rendering from here.
-self.haptic.send_command(Command(
-    command_id=self.new_command_id(),
-    method="set_force_field",
-    params={
-        "type": "cart_pendulum",
-        "params": {
-            "pendulum_length": 0.3,
-            "ball_mass": 0.6,
-            "cup_mass": 2.4,
-            "angular_damping": 0.05,
-            "initial_phi": phi,
-        }
-    }
-))
+# _update_cart_pendulum takes over position rendering from here.
+self.set_field("cart_pendulum", {
+    "pendulum_length": 0.3,
+    "ball_mass": 0.6,
+    "cup_mass": 2.4,
+    "angular_damping": 0.05,
+    "initial_phi": phi,
+})
 ```
 
-The key contract: both `initial_phi` and `pendulum_length` passed to `create_cart_pendulum_stimuli` must match the same parameters passed to `set_force_field` so the visual preview and the simulation start at the same pose. Any mismatch will cause a visible "jump" when the field engages.
+Semantic visual changes (e.g., spill indication) are handled through the visual helper, not the display renderer. This avoids a race between the display process and task controller:
+
+```python
+# On spill detection:
+self._cup_visuals.set_ball_color([1.0, 0.3, 0.3])  # red
+
+# To restore default colors:
+self._cup_visuals.reset_ball_color()
+```
+
+To hide the visuals (e.g., at trial end):
+
+```python
+self._cup_visuals.hide()
+```
+
+The key contract: both `initial_phi` and `pendulum_length` passed to `CartPendulumVisuals.show()` must match the same parameters passed to `set_field("cart_pendulum", ...)` so the visual preview and the simulation start at the same pose. Any mismatch will cause a visible "jump" when the field engages.
 
 Note: the cart-pendulum model is 1D — the C++ simulation only tracks horizontal (X) motion. When the field engages, `_update_cart_pendulum` sets `cup_y` to the display offset (effectively Y=0 in workspace coordinates). If `cup_position[1]` in the preview is non-zero, the cup will jump vertically when the field takes over. For a smooth transition, always use `cup_position=[x, 0.0]`.
 
-To hide the visuals (e.g., in a trial-end or ITI callback):
+### Background fields
+
+Tasks can declare background force fields that are automatically applied
+to every `set_field()` call. This is useful for channel constraints and
+workspace limits that should always be active:
 
 ```python
-hide_cart_pendulum_stimuli(self.display.hide_stimulus)
+# In on_trial_start — declare background fields once:
+self.background_fields = [
+    {
+        "type": "channel",
+        "params": {
+            "axes": [1, 2],  # constrain Y and Z
+            "center": [0.0, 0.0, 0.0],
+            "stiffness": 800.0,
+            "damping": 15.0,
+        },
+    },
+]
+
+# Every subsequent set_field call wraps the primary field in a
+# composite with the background fields as siblings:
+self.set_field("spring_damper", {...})
+# → sends composite(channel + spring_damper)
+
+self.set_field("cart_pendulum", {...})
+# → sends composite(channel + cart_pendulum)
+
+self.set_field("null", {})
+# → sends composite(channel + null) — channel stays active during ITI
 ```
+
+If `background_fields` is empty (the default), `set_field()` sends the
+primary field directly with no composite wrapper.
 
 Example — constrain to a horizontal plane (free in X and Y, held at Z=0):
 
 ```python
-self.haptic.send_command(Command(
-    command_id=self.new_command_id(),
-    method="set_force_field",
-    params={
-        "type": "channel",
-        "params": {
-            "axes": [2],            # constrain Z only
-            "stiffness": 800,
-            "damping": 15,
-            "center": [0, 0, 0],   # hold Z at zero
-        }
-    }
-))
+self.set_field("channel", {
+    "axes": [2],            # constrain Z only
+    "stiffness": 800,
+    "damping": 15,
+    "center": [0, 0, 0],   # hold Z at zero
+})
 ```
 
-Example — constrain cup-and-ball to a horizontal line using `composite`:
+Example — constrain cup-and-ball to a horizontal line using `background_fields`:
 
 ```python
-self.haptic.send_command(Command(
-    command_id=self.new_command_id(),
-    method="set_force_field",
-    params={
-        "type": "composite",
-        "params": {
-            "fields": [
-                {"type": "cart_pendulum", "params": {
-                    "pendulum_length": 0.6,
-                    "ball_mass": 0.6,
-                    "cup_mass": 2.4,
-                }},
-                {"type": "channel", "params": {
-                    "axes": [1, 2],       # constrain Y and Z (free in X)
-                    "stiffness": 800,
-                    "damping": 15,
-                    "center": [0, 0, 0],
-                }},
-            ]
-        }
-    }
-))
+# In on_trial_start:
+self.background_fields = [
+    {"type": "channel", "params": {
+        "axes": [1, 2],       # constrain Y and Z (free in X)
+        "stiffness": 800,
+        "damping": 15,
+        "center": [0, 0, 0],
+    }},
+]
+
+# In on_enter_reach — set_field automatically wraps in composite:
+self.set_field("cart_pendulum", {
+    "pendulum_length": 0.6,
+    "ball_mass": 0.6,
+    "cup_mass": 2.4,
+})
 ```
 
 To add a *new* analytical force field (e.g., a velocity-dependent curl field), create a C++ `ForceField` subclass in `cpp/haptic_server/src/force_fields/`, implement `compute(pos, vel, dt)`, and register the type name in the command dispatcher. See `CartPendulumField` as a reference.
@@ -340,74 +353,64 @@ You describe the physics world declaratively from Python: define bodies (with sh
 Example — air hockey task:
 
 ```python
-self.haptic.send_command(Command(
-    command_id=self.new_command_id(),
-    method="set_force_field",
-    params={
-        "type": "physics_world",
-        "gravity": [0.0, 0.0],           # top-down, no gravity
-        "bodies": [
-            {
-                "id": "striker",
-                "type": "kinematic",       # controlled by the robot
-                "shape": {"type": "circle", "radius": 0.02},
-            },
-            {
-                "id": "puck",
-                "type": "dynamic",
-                "shape": {"type": "circle", "radius": 0.015},
-                "position": [0.0, 0.05],
-                "mass": 0.1,
-                "restitution": 0.9,        # elastic bouncing
-                "friction": 0.1,
-                "linear_damping": 0.3,     # simulates table friction
-            },
-            {
-                "id": "wall_top",
-                "type": "static",
-                "shape": {"type": "box", "width": 0.3, "height": 0.005},
-                "position": [0.0, 0.12],
-            },
-            # ... more walls, goal gaps, etc.
-        ],
-        "hand_body": "striker",
-    }
-))
+self.set_field("physics_world", {
+    "gravity": [0.0, 0.0],           # top-down, no gravity
+    "bodies": [
+        {
+            "id": "striker",
+            "type": "kinematic",       # controlled by the robot
+            "shape": {"type": "circle", "radius": 0.02},
+        },
+        {
+            "id": "puck",
+            "type": "dynamic",
+            "shape": {"type": "circle", "radius": 0.015},
+            "position": [0.0, 0.05],
+            "mass": 0.1,
+            "restitution": 0.9,        # elastic bouncing
+            "friction": 0.1,
+            "linear_damping": 0.3,     # simulates table friction
+        },
+        {
+            "id": "wall_top",
+            "type": "static",
+            "shape": {"type": "box", "width": 0.3, "height": 0.005},
+            "position": [0.0, 0.12],
+        },
+        # ... more walls, goal gaps, etc.
+    ],
+    "hand_body": "striker",
+})
 ```
 
 Example — pivoted rod with barriers:
 
 ```python
-self.haptic.send_command(Command(
-    command_id=self.new_command_id(),
-    method="set_force_field",
-    params={
-        "type": "physics_world",
-        "gravity": [0.0, -9.81],
-        "bodies": [
-            {
-                "id": "rod",
-                "type": "dynamic",
-                "shape": {"type": "box", "width": 0.2, "height": 0.01},
-                "joint": {"type": "revolute", "anchor": "hand", "offset": [0.0, 0.0]},
-                "mass": 0.3,
-            },
-            {
-                "id": "barrier_left",
-                "type": "static",
-                "shape": {"type": "box", "width": 0.01, "height": 0.1},
-                "position": [-0.08, 0.0],
-            },
-            {
-                "id": "barrier_right",
-                "type": "static",
-                "shape": {"type": "box", "width": 0.01, "height": 0.1},
-                "position": [0.08, 0.0],
-            },
-        ],
-        "hand_body": "rod",
-    }
-))
+self.set_field("physics_world",{
+    "gravity": [0.0, -9.81],
+    "bodies": [
+        {
+            "id": "rod",
+            "type": "dynamic",
+            "shape": {"type": "box", "width": 0.2, "height": 0.01},
+            "joint": {"type": "revolute", "anchor": "hand", "offset": [0.0, 0.0]},
+            "mass": 0.3,
+        },
+        {
+            "id": "barrier_left",
+            "type": "static",
+            "shape": {"type": "box", "width": 0.01, "height": 0.1},
+            "position": [-0.08, 0.0],
+        },
+        {
+            "id": "barrier_right",
+            "type": "static",
+            "shape": {"type": "box", "width": 0.01, "height": 0.1},
+            "position": [0.08, 0.0],
+        },
+    ],
+    "hand_body": "rod",
+})
 ```
 
 #### How the display renders physics worlds

@@ -14,9 +14,8 @@ from hapticore.core.interfaces import (
 )
 from hapticore.core.messages import Command
 from hapticore.display._field_visuals import (
-    create_cart_pendulum_stimuli,
+    CartPendulumVisuals,
     create_physics_body_stimuli,
-    hide_cart_pendulum_stimuli,
     hide_physics_body_stimuli,
 )
 from hapticore.display.mock import MockDisplay
@@ -173,44 +172,37 @@ class TestMockDisplay:
 
     def test_show_cart_pendulum(self) -> None:
         mock = MockDisplay()
-        create_cart_pendulum_stimuli(mock.show_stimulus)
+        vis = CartPendulumVisuals(mock)
+        vis.show()
         assert "__cup" in mock._visible_stimuli
         assert "__ball" in mock._visible_stimuli
-        assert "__string" in mock._visible_stimuli
         assert mock._visible_stimuli["__cup"]["type"] == "polygon"
         assert mock._visible_stimuli["__ball"]["type"] == "circle"
-        assert mock._visible_stimuli["__string"]["type"] == "line"
 
     def test_show_cart_pendulum_initial_pose(self) -> None:
         mock = MockDisplay()
         phi = 0.5
         length = 0.3
         cup_pos = [0.05, 0.0]
-        create_cart_pendulum_stimuli(
-            mock.show_stimulus,
-            cup_position=cup_pos, initial_phi=phi, pendulum_length=length,
-        )
+        vis = CartPendulumVisuals(mock, pendulum_length=length)
+        vis.show(cup_position=cup_pos, initial_phi=phi)
         cup = mock._visible_stimuli["__cup"]
         ball = mock._visible_stimuli["__ball"]
-        string = mock._visible_stimuli["__string"]
 
         assert cup["position"] == pytest.approx([cup_pos[0], cup_pos[1]])
 
         expected_bx = cup_pos[0] + length * math.sin(phi)
-        expected_by = cup_pos[1] - length * math.cos(phi)
+        expected_by = cup_pos[1] + length * (1 - math.cos(phi))
         assert ball["position"][0] == pytest.approx(expected_bx, abs=1e-9)
         assert ball["position"][1] == pytest.approx(expected_by, abs=1e-9)
 
-        assert string["start"] == pytest.approx([cup_pos[0], cup_pos[1]])
-        assert string["end"][0] == pytest.approx(expected_bx, abs=1e-9)
-
     def test_hide_cart_pendulum(self) -> None:
         mock = MockDisplay()
-        create_cart_pendulum_stimuli(mock.show_stimulus)
-        hide_cart_pendulum_stimuli(mock.hide_stimulus)
+        vis = CartPendulumVisuals(mock)
+        vis.show()
+        vis.hide()
         assert "__cup" not in mock._visible_stimuli
         assert "__ball" not in mock._visible_stimuli
-        assert "__string" not in mock._visible_stimuli
 
     def test_show_physics_bodies(self) -> None:
         mock = MockDisplay()

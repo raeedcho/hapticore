@@ -191,7 +191,7 @@ Stiffness hard limit: 3000 N/m at 4 kHz (stability boundary). Reject params with
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `bounds` | map | from config | `{"x": [min, max], "y": [min, max], "z": [min, max]}` in meters |
+| `bounds` | map | [-0.15,0.15] for all axes | `{"x": [min, max], "y": [min, max], "z": [min, max]}` in meters |
 | `stiffness` | float | 2000.0 | Wall spring stiffness in N/m |
 | `damping` | float | 10.0 | Wall damping in N·s/m |
 

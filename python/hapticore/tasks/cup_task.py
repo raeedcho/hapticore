@@ -76,7 +76,7 @@ class CupTask(BaseTask):
             description="Ball mass for cart-pendulum dynamics",
         ),
         "ball_radius": ParamSpec(
-            type=float, default=0.004, unit="m",
+            type=float, default=0.003, unit="m",
             description="Ball radius for display only (does not affect physics)",
         ),
         "cup_mass": ParamSpec(
@@ -167,6 +167,12 @@ class CupTask(BaseTask):
                     "stiffness": self.params["channel_stiffness"],
                     "damping": self.params["channel_damping"],
                 },
+            },
+            {
+                "type": "workspace_limit",
+                "params": {
+                    "bounds": {'x': [-0.15, 0.15], 'y': [-0.1, 0.1], 'z': [-0.1, 0.1]}
+                }
             }
         ]
         # Fresh visuals instance per trial — owns creation, spill color, teardown.

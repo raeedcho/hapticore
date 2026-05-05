@@ -414,7 +414,8 @@ class TestRecordingConfigRipple:
         assert cfg.ripple is not None
         assert cfg.ripple.use_tcp is False
         assert cfg.ripple.operator_id == 200
-        assert cfg.ripple.auto_increment is True
+        assert cfg.ripple.auto_stop_time_s == 7200
+        assert cfg.ripple.trellis_data_dir == "data"
 
     def test_operator_id_upper_bound(self) -> None:
         with pytest.raises(ValidationError):

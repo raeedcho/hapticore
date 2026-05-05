@@ -434,7 +434,16 @@ The FTDI FT232H is a separate device from the Teensy. The Teensy handles timing/
 ### Why separate from Teensy
  
 The beam break must be read by the C++ haptic server process, which runs a 4 kHz SCHED_FIFO loop. The Teensy communicates via USB serial to the Python `SyncProcess` — routing beam break data through Python would add unacceptable latency. The FTDI FT232H provides direct GPIO access from C++ via libftdi or libusb, staying in the real-time path.
- 
+
+## Ripple Grapevine / xipppy
+
+`xipppy` is Ripple Neuro's Python API for Grapevine processors. It is not available on PyPI and must be obtained directly from Ripple. Here are the steps to install it:
+
+1. Download the Trellis installer from rippleneuro.com or contact support@rppl.com
+2. Locate the `xipppy` wheel for your platform and Python version in the Trellis install directory (e.g., Trellis/Tools/Xipppy/)
+3. Install into the Hapticore environment: `pixi run uv pip install /path/to/xipppy-*.whl`
+4. Verify: `pixi run check-xipppy`
+
 ## Camera PC
  
 A dedicated computer runs camera acquisition, separate from the haptic control rig. See ADR-012 for rationale.

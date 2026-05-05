@@ -55,7 +55,7 @@ default = { features = ["dev"], solve-group = "default" }
 
 [tasks]
 install-psychopy = "uv pip install psychopy --no-deps --break-system-packages"
-check-xipppy = { cmd = "python -c \"import xipppy; print(f'xipppy {xipppy.get_version()[\"xipppy\"]} OK')\"", description = "Verify xipppy is installed" }
+check-xipppy = { cmd = "python -c \"import xipppy; print(f'xipppy {xipppy.get_version()['xipppy']} OK')\"", description = "Verify xipppy is installed" }
 
 lint = "ruff check python/"
 typecheck = "mypy python/hapticore/core/ --strict"

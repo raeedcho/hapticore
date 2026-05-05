@@ -102,7 +102,7 @@ class RippleProcess(multiprocessing.Process):
                     msg = msgpack.unpackb(payload, raw=False)
 
                     try:
-                        if topic == TOPIC_SESSION:
+                        if topic == TOPIC_SESSION and msg.get("__msg_type__") == "SessionControl":
                             action = msg.get("action")
                             self._handle_session_control(client, msg)
                             if action == "start_recording":
@@ -135,6 +135,9 @@ class RippleProcess(multiprocessing.Process):
         if action == "start_recording":
             params = msg.get("params", {})
             file_name_base = str(params.get("file_name_base", ""))
+            if not file_name_base:
+                logger.error("start_recording received empty file_name_base, ignoring")
+                return
             client.start_recording(file_name_base, self._config.auto_stop_time_s)
         elif action == "stop_recording":
             client.stop_recording()

@@ -7,8 +7,11 @@ only when connect() is called and no fake has been injected.
 
 from __future__ import annotations
 
+import logging
 from types import ModuleType
 from typing import Self
+
+logger = logging.getLogger(__name__)
 
 
 class XipppyClient:
@@ -45,7 +48,14 @@ class XipppyClient:
         if self._injected_module is not None:
             self._xp = self._injected_module
         else:
-            import xipppy as _xp  # noqa: PLC0415 — lazy by design
+            try:
+                import xipppy as _xp  # noqa: PLC0415 — lazy by design
+            except ImportError as exc:
+                raise ImportError(
+                    "xipppy is required for Ripple recording but is not installed. "
+                    "Install the xipppy wheel provided by Ripple "
+                    "(see docs/rig-setup.md § Ripple software)."
+                ) from exc
             self._xp = _xp
 
         assert self._xp is not None  # noqa: S101 — unreachable; narrows type
@@ -56,15 +66,20 @@ class XipppyClient:
             try:
                 self._xp.add_operator(self._operator_id)
             except Exception:
-                self._xp._close()
+                try:
+                    self._xp._close()
+                except Exception:
+                    logger.exception("Failed to close xipppy after add_operator failure")
                 self._connected = False
                 raise
 
     def disconnect(self) -> None:
         """Close xipppy connection."""
-        if self._connected and self._xp is not None:
-            self._xp._close()
-        self._connected = False
+        try:
+            if self._connected and self._xp is not None:
+                self._xp._close()
+        finally:
+            self._connected = False
 
     def __enter__(self) -> Self:
         self.connect()

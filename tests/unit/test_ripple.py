@@ -16,6 +16,7 @@ from hapticore.core.interfaces import NeuralRecordingInterface
 from hapticore.core.messages import TOPIC_SESSION
 from hapticore.core.messaging import EventBus, make_ipc_address
 from hapticore.recording.ripple_recording import RippleRecording
+from hapticore.recording.ripple_process import RippleProcess
 from hapticore.recording.xipppy_client import XipppyClient
 
 
@@ -233,19 +234,19 @@ class TestRippleRecordingShim:
         pub = bus.create_publisher()
         sub = bus.create_subscriber(topics=[TOPIC_SESSION])
         time.sleep(0.05)
+        try:
+            rr = RippleRecording(pub)
+            rr.start_recording("data/session_001")
 
-        rr = RippleRecording(pub)
-        rr.start_recording("data/session_001")
-
-        result = sub.recv(timeout_ms=500)
-        assert result is not None
-        _, payload = result
-        msg = msgpack.unpackb(payload, raw=False)
-        assert msg["action"] == "start_recording"
-        assert msg["params"]["file_name_base"] == "data/session_001"
-
-        pub.close()
-        sub.close()
+            result = sub.recv(timeout_ms=500)
+            assert result is not None
+            _, payload = result
+            msg = msgpack.unpackb(payload, raw=False)
+            assert msg["action"] == "start_recording"
+            assert msg["params"]["file_name_base"] == "data/session_001"
+        finally:
+            pub.close()
+            sub.close()
 
     def test_stop_recording_publishes_session_message(self) -> None:
         addr = make_ipc_address("test_rr_stop")
@@ -253,21 +254,21 @@ class TestRippleRecordingShim:
         pub = bus.create_publisher()
         sub = bus.create_subscriber(topics=[TOPIC_SESSION])
         time.sleep(0.05)
+        try:
+            rr = RippleRecording(pub)
+            rr.start_recording("data/session_001")
+            sub.recv(timeout_ms=200)  # drain start
 
-        rr = RippleRecording(pub)
-        rr.start_recording("data/session_001")
-        sub.recv(timeout_ms=200)  # drain start
+            rr.stop_recording()
 
-        rr.stop_recording()
-
-        result = sub.recv(timeout_ms=500)
-        assert result is not None
-        _, payload = result
-        msg = msgpack.unpackb(payload, raw=False)
-        assert msg["action"] == "stop_recording"
-
-        pub.close()
-        sub.close()
+            result = sub.recv(timeout_ms=500)
+            assert result is not None
+            _, payload = result
+            msg = msgpack.unpackb(payload, raw=False)
+            assert msg["action"] == "stop_recording"
+        finally:
+            pub.close()
+            sub.close()
 
     def test_is_recording_tracks_state(self) -> None:
         addr = make_ipc_address("test_rr_state")
@@ -319,9 +320,8 @@ class TestRippleProcessHandlers:
 
     def _make_process(
         self, auto_stop_time_s: int = 0,
-    ) -> object:
+    ) -> tuple[RippleProcess, _FakeXipppy]:
         from hapticore.core.config import RippleRecordingConfig, ZMQConfig
-        from hapticore.recording.ripple_process import RippleProcess
 
         cfg = RippleRecordingConfig(auto_stop_time_s=auto_stop_time_s)
         zmq_cfg = ZMQConfig()
@@ -330,11 +330,7 @@ class TestRippleProcessHandlers:
         return proc, fake
 
     def test_start_recording_calls_client_with_file_name_base(self) -> None:
-        from hapticore.recording.ripple_process import RippleProcess
-        from hapticore.recording.xipppy_client import XipppyClient
-
         proc, fake = self._make_process(auto_stop_time_s=3600)
-        assert isinstance(proc, RippleProcess)
 
         client = XipppyClient(xipppy_module=fake)  # type: ignore[arg-type]
         client.connect()
@@ -355,11 +351,7 @@ class TestRippleProcessHandlers:
         assert kwargs["status"] == "recording"
 
     def test_stop_recording_calls_client_stop(self) -> None:
-        from hapticore.recording.ripple_process import RippleProcess
-        from hapticore.recording.xipppy_client import XipppyClient
-
         proc, fake = self._make_process()
-        assert isinstance(proc, RippleProcess)
 
         client = XipppyClient(xipppy_module=fake)  # type: ignore[arg-type]
         client.connect()
@@ -377,11 +369,7 @@ class TestRippleProcessHandlers:
         assert trial_calls[0][2]["status"] == "stopped"
 
     def test_start_sync_is_silently_ignored(self) -> None:
-        from hapticore.recording.ripple_process import RippleProcess
-        from hapticore.recording.xipppy_client import XipppyClient
-
         proc, fake = self._make_process()
-        assert isinstance(proc, RippleProcess)
 
         client = XipppyClient(xipppy_module=fake)  # type: ignore[arg-type]
         client.connect()
@@ -398,11 +386,7 @@ class TestRippleProcessHandlers:
         assert len(trial_calls) == 0
 
     def test_stop_sync_is_silently_ignored(self) -> None:
-        from hapticore.recording.ripple_process import RippleProcess
-        from hapticore.recording.xipppy_client import XipppyClient
-
         proc, fake = self._make_process()
-        assert isinstance(proc, RippleProcess)
 
         client = XipppyClient(xipppy_module=fake)  # type: ignore[arg-type]
         client.connect()
@@ -419,11 +403,7 @@ class TestRippleProcessHandlers:
         assert len(trial_calls) == 0
 
     def test_wrong_msg_type_is_ignored(self) -> None:
-        from hapticore.recording.ripple_process import RippleProcess
-        from hapticore.recording.xipppy_client import XipppyClient
-
         proc, fake = self._make_process()
-        assert isinstance(proc, RippleProcess)
 
         client = XipppyClient(xipppy_module=fake)  # type: ignore[arg-type]
         client.connect()
@@ -448,14 +428,12 @@ class TestRippleProcessHandlers:
 class TestRippleProcessConstruction:
     def test_raises_on_none_recording_config(self) -> None:
         from hapticore.core.config import ZMQConfig
-        from hapticore.recording.ripple_process import RippleProcess
 
         with pytest.raises((ValueError, TypeError)):
             RippleProcess(None, ZMQConfig())  # type: ignore[arg-type]
 
     def test_request_shutdown_sets_event(self) -> None:
         from hapticore.core.config import RippleRecordingConfig, ZMQConfig
-        from hapticore.recording.ripple_process import RippleProcess
 
         cfg = RippleRecordingConfig()
         proc = RippleProcess(cfg, ZMQConfig())

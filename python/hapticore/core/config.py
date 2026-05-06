@@ -189,7 +189,21 @@ class RippleRecordingConfig(BaseModel):
         default=129, ge=0, le=255,
         description="Trellis operator address (last octet of Trellis IPv4).",
     )
-    auto_increment: bool = True
+    auto_stop_time_s: int = Field(
+        default=7200, ge=0,
+        description="Safety auto-stop in seconds. 0 = disabled. "
+                    "Prevents runaway recordings if stop_recording never arrives.",
+    )
+    trellis_data_dir: str = Field(
+        default="data",
+        description="Base directory for Trellis recording files, as a path "
+                    "on the machine running Trellis. When Trellis is co-located "
+                    "on the rig (Linux), this is a normal Linux path. When "
+                    "Trellis runs on a separate Windows PC, this is a Windows "
+                    "path (e.g. 'C:\\\\Users\\\\Trellis\\\\dataFiles'). "
+                    "SessionManager (Phase 5C) combines this with the session "
+                    "subdirectory to build file_name_base for xipppy.trial().",
+    )
 
 
 class RecordingConfig(BaseModel):
@@ -200,6 +214,7 @@ class RecordingConfig(BaseModel):
     """
 
     save_dir: Path = Field(default=Path("data"))
+    granularity: Literal["session", "block", "trial"] = "session"
     lsl_enabled: bool = True
     ripple: RippleRecordingConfig | None = None
 

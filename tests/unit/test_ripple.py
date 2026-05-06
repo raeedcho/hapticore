@@ -418,6 +418,23 @@ class TestRippleProcessHandlers:
 
         trial_calls = [c for c in fake.calls if c[0] == "trial"]
         assert len(trial_calls) == 0
+    
+    def test_start_recording_empty_file_name_base_is_ignored(self) -> None:
+        proc, fake = self._make_process()
+
+        client = XipppyClient(xipppy_module=fake)  # type: ignore[arg-type]
+        client.connect()
+
+        msg = {
+            "__msg_type__": "SessionControl",
+            "action": "start_recording",
+            "params": {"file_name_base": ""},
+            "timestamp": time.monotonic(),
+        }
+        proc._handle_session_control(client, msg)
+
+        trial_calls = [c for c in fake.calls if c[0] == "trial"]
+        assert len(trial_calls) == 0
 
 
 # ---------------------------------------------------------------------------

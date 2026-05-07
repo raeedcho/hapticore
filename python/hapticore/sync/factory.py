@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -26,6 +27,16 @@ logger = logging.getLogger(__name__)
 # to ZMQ before declaring it ready. Generous to cover slow USB
 # enumeration on some Linux kernels.
 _SYNC_READY_TIMEOUT_S = 5.0
+
+# Polling interval when waiting for SyncProcess to become ready.
+# Short enough to detect a dead process within ~100ms.
+_SYNC_READY_POLL_INTERVAL_S = 0.1
+
+# Brief grace period after readiness for ZMQ subscription propagation.
+# SyncProcess sets the ready event right after sub.subscribe(), but the
+# PUB side needs a moment to learn about the subscription. 50ms is
+# generous for localhost IPC.
+_SYNC_SUBSCRIPTION_GRACE_S = 0.05
 
 # Shutdown timeouts — same structure as display factory.
 _SYNC_SHUTDOWN_TIMEOUT_S = 3.0
@@ -74,18 +85,28 @@ def make_sync_interface(
             proc.start()
             proc_started = True
 
-            if not ready_event.wait(timeout=_SYNC_READY_TIMEOUT_S):
+            deadline = time.monotonic() + _SYNC_READY_TIMEOUT_S
+            while not ready_event.is_set():
                 if not proc.is_alive():
                     raise RuntimeError(
                         f"SyncProcess died during startup "
                         f"(exit code: {proc.exitcode}). Check that the "
                         f"Teensy is connected at {cfg.teensy.port}."
                     )
-                raise RuntimeError(
-                    f"SyncProcess started but did not become ready "
-                    f"within {_SYNC_READY_TIMEOUT_S}s. The Teensy "
-                    f"may be unresponsive."
-                )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        f"SyncProcess started but did not become ready "
+                        f"within {_SYNC_READY_TIMEOUT_S}s. The Teensy "
+                        f"may be unresponsive."
+                    )
+                ready_event.wait(timeout=min(_SYNC_READY_POLL_INTERVAL_S, remaining))
+
+            # Brief grace period for ZMQ subscription propagation before
+            # yielding — SyncProcess sets the ready event right after
+            # sub.subscribe(), but the PUB side needs a moment to learn
+            # about the subscription.
+            time.sleep(_SYNC_SUBSCRIPTION_GRACE_S)
 
             yield TeensySync(publisher)
         finally:

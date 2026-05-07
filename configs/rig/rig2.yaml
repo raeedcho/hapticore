@@ -41,7 +41,8 @@ recording:
   # ripple:  # enable Ripple recording by adding a block like:
   #   use_tcp: true
   #   operator_id: 129
-  #   auto_increment: true
+  #   auto_stop_time_s: 7200
+  #   trellis_data_dir: "data"
 
 sync:
   backend: "teensy"  # one of: mock | teensy

@@ -35,7 +35,7 @@ class TestMakeSyncInterface:
             assert isinstance(sync, MockSync)
             assert isinstance(sync, SyncInterface)
 
-    def test_mock_backend_does_not_import_sync_process(
+    def test_mock_backend_does_not_construct_sync_process(
         self, publisher: EventPublisher,
     ) -> None:
         cfg = SyncConfig(backend="mock")

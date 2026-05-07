@@ -52,39 +52,43 @@ def _run(args: argparse.Namespace) -> None:
     task_cls = getattr(module, class_name)
     task = task_cls()
 
-    with SessionManager(config) as session:
-        trial_manager = TrialManager(
-            conditions=config.task.conditions,
-            block_size=config.task.block_size,
-            num_blocks=config.task.num_blocks,
-            randomization=config.task.randomization,
-        )
-        session.set_trial_manager(trial_manager)
+    try:
+        with SessionManager(config) as session:
+            trial_manager = TrialManager(
+                conditions=config.task.conditions,
+                block_size=config.task.block_size,
+                num_blocks=config.task.num_blocks,
+                randomization=config.task.randomization,
+            )
+            session.set_trial_manager(trial_manager)
 
-        # --fast: override timing parameters to 1ms for smoke testing.
-        param_overrides = dict(config.task.params) if config.task.params else {}
-        if args.fast:
-            for name, spec in task.PARAMS.items():
-                if spec.unit == "s" and spec.type is float:
-                    param_overrides[name] = 0.001
+            # --fast: override timing parameters to 1ms for smoke testing.
+            param_overrides = dict(config.task.params) if config.task.params else {}
+            if args.fast:
+                for name, spec in task.PARAMS.items():
+                    if spec.unit == "s" and spec.type is float:
+                        param_overrides[name] = 0.001
 
-        controller = TaskController(
-            task=task,
-            haptic=session.haptic,
-            display=session.display,
-            sync=session.sync,
-            event_publisher=session.publisher,
-            trial_manager=trial_manager,
-            params=param_overrides or None,
-            poll_rate_hz=1000.0,
-        )
-        try:
-            controller.setup()
-            session.start_recording()
-            controller.run()
-        finally:
-            session.stop_recording()
-            controller.teardown()
+            controller = TaskController(
+                task=task,
+                haptic=session.haptic,
+                display=session.display,
+                sync=session.sync,
+                event_publisher=session.publisher,
+                trial_manager=trial_manager,
+                params=param_overrides or None,
+                poll_rate_hz=1000.0,
+            )
+            try:
+                controller.setup()
+                session.start_recording()
+                controller.run()
+            finally:
+                session.stop_recording()
+                controller.teardown()
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"\nSession receipt: {session.session_dir}/session_receipt.json")
 

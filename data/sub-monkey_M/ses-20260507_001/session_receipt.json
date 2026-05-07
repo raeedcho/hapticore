@@ -1,0 +1,183 @@
+{
+  "session_id": "ses-20260507_001",
+  "subject_id": "monkey_M",
+  "experiment_name": "center_out_reaching",
+  "timing": {
+    "start_utc": "2026-05-07T22:13:55.864523+00:00",
+    "end_utc": "2026-05-07T22:13:56.554034+00:00",
+    "duration_s": 0.689511
+  },
+  "config_snapshot": {
+    "experiment_name": "center_out_reaching",
+    "subject": {
+      "subject_id": "monkey_M",
+      "species": "macaque",
+      "implant_info": {
+        "array_type": "utah",
+        "hemisphere": "left",
+        "area": "M1"
+      }
+    },
+    "haptic": {
+      "backend": "mock",
+      "dhd": null
+    },
+    "display": {
+      "backend": "mock",
+      "resolution": [
+        800,
+        600
+      ],
+      "refresh_rate_hz": 60,
+      "monitor_distance_cm": 50.0,
+      "monitor_width_cm": 53.0,
+      "background_color": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "photodiode_enabled": false,
+      "photodiode_corner": "bottom_left",
+      "cursor_radius": 0.005,
+      "cursor_color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "cursor_visible": true,
+      "cursor_interpolation": false,
+      "display_scale": 1.0,
+      "display_offset": [
+        0.0,
+        0.0
+      ],
+      "screen": 0,
+      "mirror_horizontal": false,
+      "mirror_vertical": false
+    },
+    "recording": {
+      "save_dir": "data",
+      "granularity": "session",
+      "lsl_enabled": false,
+      "ripple": null
+    },
+    "task": {
+      "task_class": "hapticore.tasks.center_out.CenterOutTask",
+      "params": {
+        "num_targets": 8,
+        "target_distance": 0.08,
+        "target_radius": 0.01,
+        "hold_time": 0.5,
+        "reach_timeout": 2.0,
+        "iti_duration": 1.0
+      },
+      "conditions": [
+        {
+          "target_id": 0,
+          "target_position": [
+            0.08,
+            0.0
+          ]
+        },
+        {
+          "target_id": 1,
+          "target_position": [
+            0.0566,
+            0.0566
+          ]
+        },
+        {
+          "target_id": 2,
+          "target_position": [
+            0.0,
+            0.08
+          ]
+        },
+        {
+          "target_id": 3,
+          "target_position": [
+            -0.0566,
+            0.0566
+          ]
+        },
+        {
+          "target_id": 4,
+          "target_position": [
+            -0.08,
+            0.0
+          ]
+        },
+        {
+          "target_id": 5,
+          "target_position": [
+            -0.0566,
+            -0.0566
+          ]
+        },
+        {
+          "target_id": 6,
+          "target_position": [
+            0.0,
+            -0.08
+          ]
+        },
+        {
+          "target_id": 7,
+          "target_position": [
+            0.0566,
+            -0.0566
+          ]
+        }
+      ],
+      "block_size": 8,
+      "num_blocks": 20,
+      "randomization": "pseudorandom"
+    },
+    "sync": {
+      "backend": "mock",
+      "sync_pulse_rate_hz": 1.0,
+      "code_map": {
+        "state_codes": {},
+        "event_codes": {}
+      },
+      "teensy": null
+    },
+    "zmq": {
+      "event_pub_address": "ipc:///tmp/hapticore_ci_events",
+      "haptic_state_address": "ipc:///tmp/hapticore_ci_haptic_state",
+      "haptic_command_address": "ipc:///tmp/hapticore_ci_haptic_cmd",
+      "display_event_address": "ipc:///tmp/hapticore_display_events",
+      "transport": "ipc"
+    }
+  },
+  "initial_params": {
+    "num_targets": 8,
+    "target_distance": 0.08,
+    "target_radius": 0.01,
+    "hold_time": 0.5,
+    "reach_timeout": 2.0,
+    "iti_duration": 1.0
+  },
+  "param_changes": [],
+  "recording": {
+    "session_dir": "data/sub-monkey_M/ses-20260507_001",
+    "granularity": "session",
+    "ripple": null,
+    "lsl_enabled": false
+  },
+  "trial_summary": {
+    "total_trials": 160,
+    "completed_trials": 160,
+    "outcomes": {
+      "timeout": 160
+    },
+    "accuracy": 0.0,
+    "stop_type": "completed"
+  },
+  "hardware": {
+    "haptic_backend": "mock",
+    "display_backend": "mock",
+    "sync_backend": "mock",
+    "recording_systems": []
+  }
+}

@@ -669,15 +669,9 @@ class TestInfrastructureLifecycle:
             mock_display = MagicMock(spec=DisplayInterface)
             mock_sync = MagicMock(spec=SyncInterface)
 
-            mock_haptic_factory.return_value = contextlib.contextmanager(
-                lambda: (yield mock_haptic)
-            )()
-            mock_display_factory.return_value = contextlib.contextmanager(
-                lambda: (yield mock_display)
-            )()
-            mock_sync_factory.return_value = contextlib.contextmanager(
-                lambda: (yield mock_sync)
-            )()
+            mock_haptic_factory.return_value = contextlib.nullcontext(mock_haptic)
+            mock_display_factory.return_value = contextlib.nullcontext(mock_display)
+            mock_sync_factory.return_value = contextlib.nullcontext(mock_sync)
 
             mgr = SessionManager(minimal_config)
             mgr.start()
@@ -703,10 +697,16 @@ class TestInfrastructureLifecycle:
         # Publisher should exist after start
         assert mgr._publisher is not None
         assert mgr._ctx is not None
+        assert mgr._haptic is not None
+        assert mgr._display is not None
+        assert mgr._sync is not None
         mgr.stop()
-        # Publisher and context should be cleaned up after stop
+        # Publisher, context, and interfaces should be cleaned up after stop
         assert mgr._publisher is None
         assert mgr._ctx is None
+        assert mgr._haptic is None
+        assert mgr._display is None
+        assert mgr._sync is None
 
     def test_haptic_property_before_start_raises(
         self, minimal_config: ExperimentConfig,
@@ -770,8 +770,14 @@ class TestInfrastructureLifecycle:
         with SessionManager(minimal_config) as session:
             assert session.publisher is not None
             assert session._exit_stack is not None
+            assert session._haptic is not None
+            assert session._display is not None
+            assert session._sync is not None
         # After __exit__, everything should be cleaned up
         assert session._publisher is None
         assert session._ctx is None
         assert session._exit_stack is None
+        assert session._haptic is None
+        assert session._display is None
+        assert session._sync is None
 

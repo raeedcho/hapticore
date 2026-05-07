@@ -179,9 +179,15 @@ class SessionManager:
                 self._start_ripple_process()
 
         except Exception:
-            self._exit_stack.close()
-            self._exit_stack = None
-            self._cleanup_zmq()
+            try:
+                if self._exit_stack is not None:
+                    self._exit_stack.close()
+                    self._exit_stack = None
+            finally:
+                self._haptic = None
+                self._display = None
+                self._sync = None
+                self._cleanup_zmq()
             raise
 
         self._start_utc = datetime.datetime.now(datetime.UTC)
@@ -194,21 +200,28 @@ class SessionManager:
         2. Shut down RippleProcess.
         3. Close hardware interface ExitStack (haptic, display, sync).
         4. Write session receipt JSON.
-        5. Clean up ZMQ publisher and context.
+        5. Clean up interface refs, ZMQ publisher and context.
+
+        Uses try/finally so that interface refs and ZMQ infrastructure are
+        always cleared even if ExitStack.close() or receipt writing raises.
         """
-        if self._is_recording:
-            self.stop_recording()
+        try:
+            if self._is_recording:
+                self.stop_recording()
 
-        self._stop_ripple_process()
+            self._stop_ripple_process()
 
-        if self._exit_stack is not None:
-            self._exit_stack.close()
-            self._exit_stack = None
+            if self._exit_stack is not None:
+                self._exit_stack.close()
+                self._exit_stack = None
 
-        if self._session_dir is not None:
-            self._write_session_receipt()
-
-        self._cleanup_zmq()
+            if self._session_dir is not None:
+                self._write_session_receipt()
+        finally:
+            self._haptic = None
+            self._display = None
+            self._sync = None
+            self._cleanup_zmq()
 
     def __enter__(self) -> SessionManager:
         self.start()

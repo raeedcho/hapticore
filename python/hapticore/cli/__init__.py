@@ -19,7 +19,7 @@ def _run(args: argparse.Namespace) -> None:
     from hapticore.core.messaging import EventPublisher, make_ipc_address
     from hapticore.display import make_display_interface
     from hapticore.haptic import make_haptic_interface
-    from hapticore.sync import MockSync
+    from hapticore.sync import make_sync_interface
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
 
@@ -112,9 +112,10 @@ def _run(args: argparse.Namespace) -> None:
         ) as haptic, make_display_interface(
             config.display, session_zmq,
             publisher=publisher, mouse_queue=mouse_queue,
-        ) as display:
-            sync = MockSync()  # until Phase 5C wires SyncConfig.backend properly.
-
+        ) as display, make_sync_interface(
+            config.sync, session_zmq,
+            publisher=publisher,
+        ) as sync:
             trial_manager = TrialManager(
                 conditions=config.task.conditions,
                 block_size=config.task.block_size,

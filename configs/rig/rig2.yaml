@@ -44,14 +44,14 @@ recording:
   #   auto_increment: true
 
 sync:
-  backend: "mock"  # one of: mock | teensy
+  backend: "teensy"  # one of: mock | teensy
   sync_pulse_rate_hz: 1.0
   code_map:
     state_codes: {}
     event_codes: {}
-  # teensy:
-  #   port: "/dev/ttyACM0"
-  #   baud: 115200
+  teensy:
+    port: "/dev/ttyACM0"
+    baud: 115200
 
 zmq:
   event_pub_address: "ipc:///tmp/hapticore_events"

@@ -632,3 +632,13 @@ class TestSyncProcessConstruction:
         assert not proc._shutdown.is_set()
         proc.request_shutdown()
         assert proc._shutdown.is_set()
+
+    def test_ready_event_is_optional(self) -> None:
+        from hapticore.core.config import SyncConfig, ZMQConfig
+        from hapticore.sync.sync_process import SyncProcess
+
+        sync_cfg = SyncConfig(backend="teensy")
+        zmq_cfg = ZMQConfig()
+        # Should not raise; ready_event defaults to None.
+        proc = SyncProcess(sync_cfg, zmq_cfg)
+        assert proc._ready_event is None

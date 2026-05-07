@@ -50,6 +50,7 @@ class SyncProcess(multiprocessing.Process):
         zmq_config: ZMQConfig,
         *,
         serial_module: ModuleType | None = None,
+        ready_event: multiprocessing.Event | None = None,
     ) -> None:
         super().__init__(name="SyncProcess", daemon=True)
         if sync_config.backend != "teensy":
@@ -66,6 +67,7 @@ class SyncProcess(multiprocessing.Process):
         self._zmq_config = zmq_config
         self._serial_module = serial_module
         self._shutdown = multiprocessing.Event()
+        self._ready_event = ready_event
 
     def request_shutdown(self) -> None:
         """Signal the process to exit and close the serial connection."""
@@ -97,6 +99,9 @@ class SyncProcess(multiprocessing.Process):
 
         poller = zmq.Poller()
         poller.register(sub, zmq.POLLIN)
+
+        if self._ready_event is not None:
+            self._ready_event.set()
 
         last_error_log_time = 0.0
 

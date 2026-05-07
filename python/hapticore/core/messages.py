@@ -21,6 +21,7 @@ TOPIC_DISPLAY = b"display"
 TOPIC_TRIAL = b"trial"
 TOPIC_SESSION = b"session"
 TOPIC_SYNC = b"sync"
+TOPIC_PARAM = b"param"
 
 
 def _msgpack_default(obj: object) -> Any:
@@ -106,9 +107,32 @@ class SessionControl:
     params: dict[str, Any]
 
 
+@dataclasses.dataclass(slots=True)
+class ParamUpdate:
+    """Published when task parameters change mid-session.
+
+    Logged in the event stream alongside StateTransition events so
+    parameter history can be reconstructed post-hoc.
+
+    Not yet wired to an input mechanism — planted for Phase 5C+.
+    """
+
+    timestamp: float
+    trial_id: int
+    param: str
+    old_value: Any
+    new_value: Any
+
+
 # Type alias for all message types
 MessageType = (
-    HapticState | StateTransition | TrialEvent | Command | CommandResponse | SessionControl
+    HapticState
+    | StateTransition
+    | TrialEvent
+    | Command
+    | CommandResponse
+    | SessionControl
+    | ParamUpdate
 )
 
 # Map class names to classes for deserialization
@@ -130,7 +154,8 @@ def deserialize(
     | type[TrialEvent]
     | type[Command]
     | type[CommandResponse]
-    | type[SessionControl],
+    | type[SessionControl]
+    | type[ParamUpdate],
 ) -> MessageType:
     """Deserialize msgpack bytes to a message dataclass."""
     unpacked = msgpack.unpackb(data, raw=False)

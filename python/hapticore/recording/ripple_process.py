@@ -54,6 +54,7 @@ class RippleProcess(multiprocessing.Process):
         zmq_config: ZMQConfig,
         *,
         xipppy_module: ModuleType | None = None,
+        ready_event: multiprocessing.Event | None = None,
     ) -> None:
         super().__init__(name="RippleProcess", daemon=True)
         if recording_config is None:
@@ -62,6 +63,7 @@ class RippleProcess(multiprocessing.Process):
         self._zmq_config = zmq_config
         self._xipppy_module = xipppy_module
         self._shutdown = multiprocessing.Event()
+        self._ready_event = ready_event
 
     def request_shutdown(self) -> None:
         """Signal the process to exit and close the xipppy connection."""
@@ -91,6 +93,9 @@ class RippleProcess(multiprocessing.Process):
 
             poller = zmq.Poller()
             poller.register(sub, zmq.POLLIN)
+
+            if self._ready_event is not None:
+                self._ready_event.set()
 
             try:
                 while not self._shutdown.is_set():

@@ -458,6 +458,15 @@ class TestRippleProcessConstruction:
         proc.request_shutdown()
         assert proc._shutdown.is_set()
 
+    def test_ready_event_is_optional(self) -> None:
+        from hapticore.core.config import RippleRecordingConfig, ZMQConfig
+
+        cfg = RippleRecordingConfig()
+        zmq_cfg = ZMQConfig()
+        # Should not raise; ready_event defaults to None.
+        proc = RippleProcess(cfg, zmq_cfg)
+        assert proc._ready_event is None
+
 
 # ---------------------------------------------------------------------------
 # TestRippleRecordingConfigDefaults

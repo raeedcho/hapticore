@@ -1,0 +1,663 @@
+"""Unit tests for SessionManager.
+
+Tests cover:
+- Session directory creation and ID generation
+- Recording lifecycle (start/stop recording, is_recording state)
+- Session receipt JSON writing
+- RippleProcess integration (start/stop/shutdown)
+- Trellis file_name_base construction
+"""
+
+from __future__ import annotations
+
+import datetime
+import json
+import multiprocessing
+import time
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import msgpack
+import pytest
+import zmq
+
+from hapticore.core.config import (
+    DisplayConfig,
+    ExperimentConfig,
+    HapticConfig,
+    RecordingConfig,
+    RippleRecordingConfig,
+    SubjectConfig,
+    SyncConfig,
+    TaskConfig,
+    ZMQConfig,
+)
+from hapticore.core.messages import TOPIC_SESSION
+from hapticore.core.messaging import EventPublisher, make_ipc_address
+from hapticore.session import SessionManager
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def publisher() -> Iterator[EventPublisher]:
+    """A real EventPublisher bound to a unique ipc address."""
+    ctx = zmq.Context()
+    pub = EventPublisher(ctx, make_ipc_address("test_session"))
+    yield pub
+    pub.close()
+    ctx.term()
+
+
+@pytest.fixture
+def minimal_config(tmp_path: Path) -> ExperimentConfig:
+    """An ExperimentConfig with all mock backends and save_dir in tmp_path."""
+    return ExperimentConfig(
+        experiment_name="test_experiment",
+        subject=SubjectConfig(subject_id="test-monkey"),
+        haptic=HapticConfig(backend="mock"),
+        display=DisplayConfig(backend="mock"),
+        recording=RecordingConfig(save_dir=tmp_path, granularity="session"),
+        task=TaskConfig(
+            task_class="hapticore.tasks.center_out.CenterOutTask",
+            conditions=[{"target_angle": 0}],
+            block_size=1,
+            num_blocks=1,
+        ),
+        sync=SyncConfig(backend="mock"),
+    )
+
+
+@pytest.fixture
+def ripple_config(tmp_path: Path) -> ExperimentConfig:
+    """An ExperimentConfig with ripple recording configured."""
+    return ExperimentConfig(
+        experiment_name="test_experiment",
+        subject=SubjectConfig(subject_id="test-monkey"),
+        haptic=HapticConfig(backend="mock"),
+        display=DisplayConfig(backend="mock"),
+        recording=RecordingConfig(
+            save_dir=tmp_path,
+            granularity="session",
+            ripple=RippleRecordingConfig(),
+        ),
+        task=TaskConfig(
+            task_class="hapticore.tasks.center_out.CenterOutTask",
+            conditions=[{"target_angle": 0}],
+            block_size=1,
+            num_blocks=1,
+        ),
+        sync=SyncConfig(backend="mock"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# TestSessionDirectory
+# ---------------------------------------------------------------------------
+
+
+class TestSessionDirectory:
+    def test_start_creates_session_directory_tree(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher, tmp_path: Path,
+    ) -> None:
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr.start()
+        try:
+            assert mgr.session_dir is not None
+            assert mgr.session_dir.is_dir()
+            # Standard subdirectories (no ripple → no neural/ripple)
+            assert (mgr.session_dir / "behavior").is_dir()
+            assert (mgr.session_dir / "sync").is_dir()
+            assert (mgr.session_dir / "lsl").is_dir()
+            assert not (mgr.session_dir / "neural" / "ripple").exists()
+        finally:
+            mgr.stop()
+
+    def test_start_creates_neural_ripple_when_ripple_configured(
+        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        fake_proc = MagicMock()
+        fake_proc.is_alive.return_value = True
+
+        def make_and_set_ready(*args: Any, **kwargs: Any) -> MagicMock:
+            ready = kwargs.get("ready_event")
+            if ready is not None:
+                ready.set()
+            return fake_proc
+
+        with patch(
+            "hapticore.session.manager.RippleProcess",
+            side_effect=make_and_set_ready,
+        ):
+            mgr = SessionManager(ripple_config, zm, publisher)
+            mgr.start()
+            try:
+                assert mgr.session_dir is not None
+                assert (mgr.session_dir / "neural" / "ripple").is_dir()
+            finally:
+                mgr.stop()
+
+    def test_session_id_increments(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher, tmp_path: Path,
+    ) -> None:
+        today = datetime.date.today().strftime("%Y%m%d")
+        subject_dir = tmp_path / "sub-test-monkey"
+        subject_dir.mkdir(parents=True)
+        (subject_dir / f"ses-{today}_001").mkdir()
+
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr.start()
+        try:
+            assert mgr.session_id == f"ses-{today}_002"
+        finally:
+            mgr.stop()
+
+    def test_session_dir_without_ripple_skips_neural_ripple(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr.start()
+        try:
+            assert mgr.session_dir is not None
+            assert not (mgr.session_dir / "neural" / "ripple").exists()
+        finally:
+            mgr.stop()
+
+    def test_session_id_property_before_start_is_none(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        assert mgr.session_id is None
+
+    def test_session_dir_property_before_start_is_none(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        assert mgr.session_dir is None
+
+
+# ---------------------------------------------------------------------------
+# TestRecordingLifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestRecordingLifecycle:
+    def _make_sub(self, address: str) -> tuple[zmq.Context[Any], zmq.Socket[Any]]:
+        """Create a SUB socket subscribed to TOPIC_SESSION."""
+        ctx = zmq.Context()
+        sub = ctx.socket(zmq.SUB)
+        sub.setsockopt(zmq.LINGER, 0)
+        sub.connect(address)
+        sub.subscribe(TOPIC_SESSION)
+        return ctx, sub
+
+    def _recv_session_messages(
+        self,
+        sub: zmq.Socket[Any],
+        count: int,
+        timeout_ms: int = 2000,
+    ) -> list[dict[str, Any]]:
+        """Receive `count` TOPIC_SESSION messages."""
+        messages = []
+        poller = zmq.Poller()
+        poller.register(sub, zmq.POLLIN)
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while len(messages) < count:
+            remaining_ms = int((deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                break
+            socks = dict(poller.poll(remaining_ms))
+            if sub in socks:
+                _, payload = sub.recv_multipart()
+                messages.append(msgpack.unpackb(payload, raw=False))
+        return messages
+
+    def test_start_recording_publishes_three_messages(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        pub_address = publisher._socket.last_endpoint.decode()
+        sub_ctx, sub = self._make_sub(pub_address)
+        time.sleep(0.05)  # slow-joiner
+        try:
+            mgr = SessionManager(minimal_config, zm, publisher)
+            mgr.start()
+            mgr.start_recording()
+            messages = self._recv_session_messages(sub, 3)
+            assert len(messages) == 3
+            assert messages[0]["action"] == "start_sync"
+            assert messages[1]["action"] == "start_camera_trigger"
+            assert messages[2]["action"] == "start_recording"
+            assert "file_name_base" in messages[2]["params"]
+            mgr.stop()
+        finally:
+            sub.close()
+            sub_ctx.term()
+
+    def test_stop_recording_publishes_three_messages(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        pub_address = publisher._socket.last_endpoint.decode()
+        sub_ctx, sub = self._make_sub(pub_address)
+        time.sleep(0.05)
+        try:
+            mgr = SessionManager(minimal_config, zm, publisher)
+            mgr.start()
+            mgr.start_recording()
+            # drain start messages
+            self._recv_session_messages(sub, 3)
+            mgr.stop_recording()
+            messages = self._recv_session_messages(sub, 3)
+            assert len(messages) == 3
+            assert messages[0]["action"] == "stop_recording"
+            assert messages[1]["action"] == "stop_camera_trigger"
+            assert messages[2]["action"] == "stop_sync"
+            mgr.stop()
+        finally:
+            sub.close()
+            sub_ctx.term()
+
+    def test_start_recording_raises_if_not_started(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        with pytest.raises(RuntimeError, match="start\\(\\)"):
+            mgr.start_recording()
+
+    def test_start_recording_raises_for_block_granularity(
+        self, publisher: EventPublisher, tmp_path: Path,
+    ) -> None:
+        config = ExperimentConfig(
+            experiment_name="test",
+            subject=SubjectConfig(subject_id="monkey"),
+            haptic=HapticConfig(backend="mock"),
+            display=DisplayConfig(backend="mock"),
+            recording=RecordingConfig(save_dir=tmp_path, granularity="block"),
+            task=TaskConfig(
+                task_class="hapticore.tasks.center_out.CenterOutTask",
+                conditions=[{"target_angle": 0}],
+                block_size=1,
+                num_blocks=1,
+            ),
+            sync=SyncConfig(backend="mock"),
+        )
+        zm = ZMQConfig()
+        mgr = SessionManager(config, zm, publisher)
+        mgr.start()
+        try:
+            with pytest.raises(NotImplementedError):
+                mgr.start_recording()
+        finally:
+            mgr.stop()
+
+    def test_start_recording_raises_for_trial_granularity(
+        self, publisher: EventPublisher, tmp_path: Path,
+    ) -> None:
+        config = ExperimentConfig(
+            experiment_name="test",
+            subject=SubjectConfig(subject_id="monkey"),
+            haptic=HapticConfig(backend="mock"),
+            display=DisplayConfig(backend="mock"),
+            recording=RecordingConfig(save_dir=tmp_path, granularity="trial"),
+            task=TaskConfig(
+                task_class="hapticore.tasks.center_out.CenterOutTask",
+                conditions=[{"target_angle": 0}],
+                block_size=1,
+                num_blocks=1,
+            ),
+            sync=SyncConfig(backend="mock"),
+        )
+        zm = ZMQConfig()
+        mgr = SessionManager(config, zm, publisher)
+        mgr.start()
+        try:
+            with pytest.raises(NotImplementedError):
+                mgr.start_recording()
+        finally:
+            mgr.stop()
+
+    def test_is_recording_tracks_state(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr.start()
+        try:
+            assert not mgr.is_recording
+            mgr.start_recording()
+            assert mgr.is_recording
+            mgr.stop_recording()
+            assert not mgr.is_recording
+        finally:
+            mgr.stop()
+
+    def test_stop_calls_stop_recording_if_active(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        pub_address = publisher._socket.last_endpoint.decode()
+        sub_ctx, sub = self._make_sub(pub_address)
+        time.sleep(0.05)
+        try:
+            mgr = SessionManager(minimal_config, zm, publisher)
+            mgr.start()
+            mgr.start_recording()
+            # drain start messages
+            self._recv_session_messages(sub, 3)
+            # stop without calling stop_recording() explicitly
+            mgr.stop()
+            stop_messages = self._recv_session_messages(sub, 3)
+            assert any(m["action"] == "stop_recording" for m in stop_messages)
+        finally:
+            sub.close()
+            sub_ctx.term()
+
+
+# ---------------------------------------------------------------------------
+# TestSessionReceipt
+# ---------------------------------------------------------------------------
+
+
+class TestSessionReceipt:
+    def test_stop_writes_receipt_json(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr.start()
+        mgr.start_recording()
+        mgr.stop_recording()
+        mgr.stop()
+
+        receipt_path = mgr.session_dir / "session_receipt.json"  # type: ignore[operator]
+        assert receipt_path.exists()
+        with receipt_path.open() as f:
+            receipt = json.load(f)
+        for key in ("session_id", "subject_id", "experiment_name", "timing",
+                    "config_snapshot", "recording", "hardware"):
+            assert key in receipt, f"Missing key: {key}"
+        assert receipt["session_id"] == mgr.session_id
+        assert receipt["subject_id"] == "test-monkey"
+        assert receipt["experiment_name"] == "test_experiment"
+        assert "start_utc" in receipt["timing"]
+        assert "end_utc" in receipt["timing"]
+        assert "duration_s" in receipt["timing"]
+
+    def test_receipt_includes_trial_summary(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        from hapticore.tasks.trial_manager import TrialManager
+
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        trial_manager = TrialManager(
+            conditions=[{"target_angle": 0}],
+            block_size=1,
+            num_blocks=1,
+        )
+        mgr.set_trial_manager(trial_manager)
+        mgr.start()
+        mgr.stop()
+
+        receipt_path = mgr.session_dir / "session_receipt.json"  # type: ignore[operator]
+        with receipt_path.open() as f:
+            receipt = json.load(f)
+        assert receipt["trial_summary"] is not None
+        assert "total_trials" in receipt["trial_summary"]
+
+    def test_receipt_without_trial_manager_has_null_summary(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr.start()
+        mgr.stop()
+
+        receipt_path = mgr.session_dir / "session_receipt.json"  # type: ignore[operator]
+        with receipt_path.open() as f:
+            receipt = json.load(f)
+        assert receipt["trial_summary"] is None
+
+    def test_receipt_hardware_section(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr.start()
+        mgr.stop()
+
+        receipt_path = mgr.session_dir / "session_receipt.json"  # type: ignore[operator]
+        with receipt_path.open() as f:
+            receipt = json.load(f)
+        hw = receipt["hardware"]
+        assert hw["haptic_backend"] == "mock"
+        assert hw["display_backend"] == "mock"
+        assert hw["sync_backend"] == "mock"
+        assert isinstance(hw["recording_systems"], list)
+
+
+# ---------------------------------------------------------------------------
+# TestRippleProcessIntegration
+# ---------------------------------------------------------------------------
+
+
+class TestRippleProcessIntegration:
+    def _make_ready_proc_mock(self) -> tuple[MagicMock, Any]:
+        """Create a mock RippleProcess that sets ready_event on start()."""
+        fake_proc = MagicMock()
+        fake_proc.is_alive.return_value = True
+        captured: dict[str, Any] = {}
+
+        def make_and_capture(*args: Any, **kwargs: Any) -> MagicMock:
+            captured.update(kwargs)
+            ready = kwargs.get("ready_event")
+
+            def start_and_set_ready() -> None:
+                if ready is not None:
+                    ready.set()
+
+            fake_proc.start.side_effect = start_and_set_ready
+            return fake_proc
+
+        return fake_proc, make_and_capture
+
+    def test_ripple_process_started_when_configured(
+        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        fake_proc, make_and_capture = self._make_ready_proc_mock()
+
+        with patch(
+            "hapticore.session.manager.RippleProcess",
+            side_effect=make_and_capture,
+        ) as mock_cls:
+            mgr = SessionManager(ripple_config, zm, publisher)
+            mgr.start()
+            try:
+                mock_cls.assert_called_once()
+                fake_proc.start.assert_called_once()
+            finally:
+                mgr.stop()
+
+    def test_ripple_process_not_started_when_unconfigured(
+        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        with patch(
+            "hapticore.session.manager.RippleProcess",
+        ) as mock_cls:
+            mgr = SessionManager(minimal_config, zm, publisher)
+            mgr.start()
+            try:
+                mock_cls.assert_not_called()
+            finally:
+                mgr.stop()
+
+    def test_ripple_process_shutdown_on_stop(
+        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        fake_proc, make_and_capture = self._make_ready_proc_mock()
+        fake_proc.is_alive.return_value = False
+
+        with patch(
+            "hapticore.session.manager.RippleProcess",
+            side_effect=make_and_capture,
+        ):
+            mgr = SessionManager(ripple_config, zm, publisher)
+            mgr.start()
+            mgr.stop()
+
+        fake_proc.request_shutdown.assert_called_once()
+        fake_proc.join.assert_called()
+
+    def test_ripple_process_terminates_if_join_times_out(
+        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        fake_proc, make_and_capture = self._make_ready_proc_mock()
+        # Alive after first join, dead after terminate+join.
+        fake_proc.is_alive.side_effect = [True, True, False]
+
+        with patch(
+            "hapticore.session.manager.RippleProcess",
+            side_effect=make_and_capture,
+        ):
+            mgr = SessionManager(ripple_config, zm, publisher)
+            mgr.start()
+            mgr.stop()
+
+        fake_proc.terminate.assert_called_once()
+
+    def test_ripple_process_dies_during_startup_raises(
+        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+    ) -> None:
+        zm = ZMQConfig()
+        fake_proc = MagicMock()
+        fake_proc.is_alive.return_value = False  # Process dies immediately
+        fake_proc.exitcode = -9
+
+        def make_dead(*args: Any, **kwargs: Any) -> MagicMock:
+            # Don't set the ready event — process "dies" immediately
+            return fake_proc
+
+        with patch(
+            "hapticore.session.manager.RippleProcess",
+            side_effect=make_dead,
+        ):
+            mgr = SessionManager(ripple_config, zm, publisher)
+            with pytest.raises(RuntimeError, match="died during startup"):
+                mgr.start()
+
+
+# ---------------------------------------------------------------------------
+# TestTrellisFileNameBase
+# ---------------------------------------------------------------------------
+
+
+class TestTrellisFileNameBase:
+    def test_colocated_trellis_path(
+        self, publisher: EventPublisher, tmp_path: Path,
+    ) -> None:
+        config = ExperimentConfig(
+            experiment_name="test",
+            subject=SubjectConfig(subject_id="monkey"),
+            haptic=HapticConfig(backend="mock"),
+            display=DisplayConfig(backend="mock"),
+            recording=RecordingConfig(
+                save_dir=tmp_path,
+                granularity="session",
+                ripple=RippleRecordingConfig(trellis_data_dir=str(tmp_path)),
+            ),
+            task=TaskConfig(
+                task_class="hapticore.tasks.center_out.CenterOutTask",
+                conditions=[{"target_angle": 0}],
+                block_size=1,
+                num_blocks=1,
+            ),
+            sync=SyncConfig(backend="mock"),
+        )
+        zm = ZMQConfig()
+        fake_proc = MagicMock()
+        fake_proc.is_alive.return_value = True
+
+        def make_and_set_ready(*args: Any, **kwargs: Any) -> MagicMock:
+            ready = kwargs.get("ready_event")
+            if ready is not None:
+                ready.set()
+            return fake_proc
+
+        with patch(
+            "hapticore.session.manager.RippleProcess",
+            side_effect=make_and_set_ready,
+        ):
+            mgr = SessionManager(config, zm, publisher)
+            mgr.start()
+            try:
+                mgr.start_recording()
+                assert mgr._trellis_file_name_base is not None
+                assert str(tmp_path) in mgr._trellis_file_name_base
+                assert mgr.session_id in mgr._trellis_file_name_base  # type: ignore[operator]
+            finally:
+                mgr.stop()
+
+    def test_remote_trellis_path(
+        self, publisher: EventPublisher, tmp_path: Path,
+    ) -> None:
+        remote_dir = r"C:\Users\Trellis\dataFiles"
+        config = ExperimentConfig(
+            experiment_name="test",
+            subject=SubjectConfig(subject_id="monkey"),
+            haptic=HapticConfig(backend="mock"),
+            display=DisplayConfig(backend="mock"),
+            recording=RecordingConfig(
+                save_dir=tmp_path,
+                granularity="session",
+                ripple=RippleRecordingConfig(trellis_data_dir=remote_dir),
+            ),
+            task=TaskConfig(
+                task_class="hapticore.tasks.center_out.CenterOutTask",
+                conditions=[{"target_angle": 0}],
+                block_size=1,
+                num_blocks=1,
+            ),
+            sync=SyncConfig(backend="mock"),
+        )
+        zm = ZMQConfig()
+        fake_proc = MagicMock()
+        fake_proc.is_alive.return_value = True
+
+        def make_and_set_ready(*args: Any, **kwargs: Any) -> MagicMock:
+            ready = kwargs.get("ready_event")
+            if ready is not None:
+                ready.set()
+            return fake_proc
+
+        with patch(
+            "hapticore.session.manager.RippleProcess",
+            side_effect=make_and_set_ready,
+        ):
+            mgr = SessionManager(config, zm, publisher)
+            mgr.start()
+            try:
+                mgr.start_recording()
+                assert mgr._trellis_file_name_base is not None
+                assert mgr._trellis_file_name_base.startswith(remote_dir)
+                # Session-relative portion uses forward slashes
+                session_relative_part = mgr._trellis_file_name_base[len(remote_dir):]
+                assert "\\" not in session_relative_part
+            finally:
+                mgr.stop()

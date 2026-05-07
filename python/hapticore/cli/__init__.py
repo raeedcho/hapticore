@@ -19,6 +19,7 @@ def _run(args: argparse.Namespace) -> None:
     from hapticore.core.messaging import EventPublisher, make_ipc_address
     from hapticore.display import make_display_interface
     from hapticore.haptic import make_haptic_interface
+    from hapticore.session import SessionManager
     from hapticore.sync import make_sync_interface
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
@@ -115,13 +116,16 @@ def _run(args: argparse.Namespace) -> None:
         ) as display, make_sync_interface(
             config.sync, session_zmq,
             publisher=publisher,
-        ) as sync:
+        ) as sync, SessionManager(
+            config, session_zmq, publisher,
+        ) as session:
             trial_manager = TrialManager(
                 conditions=config.task.conditions,
                 block_size=config.task.block_size,
                 num_blocks=config.task.num_blocks,
                 randomization=config.task.randomization,
             )
+            session.set_trial_manager(trial_manager)
 
             # --fast: override timing parameters to 1ms for smoke testing.
             param_overrides = dict(config.task.params) if config.task.params else {}
@@ -138,19 +142,16 @@ def _run(args: argparse.Namespace) -> None:
             )
             try:
                 controller.setup()
+                session.start_recording()
                 controller.run()
             finally:
+                session.stop_recording()
                 controller.teardown()
     finally:
         publisher.close()
         ctx.term()
 
-    summary = trial_manager.get_summary()
-    print("\n=== Session Summary ===")
-    print(f"Total trials: {summary['total_trials']}")
-    print(f"Completed trials: {summary['completed_trials']}")
-    print(f"Outcomes: {summary['outcomes']}")
-    print(f"Accuracy: {summary['accuracy']:.1%}")
+    print(f"\nSession receipt: {session.session_dir}/session_receipt.json")
 
 
 def _graph_task(args: argparse.Namespace) -> None:

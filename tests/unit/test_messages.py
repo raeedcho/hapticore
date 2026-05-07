@@ -9,6 +9,7 @@ from hapticore.core.messages import (
     Command,
     CommandResponse,
     HapticState,
+    ParamUpdate,
     SessionControl,
     StateTransition,
     TrialEvent,
@@ -260,3 +261,23 @@ class TestSessionControl:
         assert restored.timestamp == msg.timestamp
         assert restored.action == msg.action
         assert restored.params == msg.params
+
+
+class TestParamUpdate:
+    def test_param_update_serialization_roundtrip(self) -> None:
+        import time
+        msg = ParamUpdate(
+            timestamp=time.monotonic(),
+            trial_id=42,
+            param="hold_time_s",
+            old_value=0.5,
+            new_value=1.0,
+        )
+        data = serialize(msg)
+        restored = deserialize(data, ParamUpdate)
+        assert isinstance(restored, ParamUpdate)
+        assert restored.timestamp == msg.timestamp
+        assert restored.trial_id == msg.trial_id
+        assert restored.param == msg.param
+        assert restored.old_value == msg.old_value
+        assert restored.new_value == msg.new_value

@@ -1,25 +1,35 @@
 """SessionManager — recording orchestration and session lifecycle.
 
-Owns the recording subprocess lifecycle, publishes session-level commands,
-creates the data directory, and writes the session receipt JSON.
+Owns all session infrastructure: ZMQ context, EventPublisher,
+session-specific ZMQ addresses, mouse queue, hardware factories
+(haptic, display, sync), recording subprocess lifecycle, session
+directory, and session receipt.
 """
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import logging
 import multiprocessing
+import multiprocessing.queues
 import re
 import time
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
+import zmq
+
 from hapticore.core.config import ExperimentConfig, ZMQConfig
+from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
 from hapticore.core.messages import TOPIC_SESSION, SessionControl, serialize
 from hapticore.core.messaging import EventPublisher
+from hapticore.display import make_display_interface
+from hapticore.haptic import make_haptic_interface
 from hapticore.recording.ripple_process import RippleProcess
+from hapticore.sync import make_sync_interface
 
 if TYPE_CHECKING:
     from hapticore.tasks.trial_manager import TrialManager
@@ -42,19 +52,21 @@ _RIPPLE_TERMINATE_JOIN_TIMEOUT_S = 2.0
 
 
 class SessionManager:
-    """Orchestrates recording processes and session lifecycle.
+    """Orchestrates all session infrastructure and lifecycle.
 
     Lifecycle methods map to distinct phases:
 
-    - ``start()`` / ``__enter__``: Launch recording subprocesses
-      (RippleProcess if configured), create session directory, wait
-      for process readiness.
+    - ``start()`` / ``__enter__``: Create ZMQ infrastructure, launch
+      hardware interfaces (haptic, display, sync) via ExitStack, launch
+      recording subprocesses (RippleProcess if configured), create session
+      directory, wait for process readiness.
     - ``start_recording()``: Publish start_sync, start_camera_trigger,
       start_recording to the event bus. SyncProcess and RippleProcess
       act on these.
     - ``stop_recording()``: Publish stops in reverse order.
     - ``stop()`` / ``__exit__``: Shut down recording subprocesses,
-      write session receipt JSON.
+      close hardware interfaces, clean up ZMQ infrastructure, write
+      session receipt JSON.
 
     Separating process lifecycle from recording lifecycle supports
     test-before-record workflows: start() launches everything, the
@@ -64,8 +76,6 @@ class SessionManager:
     Args:
         config: The full ExperimentConfig (needed for subject info,
             recording config, and config snapshot in the receipt).
-        zmq_config: Session-specific ZMQ addresses.
-        publisher: Shared EventPublisher for publishing SessionControl.
         trial_manager: Reference to the TrialManager for the session
             summary in the receipt. Optional — may be None if the
             SessionManager is started before the TrialManager exists.
@@ -75,17 +85,25 @@ class SessionManager:
     def __init__(
         self,
         config: ExperimentConfig,
-        zmq_config: ZMQConfig,
-        publisher: EventPublisher,
         *,
         trial_manager: TrialManager | None = None,
         xipppy_module: ModuleType | None = None,
     ) -> None:
         self._config = config
-        self._zmq_config = zmq_config
-        self._publisher = publisher
         self._trial_manager = trial_manager
         self._xipppy_module = xipppy_module
+
+        # Infrastructure — created in start()
+        self._zmq_config: ZMQConfig | None = None
+        self._ctx: zmq.Context[Any] | None = None
+        self._publisher: EventPublisher | None = None
+        self._mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None
+        self._exit_stack: contextlib.ExitStack | None = None
+
+        # Interfaces — available after start()
+        self._haptic: HapticInterface | None = None
+        self._display: DisplayInterface | None = None
+        self._sync: SyncInterface | None = None
 
         self._session_id: str | None = None
         self._session_dir: Path | None = None
@@ -99,39 +117,111 @@ class SessionManager:
     # -- Process lifecycle --------------------------------------------------
 
     def start(self) -> None:
-        """Start recording subprocesses and create session directory.
+        """Start all session infrastructure and recording subprocesses.
 
-        1. Generate session_id: ses-{YYYYMMDD}_{NNN} where NNN is
-           auto-incremented by scanning existing directories under
-           {save_dir}/sub-{subject_id}/.
-        2. Create session directory tree.
-        3. If config.recording.ripple is not None: start RippleProcess
+        1. Validate backend compatibility.
+        2. Generate session_id and create session directory tree.
+        3. Create ZMQ context and EventPublisher.
+        4. Create mouse queue if dhd.mouse_input is enabled.
+        5. Enter hardware factories (haptic, display, sync) via ExitStack.
+        6. If config.recording.ripple is not None: start RippleProcess
            with ready_event, wait with polling loop, ZMQ grace period.
-        4. Record session start time.
+        7. Record session start time.
         """
+        # Validate backend compatibility before launching anything.
+        if (
+            self._config.haptic.backend == "dhd"
+            and self._config.haptic.dhd is not None
+            and self._config.haptic.dhd.mouse_input
+            and self._config.display.backend != "psychopy"
+        ):
+            raise ValueError(
+                "haptic.dhd.mouse_input=True requires display.backend='psychopy' "
+                "(mouse position comes from the PsychoPy window)."
+            )
+
         self._session_id = self._build_session_id()
         self._session_dir = self._create_session_dirs()
 
-        if self._config.recording.ripple is not None:
-            self._start_ripple_process()
+        # ZMQ infrastructure
+        self._zmq_config = self._build_zmq_config()
+        self._ctx = zmq.Context()
+        self._publisher = EventPublisher(
+            self._ctx, self._zmq_config.event_pub_address,
+        )
+
+        # Mouse queue for dhd.mouse_input
+        self._mouse_queue = self._create_mouse_queue()
+
+        # Hardware factories via ExitStack (exits in reverse on stop)
+        self._exit_stack = contextlib.ExitStack()
+        try:
+            self._haptic = self._exit_stack.enter_context(
+                make_haptic_interface(
+                    self._config.haptic, self._zmq_config,
+                    context=self._ctx, mouse_queue=self._mouse_queue,
+                )
+            )
+            self._display = self._exit_stack.enter_context(
+                make_display_interface(
+                    self._config.display, self._zmq_config,
+                    publisher=self._publisher, mouse_queue=self._mouse_queue,
+                )
+            )
+            self._sync = self._exit_stack.enter_context(
+                make_sync_interface(
+                    self._config.sync, self._zmq_config,
+                    publisher=self._publisher,
+                )
+            )
+
+            if self._config.recording.ripple is not None:
+                self._start_ripple_process()
+
+        except Exception:
+            try:
+                if self._exit_stack is not None:
+                    self._exit_stack.close()
+                    self._exit_stack = None
+            finally:
+                self._haptic = None
+                self._display = None
+                self._sync = None
+                self._cleanup_zmq()
+            raise
 
         self._start_utc = datetime.datetime.now(datetime.UTC)
         logger.info("Session started: %s -> %s", self._session_id, self._session_dir)
 
     def stop(self) -> None:
-        """Shut down recording subprocesses and write session receipt.
+        """Shut down hardware interfaces, recording subprocesses, and ZMQ.
 
         1. If recording is active, call stop_recording() first.
         2. Shut down RippleProcess.
-        3. Write session receipt JSON.
+        3. Close hardware interface ExitStack (haptic, display, sync).
+        4. Write session receipt JSON.
+        5. Clean up interface refs, ZMQ publisher and context.
+
+        Uses try/finally so that interface refs and ZMQ infrastructure are
+        always cleared even if ExitStack.close() or receipt writing raises.
         """
-        if self._is_recording:
-            self.stop_recording()
+        try:
+            if self._is_recording:
+                self.stop_recording()
 
-        self._stop_ripple_process()
+            self._stop_ripple_process()
 
-        if self._session_dir is not None:
-            self._write_session_receipt()
+            if self._exit_stack is not None:
+                self._exit_stack.close()
+                self._exit_stack = None
+
+            if self._session_dir is not None:
+                self._write_session_receipt()
+        finally:
+            self._haptic = None
+            self._display = None
+            self._sync = None
+            self._cleanup_zmq()
 
     def __enter__(self) -> SessionManager:
         self.start()
@@ -211,6 +301,34 @@ class SessionManager:
         """Whether recording is currently active."""
         return self._is_recording
 
+    @property
+    def haptic(self) -> HapticInterface:
+        """The haptic interface. Available after start()."""
+        if self._haptic is None:
+            raise RuntimeError("SessionManager.start() must be called first")
+        return self._haptic
+
+    @property
+    def display(self) -> DisplayInterface:
+        """The display interface. Available after start()."""
+        if self._display is None:
+            raise RuntimeError("SessionManager.start() must be called first")
+        return self._display
+
+    @property
+    def sync(self) -> SyncInterface:
+        """The sync interface. Available after start()."""
+        if self._sync is None:
+            raise RuntimeError("SessionManager.start() must be called first")
+        return self._sync
+
+    @property
+    def publisher(self) -> EventPublisher:
+        """The event publisher. Available after start()."""
+        if self._publisher is None:
+            raise RuntimeError("SessionManager.start() must be called first")
+        return self._publisher
+
     # -- Internal -----------------------------------------------------------
 
     def _build_session_id(self) -> str:
@@ -228,6 +346,50 @@ class SessionManager:
                 if m:
                     max_num = max(max_num, int(m.group(1)))
         return f"ses-{today}_{max_num + 1:03d}"
+
+    def _build_zmq_config(self) -> ZMQConfig:
+        """Create session-specific ZMQ addresses.
+
+        Generates random IPC addresses so parallel sessions don't
+        collide. For backend="dhd", overrides haptic addresses from
+        the user's ZMQ config so the client finds an externally
+        launched haptic server.
+        """
+        from hapticore.core.messaging import make_ipc_address
+        zmq_cfg = ZMQConfig(
+            event_pub_address=make_ipc_address("hc_evt"),
+            haptic_state_address=make_ipc_address("hc_state"),
+            haptic_command_address=make_ipc_address("hc_cmd"),
+            display_event_address=make_ipc_address("hc_disp"),
+        )
+        if self._config.haptic.backend == "dhd":
+            zmq_cfg = zmq_cfg.model_copy(update={
+                "haptic_state_address": self._config.zmq.haptic_state_address,
+                "haptic_command_address": self._config.zmq.haptic_command_address,
+            })
+        return zmq_cfg
+
+    def _create_mouse_queue(
+        self,
+    ) -> multiprocessing.queues.Queue[tuple[float, float]] | None:
+        """Create mouse queue if dhd.mouse_input is enabled."""
+        if (
+            self._config.haptic.backend == "dhd"
+            and self._config.haptic.dhd is not None
+            and self._config.haptic.dhd.mouse_input
+        ):
+            from multiprocessing import Queue as MpQueue
+            return MpQueue(maxsize=4)
+        return None
+
+    def _cleanup_zmq(self) -> None:
+        """Close publisher and ZMQ context."""
+        if self._publisher is not None:
+            self._publisher.close()
+            self._publisher = None
+        if self._ctx is not None:
+            self._ctx.term()
+            self._ctx = None
 
     def _create_session_dirs(self) -> Path:
         """Create the session directory tree. Returns the session_dir."""
@@ -274,6 +436,7 @@ class SessionManager:
     def _start_ripple_process(self) -> None:
         """Start RippleProcess with readiness polling loop."""
         assert self._config.recording.ripple is not None
+        assert self._zmq_config is not None
         ready_event = multiprocessing.Event()
         proc = RippleProcess(
             self._config.recording.ripple,
@@ -336,7 +499,10 @@ class SessionManager:
             action=action,
             params=params or {},
         )
-        self._publisher.publish(TOPIC_SESSION, serialize(msg))
+        # Use the property here to get a clear RuntimeError if called before
+        # start() — though in practice start_recording/stop_recording both
+        # guard this themselves.
+        self.publisher.publish(TOPIC_SESSION, serialize(msg))
 
     def _write_session_receipt(self) -> None:
         """Write session_receipt.json to session_dir."""

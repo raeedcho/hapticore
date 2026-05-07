@@ -10,17 +10,8 @@ import sys
 
 def _run(args: argparse.Namespace) -> None:
     """Run a task against the hardware specified in the rig config."""
-    import multiprocessing
-    import multiprocessing.queues
-
-    import zmq
-
-    from hapticore.core.config import ZMQConfig, load_session_config
-    from hapticore.core.messaging import EventPublisher, make_ipc_address
-    from hapticore.display import make_display_interface
-    from hapticore.haptic import make_haptic_interface
+    from hapticore.core.config import load_session_config
     from hapticore.session import SessionManager
-    from hapticore.sync import make_sync_interface
     from hapticore.tasks.controller import TaskController
     from hapticore.tasks.trial_manager import TrialManager
 
@@ -46,7 +37,7 @@ def _run(args: argparse.Namespace) -> None:
         overrides=session_overrides or None,
     )
 
-    # Import the task class (unchanged logic).
+    # Import the task class.
     task_class_path = config.task.task_class
     if "." not in task_class_path:
         print(
@@ -61,64 +52,8 @@ def _run(args: argparse.Namespace) -> None:
     task_cls = getattr(module, class_name)
     task = task_cls()
 
-    # Validate backend+display compatibility before launching anything.
-    if (
-        config.haptic.backend == "dhd"
-        and config.haptic.dhd is not None
-        and config.haptic.dhd.mouse_input
-        and config.display.backend != "psychopy"
-    ):
-        print(
-            "Error: haptic.dhd.mouse_input=True requires display.backend='psychopy' "
-            "(mouse position comes from the PsychoPy window).",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    # Session-specific ZMQConfig with random IPC addresses so parallel
-    # sessions don't collide, and so EventPublisher and DisplayProcess share
-    # the same addresses.
-    session_zmq = ZMQConfig(
-        event_pub_address=make_ipc_address("hc_evt"),
-        haptic_state_address=make_ipc_address("hc_state"),
-        haptic_command_address=make_ipc_address("hc_cmd"),
-        display_event_address=make_ipc_address("hc_disp"),
-    )
-    # For backend="dhd", override haptic addresses from the user-provided ZMQConfig
-    # so the client finds the server the user launched separately.
-    if config.haptic.backend == "dhd":
-        session_zmq = session_zmq.model_copy(update={
-            "haptic_state_address": config.zmq.haptic_state_address,
-            "haptic_command_address": config.zmq.haptic_command_address,
-        })
-
-    # Mouse queue for dhd.mouse_input. None otherwise.
-    mouse_queue: multiprocessing.queues.Queue[tuple[float, float]] | None = None
-    if (
-        config.haptic.backend == "dhd"
-        and config.haptic.dhd is not None
-        and config.haptic.dhd.mouse_input
-    ):
-        from multiprocessing import Queue as MpQueue
-        mouse_queue = MpQueue(maxsize=4)
-
-    # ZMQ context shared between event publisher, HapticClient, and DisplayProcess.
-    ctx = zmq.Context()
-    publisher = EventPublisher(ctx, session_zmq.event_pub_address)
-
     try:
-        with make_haptic_interface(
-            config.haptic, session_zmq,
-            context=ctx, mouse_queue=mouse_queue,
-        ) as haptic, make_display_interface(
-            config.display, session_zmq,
-            publisher=publisher, mouse_queue=mouse_queue,
-        ) as display, make_sync_interface(
-            config.sync, session_zmq,
-            publisher=publisher,
-        ) as sync, SessionManager(
-            config, session_zmq, publisher,
-        ) as session:
+        with SessionManager(config) as session:
             trial_manager = TrialManager(
                 conditions=config.task.conditions,
                 block_size=config.task.block_size,
@@ -135,8 +70,12 @@ def _run(args: argparse.Namespace) -> None:
                         param_overrides[name] = 0.001
 
             controller = TaskController(
-                task=task, haptic=haptic, display=display, sync=sync,
-                event_publisher=publisher, trial_manager=trial_manager,
+                task=task,
+                haptic=session.haptic,
+                display=session.display,
+                sync=session.sync,
+                event_publisher=session.publisher,
+                trial_manager=trial_manager,
                 params=param_overrides or None,
                 poll_rate_hz=1000.0,
             )
@@ -147,9 +86,9 @@ def _run(args: argparse.Namespace) -> None:
             finally:
                 session.stop_recording()
                 controller.teardown()
-    finally:
-        publisher.close()
-        ctx.term()
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"\nSession receipt: {session.session_dir}/session_receipt.json")
 

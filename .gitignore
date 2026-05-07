@@ -17,3 +17,4 @@ compile_commands.json
 .pixi/*
 !.pixi/config.toml
 cpp/haptic_server/build/
+data/

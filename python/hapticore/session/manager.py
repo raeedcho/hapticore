@@ -486,6 +486,9 @@ class SessionManager:
             action=action,
             params=params or {},
         )
+        # Use the property here to get a clear RuntimeError if called before
+        # start() — though in practice start_recording/stop_recording both
+        # guard this themselves.
         self.publisher.publish(TOPIC_SESSION, serialize(msg))
 
     def _write_session_receipt(self) -> None:

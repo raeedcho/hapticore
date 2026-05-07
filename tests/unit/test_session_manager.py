@@ -17,9 +17,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import json
-import multiprocessing
 import time
-from collections.abc import Generator, Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -90,32 +88,6 @@ def ripple_config(tmp_path: Path) -> ExperimentConfig:
         sync=SyncConfig(backend="mock"),
     )
 
-
-# ---------------------------------------------------------------------------
-# Helper: mock all three hardware factories
-# ---------------------------------------------------------------------------
-
-
-@contextlib.contextmanager
-def _mock_factories() -> Generator[
-    tuple[MagicMock, MagicMock, MagicMock], None, None
-]:
-    """Patch all hardware factories to yield mocks."""
-    mock_haptic = MagicMock(spec=HapticInterface)
-    mock_display = MagicMock(spec=DisplayInterface)
-    mock_sync = MagicMock(spec=SyncInterface)
-
-    with patch(
-        "hapticore.session.manager.make_haptic_interface",
-        return_value=contextlib.contextmanager(lambda: (yield mock_haptic))(),
-    ), patch(
-        "hapticore.session.manager.make_display_interface",
-        return_value=contextlib.contextmanager(lambda: (yield mock_display))(),
-    ), patch(
-        "hapticore.session.manager.make_sync_interface",
-        return_value=contextlib.contextmanager(lambda: (yield mock_sync))(),
-    ):
-        yield mock_haptic, mock_display, mock_sync
 
 
 # ---------------------------------------------------------------------------
@@ -767,7 +739,12 @@ class TestInfrastructureLifecycle:
     def test_backend_validation_in_start(
         self, tmp_path: Path,
     ) -> None:
-        """dhd.mouse_input=True with display.backend='mock' raises ValueError."""
+        """Backend compatibility check is enforced in start(), not the CLI.
+
+        dhd.mouse_input=True requires display.backend='psychopy' because
+        mouse position is read from the PsychoPy window. Using display.backend
+        ='mock' should raise ValueError before any infrastructure is created.
+        """
         from hapticore.core.config import DhdConfig
         config = ExperimentConfig(
             experiment_name="test",

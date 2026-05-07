@@ -6,15 +6,20 @@ Tests cover:
 - Session receipt JSON writing
 - RippleProcess integration (start/stop/shutdown)
 - Trellis file_name_base construction
+- ZMQ infrastructure creation and cleanup
+- Hardware factory lifecycle
+- Interface property guards
+- Backend compatibility validation
 """
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import multiprocessing
 import time
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -32,26 +37,16 @@ from hapticore.core.config import (
     SubjectConfig,
     SyncConfig,
     TaskConfig,
-    ZMQConfig,
 )
+from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
 from hapticore.core.messages import TOPIC_SESSION
-from hapticore.core.messaging import EventPublisher, make_ipc_address
+from hapticore.core.messaging import EventPublisher
 from hapticore.session import SessionManager
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def publisher() -> Iterator[EventPublisher]:
-    """A real EventPublisher bound to a unique ipc address."""
-    ctx = zmq.Context()
-    pub = EventPublisher(ctx, make_ipc_address("test_session"))
-    yield pub
-    pub.close()
-    ctx.term()
 
 
 @pytest.fixture
@@ -97,16 +92,42 @@ def ripple_config(tmp_path: Path) -> ExperimentConfig:
 
 
 # ---------------------------------------------------------------------------
+# Helper: mock all three hardware factories
+# ---------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def _mock_factories() -> Generator[
+    tuple[MagicMock, MagicMock, MagicMock], None, None
+]:
+    """Patch all hardware factories to yield mocks."""
+    mock_haptic = MagicMock(spec=HapticInterface)
+    mock_display = MagicMock(spec=DisplayInterface)
+    mock_sync = MagicMock(spec=SyncInterface)
+
+    with patch(
+        "hapticore.session.manager.make_haptic_interface",
+        return_value=contextlib.contextmanager(lambda: (yield mock_haptic))(),
+    ), patch(
+        "hapticore.session.manager.make_display_interface",
+        return_value=contextlib.contextmanager(lambda: (yield mock_display))(),
+    ), patch(
+        "hapticore.session.manager.make_sync_interface",
+        return_value=contextlib.contextmanager(lambda: (yield mock_sync))(),
+    ):
+        yield mock_haptic, mock_display, mock_sync
+
+
+# ---------------------------------------------------------------------------
 # TestSessionDirectory
 # ---------------------------------------------------------------------------
 
 
 class TestSessionDirectory:
     def test_start_creates_session_directory_tree(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher, tmp_path: Path,
+        self, minimal_config: ExperimentConfig, tmp_path: Path,
     ) -> None:
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         mgr.start()
         try:
             assert mgr.session_dir is not None
@@ -120,9 +141,8 @@ class TestSessionDirectory:
             mgr.stop()
 
     def test_start_creates_neural_ripple_when_ripple_configured(
-        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+        self, ripple_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
         fake_proc = MagicMock()
         fake_proc.is_alive.return_value = True
 
@@ -136,7 +156,7 @@ class TestSessionDirectory:
             "hapticore.session.manager.RippleProcess",
             side_effect=make_and_set_ready,
         ):
-            mgr = SessionManager(ripple_config, zm, publisher)
+            mgr = SessionManager(ripple_config)
             mgr.start()
             try:
                 assert mgr.session_dir is not None
@@ -145,15 +165,14 @@ class TestSessionDirectory:
                 mgr.stop()
 
     def test_session_id_increments(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher, tmp_path: Path,
+        self, minimal_config: ExperimentConfig, tmp_path: Path,
     ) -> None:
         today = datetime.date.today().strftime("%Y%m%d")
         subject_dir = tmp_path / "sub-test-monkey"
         subject_dir.mkdir(parents=True)
         (subject_dir / f"ses-{today}_001").mkdir()
 
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         mgr.start()
         try:
             assert mgr.session_id == f"ses-{today}_002"
@@ -161,10 +180,9 @@ class TestSessionDirectory:
             mgr.stop()
 
     def test_session_dir_without_ripple_skips_neural_ripple(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         mgr.start()
         try:
             assert mgr.session_dir is not None
@@ -173,17 +191,15 @@ class TestSessionDirectory:
             mgr.stop()
 
     def test_session_id_property_before_start_is_none(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         assert mgr.session_id is None
 
     def test_session_dir_property_before_start_is_none(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         assert mgr.session_dir is None
 
 
@@ -224,15 +240,14 @@ class TestRecordingLifecycle:
         return messages
 
     def test_start_recording_publishes_three_messages(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        pub_address = publisher._socket.last_endpoint.decode()
+        mgr = SessionManager(minimal_config)
+        mgr.start()
+        pub_address = mgr.publisher._socket.last_endpoint.decode()
         sub_ctx, sub = self._make_sub(pub_address)
         time.sleep(0.05)  # slow-joiner
         try:
-            mgr = SessionManager(minimal_config, zm, publisher)
-            mgr.start()
             mgr.start_recording()
             messages = self._recv_session_messages(sub, 3)
             assert len(messages) == 3
@@ -246,15 +261,14 @@ class TestRecordingLifecycle:
             sub_ctx.term()
 
     def test_stop_recording_publishes_three_messages(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        pub_address = publisher._socket.last_endpoint.decode()
+        mgr = SessionManager(minimal_config)
+        mgr.start()
+        pub_address = mgr.publisher._socket.last_endpoint.decode()
         sub_ctx, sub = self._make_sub(pub_address)
         time.sleep(0.05)
         try:
-            mgr = SessionManager(minimal_config, zm, publisher)
-            mgr.start()
             mgr.start_recording()
             # drain start messages
             self._recv_session_messages(sub, 3)
@@ -270,15 +284,14 @@ class TestRecordingLifecycle:
             sub_ctx.term()
 
     def test_start_recording_raises_if_not_started(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         with pytest.raises(RuntimeError, match="start\\(\\)"):
             mgr.start_recording()
 
     def test_start_recording_raises_for_block_granularity(
-        self, publisher: EventPublisher, tmp_path: Path,
+        self, tmp_path: Path,
     ) -> None:
         config = ExperimentConfig(
             experiment_name="test",
@@ -294,8 +307,7 @@ class TestRecordingLifecycle:
             ),
             sync=SyncConfig(backend="mock"),
         )
-        zm = ZMQConfig()
-        mgr = SessionManager(config, zm, publisher)
+        mgr = SessionManager(config)
         mgr.start()
         try:
             with pytest.raises(NotImplementedError):
@@ -304,7 +316,7 @@ class TestRecordingLifecycle:
             mgr.stop()
 
     def test_start_recording_raises_for_trial_granularity(
-        self, publisher: EventPublisher, tmp_path: Path,
+        self, tmp_path: Path,
     ) -> None:
         config = ExperimentConfig(
             experiment_name="test",
@@ -320,8 +332,7 @@ class TestRecordingLifecycle:
             ),
             sync=SyncConfig(backend="mock"),
         )
-        zm = ZMQConfig()
-        mgr = SessionManager(config, zm, publisher)
+        mgr = SessionManager(config)
         mgr.start()
         try:
             with pytest.raises(NotImplementedError):
@@ -330,10 +341,9 @@ class TestRecordingLifecycle:
             mgr.stop()
 
     def test_is_recording_tracks_state(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         mgr.start()
         try:
             assert not mgr.is_recording
@@ -345,15 +355,14 @@ class TestRecordingLifecycle:
             mgr.stop()
 
     def test_stop_calls_stop_recording_if_active(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        pub_address = publisher._socket.last_endpoint.decode()
+        mgr = SessionManager(minimal_config)
+        mgr.start()
+        pub_address = mgr.publisher._socket.last_endpoint.decode()
         sub_ctx, sub = self._make_sub(pub_address)
         time.sleep(0.05)
         try:
-            mgr = SessionManager(minimal_config, zm, publisher)
-            mgr.start()
             mgr.start_recording()
             # drain start messages
             self._recv_session_messages(sub, 3)
@@ -373,10 +382,9 @@ class TestRecordingLifecycle:
 
 class TestSessionReceipt:
     def test_stop_writes_receipt_json(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         mgr.start()
         mgr.start_recording()
         mgr.stop_recording()
@@ -398,12 +406,11 @@ class TestSessionReceipt:
         assert "duration_s" in receipt["timing"]
 
     def test_receipt_includes_trial_summary(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
         from hapticore.tasks.trial_manager import TrialManager
 
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         trial_manager = TrialManager(
             conditions=[{"target_angle": 0}],
             block_size=1,
@@ -421,10 +428,9 @@ class TestSessionReceipt:
         assert "total_trials" in receipt["trial_summary"]
 
     def test_receipt_without_trial_manager_has_null_summary(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         mgr.start()
         mgr.stop()
 
@@ -435,10 +441,9 @@ class TestSessionReceipt:
         assert receipt["trial_summary"] is None
 
     def test_receipt_hardware_section(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
-        mgr = SessionManager(minimal_config, zm, publisher)
+        mgr = SessionManager(minimal_config)
         mgr.start()
         mgr.stop()
 
@@ -479,16 +484,15 @@ class TestRippleProcessIntegration:
         return fake_proc, make_and_capture
 
     def test_ripple_process_started_when_configured(
-        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+        self, ripple_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
         fake_proc, make_and_capture = self._make_ready_proc_mock()
 
         with patch(
             "hapticore.session.manager.RippleProcess",
             side_effect=make_and_capture,
         ) as mock_cls:
-            mgr = SessionManager(ripple_config, zm, publisher)
+            mgr = SessionManager(ripple_config)
             mgr.start()
             try:
                 mock_cls.assert_called_once()
@@ -497,13 +501,12 @@ class TestRippleProcessIntegration:
                 mgr.stop()
 
     def test_ripple_process_not_started_when_unconfigured(
-        self, minimal_config: ExperimentConfig, publisher: EventPublisher,
+        self, minimal_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
         with patch(
             "hapticore.session.manager.RippleProcess",
         ) as mock_cls:
-            mgr = SessionManager(minimal_config, zm, publisher)
+            mgr = SessionManager(minimal_config)
             mgr.start()
             try:
                 mock_cls.assert_not_called()
@@ -511,9 +514,8 @@ class TestRippleProcessIntegration:
                 mgr.stop()
 
     def test_ripple_process_shutdown_on_stop(
-        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+        self, ripple_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
         fake_proc, make_and_capture = self._make_ready_proc_mock()
         fake_proc.is_alive.return_value = False
 
@@ -521,7 +523,7 @@ class TestRippleProcessIntegration:
             "hapticore.session.manager.RippleProcess",
             side_effect=make_and_capture,
         ):
-            mgr = SessionManager(ripple_config, zm, publisher)
+            mgr = SessionManager(ripple_config)
             mgr.start()
             mgr.stop()
 
@@ -529,9 +531,8 @@ class TestRippleProcessIntegration:
         fake_proc.join.assert_called()
 
     def test_ripple_process_terminates_if_join_times_out(
-        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+        self, ripple_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
         fake_proc, make_and_capture = self._make_ready_proc_mock()
         # Alive after first join, dead after terminate+join.
         fake_proc.is_alive.side_effect = [True, True, False]
@@ -540,16 +541,15 @@ class TestRippleProcessIntegration:
             "hapticore.session.manager.RippleProcess",
             side_effect=make_and_capture,
         ):
-            mgr = SessionManager(ripple_config, zm, publisher)
+            mgr = SessionManager(ripple_config)
             mgr.start()
             mgr.stop()
 
         fake_proc.terminate.assert_called_once()
 
     def test_ripple_process_dies_during_startup_raises(
-        self, ripple_config: ExperimentConfig, publisher: EventPublisher,
+        self, ripple_config: ExperimentConfig,
     ) -> None:
-        zm = ZMQConfig()
         fake_proc = MagicMock()
         fake_proc.is_alive.return_value = False  # Process dies immediately
         fake_proc.exitcode = -9
@@ -562,7 +562,7 @@ class TestRippleProcessIntegration:
             "hapticore.session.manager.RippleProcess",
             side_effect=make_dead,
         ):
-            mgr = SessionManager(ripple_config, zm, publisher)
+            mgr = SessionManager(ripple_config)
             with pytest.raises(RuntimeError, match="died during startup"):
                 mgr.start()
 
@@ -574,7 +574,7 @@ class TestRippleProcessIntegration:
 
 class TestTrellisFileNameBase:
     def test_colocated_trellis_path(
-        self, publisher: EventPublisher, tmp_path: Path,
+        self, tmp_path: Path,
     ) -> None:
         config = ExperimentConfig(
             experiment_name="test",
@@ -594,7 +594,6 @@ class TestTrellisFileNameBase:
             ),
             sync=SyncConfig(backend="mock"),
         )
-        zm = ZMQConfig()
         fake_proc = MagicMock()
         fake_proc.is_alive.return_value = True
 
@@ -608,7 +607,7 @@ class TestTrellisFileNameBase:
             "hapticore.session.manager.RippleProcess",
             side_effect=make_and_set_ready,
         ):
-            mgr = SessionManager(config, zm, publisher)
+            mgr = SessionManager(config)
             mgr.start()
             try:
                 mgr.start_recording()
@@ -620,7 +619,7 @@ class TestTrellisFileNameBase:
                 mgr.stop()
 
     def test_remote_trellis_path(
-        self, publisher: EventPublisher, tmp_path: Path,
+        self, tmp_path: Path,
     ) -> None:
         remote_dir = r"C:\Users\Trellis\dataFiles"
         config = ExperimentConfig(
@@ -641,7 +640,6 @@ class TestTrellisFileNameBase:
             ),
             sync=SyncConfig(backend="mock"),
         )
-        zm = ZMQConfig()
         fake_proc = MagicMock()
         fake_proc.is_alive.return_value = True
 
@@ -655,7 +653,7 @@ class TestTrellisFileNameBase:
             "hapticore.session.manager.RippleProcess",
             side_effect=make_and_set_ready,
         ):
-            mgr = SessionManager(config, zm, publisher)
+            mgr = SessionManager(config)
             mgr.start()
             try:
                 mgr.start_recording()
@@ -666,3 +664,137 @@ class TestTrellisFileNameBase:
                 assert "\\" not in session_relative_part
             finally:
                 mgr.stop()
+
+
+# ---------------------------------------------------------------------------
+# TestInfrastructureLifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestInfrastructureLifecycle:
+    def test_start_creates_zmq_context_and_publisher(
+        self, minimal_config: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config)
+        mgr.start()
+        try:
+            assert mgr.publisher is not None
+            assert isinstance(mgr.publisher, EventPublisher)
+        finally:
+            mgr.stop()
+
+    def test_start_calls_all_three_factories(
+        self, minimal_config: ExperimentConfig,
+    ) -> None:
+        with patch(
+            "hapticore.session.manager.make_haptic_interface",
+        ) as mock_haptic_factory, patch(
+            "hapticore.session.manager.make_display_interface",
+        ) as mock_display_factory, patch(
+            "hapticore.session.manager.make_sync_interface",
+        ) as mock_sync_factory:
+            mock_haptic = MagicMock(spec=HapticInterface)
+            mock_display = MagicMock(spec=DisplayInterface)
+            mock_sync = MagicMock(spec=SyncInterface)
+
+            mock_haptic_factory.return_value = contextlib.contextmanager(
+                lambda: (yield mock_haptic)
+            )()
+            mock_display_factory.return_value = contextlib.contextmanager(
+                lambda: (yield mock_display)
+            )()
+            mock_sync_factory.return_value = contextlib.contextmanager(
+                lambda: (yield mock_sync)
+            )()
+
+            mgr = SessionManager(minimal_config)
+            mgr.start()
+            try:
+                mock_haptic_factory.assert_called_once()
+                mock_display_factory.assert_called_once()
+                mock_sync_factory.assert_called_once()
+                # Verify factories were called with the correct config
+                call_haptic_args = mock_haptic_factory.call_args
+                assert call_haptic_args.args[0] is minimal_config.haptic
+                call_display_args = mock_display_factory.call_args
+                assert call_display_args.args[0] is minimal_config.display
+                call_sync_args = mock_sync_factory.call_args
+                assert call_sync_args.args[0] is minimal_config.sync
+            finally:
+                mgr.stop()
+
+    def test_stop_cleans_up_zmq(
+        self, minimal_config: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config)
+        mgr.start()
+        # Publisher should exist after start
+        assert mgr._publisher is not None
+        assert mgr._ctx is not None
+        mgr.stop()
+        # Publisher and context should be cleaned up after stop
+        assert mgr._publisher is None
+        assert mgr._ctx is None
+
+    def test_haptic_property_before_start_raises(
+        self, minimal_config: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config)
+        with pytest.raises(RuntimeError, match="start\\(\\)"):
+            _ = mgr.haptic
+
+    def test_display_property_before_start_raises(
+        self, minimal_config: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config)
+        with pytest.raises(RuntimeError, match="start\\(\\)"):
+            _ = mgr.display
+
+    def test_sync_property_before_start_raises(
+        self, minimal_config: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config)
+        with pytest.raises(RuntimeError, match="start\\(\\)"):
+            _ = mgr.sync
+
+    def test_publisher_property_before_start_raises(
+        self, minimal_config: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config)
+        with pytest.raises(RuntimeError, match="start\\(\\)"):
+            _ = mgr.publisher
+
+    def test_backend_validation_in_start(
+        self, tmp_path: Path,
+    ) -> None:
+        """dhd.mouse_input=True with display.backend='mock' raises ValueError."""
+        from hapticore.core.config import DhdConfig
+        config = ExperimentConfig(
+            experiment_name="test",
+            subject=SubjectConfig(subject_id="monkey"),
+            haptic=HapticConfig(backend="dhd", dhd=DhdConfig(mouse_input=True)),
+            display=DisplayConfig(backend="mock"),
+            recording=RecordingConfig(save_dir=tmp_path, granularity="session"),
+            task=TaskConfig(
+                task_class="hapticore.tasks.center_out.CenterOutTask",
+                conditions=[{"target_angle": 0}],
+                block_size=1,
+                num_blocks=1,
+            ),
+            sync=SyncConfig(backend="mock"),
+        )
+        mgr = SessionManager(config)
+        with pytest.raises(ValueError, match="mouse_input"):
+            mgr.start()
+
+    def test_context_manager_cleans_up_on_exit(
+        self, minimal_config: ExperimentConfig,
+    ) -> None:
+        with SessionManager(minimal_config) as session:
+            assert session.publisher is not None
+            assert session._exit_stack is not None
+        # After __exit__, everything should be cleaned up
+        assert session._publisher is None
+        assert session._ctx is None
+        assert session._exit_stack is None
+

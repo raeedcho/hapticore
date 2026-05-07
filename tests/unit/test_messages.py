@@ -268,7 +268,7 @@ class TestParamUpdate:
         import time
         msg = ParamUpdate(
             timestamp=time.monotonic(),
-            trial_id=42,
+            trial_number=42,
             param="hold_time_s",
             old_value=0.5,
             new_value=1.0,
@@ -277,7 +277,7 @@ class TestParamUpdate:
         restored = deserialize(data, ParamUpdate)
         assert isinstance(restored, ParamUpdate)
         assert restored.timestamp == msg.timestamp
-        assert restored.trial_id == msg.trial_id
+        assert restored.trial_number == msg.trial_number
         assert restored.param == msg.param
         assert restored.old_value == msg.old_value
         assert restored.new_value == msg.new_value

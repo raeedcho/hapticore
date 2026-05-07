@@ -382,8 +382,8 @@ class TestSessionReceipt:
         mgr.stop_recording()
         mgr.stop()
 
-        receipt_path = mgr.session_dir / "session_receipt.json"
         assert mgr.session_dir is not None
+        receipt_path = mgr.session_dir / "session_receipt.json"
         assert receipt_path.exists()
         with receipt_path.open() as f:
             receipt = json.load(f)
@@ -413,8 +413,8 @@ class TestSessionReceipt:
         mgr.start()
         mgr.stop()
 
-        receipt_path = mgr.session_dir / "session_receipt.json"
         assert mgr.session_dir is not None
+        receipt_path = mgr.session_dir / "session_receipt.json"
         with receipt_path.open() as f:
             receipt = json.load(f)
         assert receipt["trial_summary"] is not None
@@ -428,8 +428,8 @@ class TestSessionReceipt:
         mgr.start()
         mgr.stop()
 
-        receipt_path = mgr.session_dir / "session_receipt.json"
         assert mgr.session_dir is not None
+        receipt_path = mgr.session_dir / "session_receipt.json"
         with receipt_path.open() as f:
             receipt = json.load(f)
         assert receipt["trial_summary"] is None
@@ -442,8 +442,8 @@ class TestSessionReceipt:
         mgr.start()
         mgr.stop()
 
-        receipt_path = mgr.session_dir / "session_receipt.json"
         assert mgr.session_dir is not None
+        receipt_path = mgr.session_dir / "session_receipt.json"
         with receipt_path.open() as f:
             receipt = json.load(f)
         hw = receipt["hardware"]

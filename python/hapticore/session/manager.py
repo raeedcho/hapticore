@@ -183,7 +183,11 @@ class SessionManager:
         1. stop_recording
         2. stop_camera_trigger
         3. stop_sync
+
+        No-op if recording is not active (idempotent).
         """
+        if not self._is_recording:
+            return
         self._publish_session("stop_recording")
         self._publish_session("stop_camera_trigger")
         self._publish_session("stop_sync")
@@ -227,7 +231,8 @@ class SessionManager:
 
     def _create_session_dirs(self) -> Path:
         """Create the session directory tree. Returns the session_dir."""
-        assert self._session_id is not None
+        if self._session_id is None:
+            raise RuntimeError("_create_session_dirs called before _build_session_id")
         session_dir = (
             self._config.recording.save_dir
             / f"sub-{self._config.subject.subject_id}"
@@ -251,7 +256,8 @@ class SessionManager:
         == save_dir), this produces a path on the local filesystem.
         For remote Trellis, this produces a path on the Trellis machine.
         """
-        assert self._session_id is not None
+        if self._session_id is None:
+            raise RuntimeError("Cannot build Trellis path before start()")
         subject_id = self._config.subject.subject_id
         session_relative = (
             f"sub-{subject_id}/{self._session_id}/neural/ripple/{self._session_id}"
@@ -260,10 +266,10 @@ class SessionManager:
             trellis_data_dir = self._config.recording.ripple.trellis_data_dir
         else:
             trellis_data_dir = str(self._config.recording.save_dir)
-        # Always join with forward slash — works on Linux and Windows Trellis.
-        # Use Path.joinpath().as_posix() for the session-relative portion;
-        # trellis_data_dir is kept as-is (may be a remote Windows path).
-        return Path(trellis_data_dir).joinpath(session_relative).as_posix()
+        # Always join with forward slash — preserves trellis_data_dir exactly
+        # (which may be a remote Windows path) and uses forward slashes for
+        # the session-relative suffix.
+        return f"{trellis_data_dir}/{session_relative}"
 
     def _start_ripple_process(self) -> None:
         """Start RippleProcess with readiness polling loop."""
@@ -281,22 +287,26 @@ class SessionManager:
         proc.start()
         self._ripple_proc_started = True
 
-        deadline = time.monotonic() + _RIPPLE_READY_TIMEOUT_S
-        while not ready_event.is_set():
-            if not proc.is_alive():
-                raise RuntimeError(
-                    f"RippleProcess died during startup "
-                    f"(exit code: {proc.exitcode}). Check that the "
-                    f"Ripple Grapevine is reachable."
-                )
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise RuntimeError(
-                    f"RippleProcess started but did not become ready "
-                    f"within {_RIPPLE_READY_TIMEOUT_S}s. The Ripple "
-                    f"Grapevine may be unresponsive."
-                )
-            ready_event.wait(timeout=min(_RIPPLE_READY_POLL_INTERVAL_S, remaining))
+        try:
+            deadline = time.monotonic() + _RIPPLE_READY_TIMEOUT_S
+            while not ready_event.is_set():
+                if not proc.is_alive():
+                    raise RuntimeError(
+                        f"RippleProcess died during startup "
+                        f"(exit code: {proc.exitcode}). Check that the "
+                        f"Ripple Grapevine is reachable."
+                    )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        f"RippleProcess started but did not become ready "
+                        f"within {_RIPPLE_READY_TIMEOUT_S}s. The Ripple "
+                        f"Grapevine may be unresponsive."
+                    )
+                ready_event.wait(timeout=min(_RIPPLE_READY_POLL_INTERVAL_S, remaining))
+        except Exception:
+            self._stop_ripple_process()
+            raise
 
         # Brief grace period for ZMQ subscription propagation.
         time.sleep(_RIPPLE_SUBSCRIPTION_GRACE_S)
@@ -330,9 +340,8 @@ class SessionManager:
 
     def _write_session_receipt(self) -> None:
         """Write session_receipt.json to session_dir."""
-        assert self._session_dir is not None
-        assert self._session_id is not None
-        assert self._start_utc is not None
+        if self._session_dir is None or self._session_id is None or self._start_utc is None:
+            raise RuntimeError("Cannot write receipt before start()")
 
         end_utc = datetime.datetime.now(datetime.UTC)
 

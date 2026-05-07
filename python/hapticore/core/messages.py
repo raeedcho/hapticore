@@ -118,7 +118,7 @@ class ParamUpdate:
     """
 
     timestamp: float
-    trial_id: int
+    trial_number: int
     param: str
     old_value: Any
     new_value: Any

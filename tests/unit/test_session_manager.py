@@ -382,7 +382,8 @@ class TestSessionReceipt:
         mgr.stop_recording()
         mgr.stop()
 
-        receipt_path = mgr.session_dir / "session_receipt.json"  # type: ignore[operator]
+        receipt_path = mgr.session_dir / "session_receipt.json"
+        assert mgr.session_dir is not None
         assert receipt_path.exists()
         with receipt_path.open() as f:
             receipt = json.load(f)
@@ -412,7 +413,8 @@ class TestSessionReceipt:
         mgr.start()
         mgr.stop()
 
-        receipt_path = mgr.session_dir / "session_receipt.json"  # type: ignore[operator]
+        receipt_path = mgr.session_dir / "session_receipt.json"
+        assert mgr.session_dir is not None
         with receipt_path.open() as f:
             receipt = json.load(f)
         assert receipt["trial_summary"] is not None
@@ -426,7 +428,8 @@ class TestSessionReceipt:
         mgr.start()
         mgr.stop()
 
-        receipt_path = mgr.session_dir / "session_receipt.json"  # type: ignore[operator]
+        receipt_path = mgr.session_dir / "session_receipt.json"
+        assert mgr.session_dir is not None
         with receipt_path.open() as f:
             receipt = json.load(f)
         assert receipt["trial_summary"] is None
@@ -439,7 +442,8 @@ class TestSessionReceipt:
         mgr.start()
         mgr.stop()
 
-        receipt_path = mgr.session_dir / "session_receipt.json"  # type: ignore[operator]
+        receipt_path = mgr.session_dir / "session_receipt.json"
+        assert mgr.session_dir is not None
         with receipt_path.open() as f:
             receipt = json.load(f)
         hw = receipt["hardware"]
@@ -610,7 +614,8 @@ class TestTrellisFileNameBase:
                 mgr.start_recording()
                 assert mgr._trellis_file_name_base is not None
                 assert str(tmp_path) in mgr._trellis_file_name_base
-                assert mgr.session_id in mgr._trellis_file_name_base  # type: ignore[operator]
+                assert mgr.session_id is not None
+                assert mgr.session_id in mgr._trellis_file_name_base
             finally:
                 mgr.stop()
 

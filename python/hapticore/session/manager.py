@@ -93,7 +93,7 @@ class SessionManager:
         self._is_recording: bool = False
         self._trellis_file_name_base: str | None = None
 
-        self._ripple_proc: Any | None = None  # RippleProcess | None
+        self._ripple_proc: RippleProcess | None = None
         self._ripple_proc_started: bool = False
 
     # -- Process lifecycle --------------------------------------------------
@@ -261,12 +261,14 @@ class SessionManager:
         else:
             trellis_data_dir = str(self._config.recording.save_dir)
         # Always join with forward slash — works on Linux and Windows Trellis.
-        return f"{trellis_data_dir}/{session_relative}"
+        # Use Path.joinpath().as_posix() for the session-relative portion;
+        # trellis_data_dir is kept as-is (may be a remote Windows path).
+        return Path(trellis_data_dir).joinpath(session_relative).as_posix()
 
     def _start_ripple_process(self) -> None:
         """Start RippleProcess with readiness polling loop."""
         assert self._config.recording.ripple is not None
-        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        ready_event = multiprocessing.Event()
         proc = RippleProcess(
             self._config.recording.ripple,
             self._zmq_config,

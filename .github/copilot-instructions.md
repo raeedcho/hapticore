@@ -215,3 +215,4 @@ Before proposing alternatives to a settled decision, check `docs/adr/` for conte
 - `013`: Teensy 4.1 as centralized sync hub (supersedes xipppy-DIO sync plan)
 - `014`: 8-bit parallel event codes via the Scout D-sub port
 - `015`: Config-driven backend selection via factory functions
+- `016`: ZMQ-based data logging instead of LSL

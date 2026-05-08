@@ -216,6 +216,11 @@ class RecordingConfig(BaseModel):
     save_dir: Path = Field(default=Path("data"))
     granularity: Literal["session", "block", "trial"] = "session"
     lsl_enabled: bool = True
+    lsl_stream_name: str = Field(
+        default="Hapticore",
+        description="Name of the LSL marker stream. LabRecorder and "
+                    "other LSL consumers use this to find the stream.",
+    )
     ripple: RippleRecordingConfig | None = None
 
 

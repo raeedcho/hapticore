@@ -59,6 +59,10 @@ module = "msgpack.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "pylsl.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "psychopy"
 ignore_missing_imports = true
 

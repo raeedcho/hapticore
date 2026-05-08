@@ -55,7 +55,7 @@ def minimal_config(tmp_path: Path) -> ExperimentConfig:
         subject=SubjectConfig(subject_id="test-monkey"),
         haptic=HapticConfig(backend="mock"),
         display=DisplayConfig(backend="mock"),
-        recording=RecordingConfig(save_dir=tmp_path, granularity="session"),
+        recording=RecordingConfig(save_dir=tmp_path, granularity="session", lsl_enabled=False),
         task=TaskConfig(
             task_class="hapticore.tasks.center_out.CenterOutTask",
             conditions=[{"target_angle": 0}],
@@ -77,6 +77,7 @@ def ripple_config(tmp_path: Path) -> ExperimentConfig:
         recording=RecordingConfig(
             save_dir=tmp_path,
             granularity="session",
+            lsl_enabled=False,
             ripple=RippleRecordingConfig(),
         ),
         task=TaskConfig(
@@ -270,7 +271,7 @@ class TestRecordingLifecycle:
             subject=SubjectConfig(subject_id="monkey"),
             haptic=HapticConfig(backend="mock"),
             display=DisplayConfig(backend="mock"),
-            recording=RecordingConfig(save_dir=tmp_path, granularity="block"),
+            recording=RecordingConfig(save_dir=tmp_path, granularity="block", lsl_enabled=False),
             task=TaskConfig(
                 task_class="hapticore.tasks.center_out.CenterOutTask",
                 conditions=[{"target_angle": 0}],
@@ -295,7 +296,7 @@ class TestRecordingLifecycle:
             subject=SubjectConfig(subject_id="monkey"),
             haptic=HapticConfig(backend="mock"),
             display=DisplayConfig(backend="mock"),
-            recording=RecordingConfig(save_dir=tmp_path, granularity="trial"),
+            recording=RecordingConfig(save_dir=tmp_path, granularity="trial", lsl_enabled=False),
             task=TaskConfig(
                 task_class="hapticore.tasks.center_out.CenterOutTask",
                 conditions=[{"target_angle": 0}],
@@ -556,6 +557,7 @@ class TestTrellisFileNameBase:
             recording=RecordingConfig(
                 save_dir=tmp_path,
                 granularity="session",
+                lsl_enabled=False,
                 ripple=RippleRecordingConfig(trellis_data_dir=str(tmp_path)),
             ),
             task=TaskConfig(
@@ -602,6 +604,7 @@ class TestTrellisFileNameBase:
             recording=RecordingConfig(
                 save_dir=tmp_path,
                 granularity="session",
+                lsl_enabled=False,
                 ripple=RippleRecordingConfig(trellis_data_dir=remote_dir),
             ),
             task=TaskConfig(
@@ -751,7 +754,7 @@ class TestInfrastructureLifecycle:
             subject=SubjectConfig(subject_id="monkey"),
             haptic=HapticConfig(backend="dhd", dhd=DhdConfig(mouse_input=True)),
             display=DisplayConfig(backend="mock"),
-            recording=RecordingConfig(save_dir=tmp_path, granularity="session"),
+            recording=RecordingConfig(save_dir=tmp_path, granularity="session", lsl_enabled=False),
             task=TaskConfig(
                 task_class="hapticore.tasks.center_out.CenterOutTask",
                 conditions=[{"target_angle": 0}],

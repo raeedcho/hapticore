@@ -28,6 +28,7 @@ from hapticore.core.messages import TOPIC_SESSION, SessionControl, serialize
 from hapticore.core.messaging import EventPublisher
 from hapticore.display import make_display_interface
 from hapticore.haptic import make_haptic_interface
+from hapticore.lsl.lsl_process import LSLMarkerProcess
 from hapticore.recording.ripple_process import RippleProcess
 from hapticore.sync import make_sync_interface
 
@@ -49,6 +50,19 @@ _RIPPLE_SUBSCRIPTION_GRACE_S = 0.05
 # Shutdown timeouts.
 _RIPPLE_SHUTDOWN_TIMEOUT_S = 5.0
 _RIPPLE_TERMINATE_JOIN_TIMEOUT_S = 2.0
+
+# Time to wait for LSLMarkerProcess to create the outlet and subscribe to ZMQ.
+_LSL_READY_TIMEOUT_S = 5.0
+
+# Polling interval when waiting for LSLMarkerProcess to become ready.
+_LSL_READY_POLL_INTERVAL_S = 0.1
+
+# Brief grace period after readiness for ZMQ subscription propagation.
+_LSL_SUBSCRIPTION_GRACE_S = 0.05
+
+# Shutdown timeouts.
+_LSL_SHUTDOWN_TIMEOUT_S = 3.0
+_LSL_TERMINATE_JOIN_TIMEOUT_S = 2.0
 
 
 class SessionManager:
@@ -114,6 +128,9 @@ class SessionManager:
         self._ripple_proc: RippleProcess | None = None
         self._ripple_proc_started: bool = False
 
+        self._lsl_proc: LSLMarkerProcess | None = None
+        self._lsl_proc_started: bool = False
+
     # -- Process lifecycle --------------------------------------------------
 
     def start(self) -> None:
@@ -178,12 +195,17 @@ class SessionManager:
             if self._config.recording.ripple is not None:
                 self._start_ripple_process()
 
+            if self._config.recording.lsl_enabled:
+                self._start_lsl_process()
+
         except Exception:
             try:
+                self._stop_lsl_process()
                 if self._exit_stack is not None:
                     self._exit_stack.close()
                     self._exit_stack = None
             finally:
+                self._lsl_proc = None
                 self._haptic = None
                 self._display = None
                 self._sync = None
@@ -209,6 +231,7 @@ class SessionManager:
             if self._is_recording:
                 self.stop_recording()
 
+            self._stop_lsl_process()
             self._stop_ripple_process()
 
             if self._exit_stack is not None:
@@ -218,6 +241,7 @@ class SessionManager:
             if self._session_dir is not None:
                 self._write_session_receipt()
         finally:
+            self._lsl_proc = None
             self._haptic = None
             self._display = None
             self._sync = None
@@ -488,6 +512,64 @@ class SessionManager:
             if proc.is_alive():
                 logger.warning(
                     "RippleProcess (pid=%d) still alive after "
+                    "terminate(); may leak.",
+                    proc.pid,
+                )
+
+    def _start_lsl_process(self) -> None:
+        """Start LSLMarkerProcess with readiness polling loop."""
+        assert self._session_id is not None
+        assert self._zmq_config is not None
+        ready_event = multiprocessing.Event()
+        proc = LSLMarkerProcess(
+            stream_name=self._config.recording.lsl_stream_name,
+            source_id=self._session_id,
+            zmq_config=self._zmq_config,
+            ready_event=ready_event,
+        )
+        self._lsl_proc = proc
+        self._lsl_proc_started = False
+
+        proc.start()
+        self._lsl_proc_started = True
+
+        try:
+            deadline = time.monotonic() + _LSL_READY_TIMEOUT_S
+            while not ready_event.is_set():
+                if not proc.is_alive():
+                    raise RuntimeError(
+                        f"LSLMarkerProcess died during startup "
+                        f"(exit code: {proc.exitcode}). Check that pylsl is "
+                        f"installed (pip install pylsl)."
+                    )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        f"LSLMarkerProcess started but did not become ready "
+                        f"within {_LSL_READY_TIMEOUT_S}s."
+                    )
+                ready_event.wait(timeout=min(_LSL_READY_POLL_INTERVAL_S, remaining))
+        except Exception:
+            self._stop_lsl_process()
+            raise
+
+        # Brief grace period for ZMQ subscription propagation.
+        time.sleep(_LSL_SUBSCRIPTION_GRACE_S)
+        logger.info("LSLMarkerProcess ready (pid=%d)", proc.pid)
+
+    def _stop_lsl_process(self) -> None:
+        """Shut down LSLMarkerProcess with the standard shutdown sequence."""
+        if self._lsl_proc is None or not self._lsl_proc_started:
+            return
+        proc = self._lsl_proc
+        proc.request_shutdown()
+        proc.join(timeout=_LSL_SHUTDOWN_TIMEOUT_S)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=_LSL_TERMINATE_JOIN_TIMEOUT_S)
+            if proc.is_alive():
+                logger.warning(
+                    "LSLMarkerProcess (pid=%d) still alive after "
                     "terminate(); may leak.",
                     proc.pid,
                 )

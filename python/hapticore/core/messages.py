@@ -94,7 +94,7 @@ class CommandResponse:
 class SessionControl:
     """Request to start/stop recording, sync pulses, or camera trigger.
 
-    Published by ``SessionManager`` (future) and consumed by ``SyncProcess``
+    Published by ``SessionManager`` and consumed by ``SyncProcess``
     and recording processes. ``action`` is one of ``"start_recording"``,
     ``"stop_recording"``, ``"start_sync"``, ``"stop_sync"``,
     ``"start_camera_trigger"``, or ``"stop_camera_trigger"``. ``params``

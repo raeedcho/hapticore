@@ -13,7 +13,7 @@ Tests cover:
 from __future__ import annotations
 
 import json
-from io import BytesIO, StringIO
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch

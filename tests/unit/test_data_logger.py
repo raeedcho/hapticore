@@ -292,7 +292,6 @@ class TestDataLoggerProcessConstruction:
             session_id="ses-20260101_001",
             zmq_config=self._make_zmq_config(),
         )
-        assert proc is not None
         assert proc.name == "DataLoggerProcess"
 
     def test_request_shutdown_sets_event(self, tmp_path: Path) -> None:

@@ -114,7 +114,7 @@ class TestDefaults:
             task=TaskConfig(task_class="hapticore.tasks.example.Task"),
         )
         assert config.haptic.dhd is None
-        assert config.recording.lsl_enabled is True
+        assert config.recording.data_logging_enabled is True
         assert config.sync.sync_pulse_rate_hz == 1.0
         assert config.zmq.transport == "ipc"
 

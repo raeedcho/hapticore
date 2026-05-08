@@ -15,7 +15,7 @@ display:
 
 recording:
   save_dir: "data"
-  lsl_enabled: false
+  data_logging_enabled: true
 
 sync:
   backend: "mock"

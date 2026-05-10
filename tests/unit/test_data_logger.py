@@ -153,7 +153,7 @@ class TestWriteHapticSample:
         )
         DataLoggerProcess._write_haptic_sample(buf, msg)
         buf.seek(0)
-        row = np.frombuffer(buf.read(), dtype=np.float64)
+        row = np.frombuffer(buf.read(), dtype="<f8")  # explicit little-endian
         assert row.shape == (10,)
         assert row[0] == pytest.approx(1.5)     # timestamp
         assert row[1] == pytest.approx(0.01)    # position_x
@@ -180,7 +180,7 @@ class TestWriteHapticSample:
             )
         assert buf.tell() == 240  # 3 samples × 80 bytes
         buf.seek(0)
-        data = np.frombuffer(buf.read(), dtype=np.float64).reshape(-1, 10)
+        data = np.frombuffer(buf.read(), dtype="<f8").reshape(-1, 10)
         assert data.shape == (3, 10)
         for i in range(3):
             assert data[i, 0] == pytest.approx(float(i))  # timestamp

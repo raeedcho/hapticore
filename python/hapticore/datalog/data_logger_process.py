@@ -46,7 +46,7 @@ class DataLoggerProcess(multiprocessing.Process):
     - {session_id}_events.tsv: tab-separated behavioral events
     - {session_id}_haptic.bin: flat little-endian float64 binary
     - {session_id}_haptic.json: sidecar describing columns, dtype,
-      sample rate
+      sample count
     """
 
     _POLL_TIMEOUT_MS: int = 50
@@ -231,7 +231,7 @@ class DataLoggerProcess(multiprocessing.Process):
     def _write_haptic_sample(
         haptic_file: BinaryIO, msg: dict[str, Any],
     ) -> None:
-        """Write one haptic state sample as 10 × float64.
+        """Write one haptic state sample as 10 × little-endian float64.
 
         Column order: timestamp, px, py, pz, vx, vy, vz, fx, fy, fz
         """
@@ -240,7 +240,7 @@ class DataLoggerProcess(multiprocessing.Process):
             + msg["position"]
             + msg["velocity"]
             + msg["force"],
-            dtype=np.float64,
+            dtype="<f8",
         )
         haptic_file.write(row.tobytes())
 

@@ -34,8 +34,7 @@ Hapticore is a three-tier system for primate neurophysiology experiments involvi
 │  SyncProcess                     HapticClientProcess          │
 │  - Teensy serial wrapper         - ZMQ SUB: haptic state      │
 │  - Event code translation        - ZMQ DEALER: commands       │
-│  - DataLoggerProcess             - Bridges C++ ↔ Python       │
-│    (ZMQ SUB: events+state)                                    │
+│  - Camera/sync TTL commands      - Bridges C++ ↔ Python       │
 └──────────────────┬────────────────────────────────────────────┘
                    │ ZMQ PUB-SUB
 ┌──────────────────▼────────────────────────────────────────────┐

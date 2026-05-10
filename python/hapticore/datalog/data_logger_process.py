@@ -46,7 +46,6 @@ class DataLoggerProcess(multiprocessing.Process):
     - {session_id}_events.tsv: tab-separated behavioral events
     - {session_id}_haptic.bin: flat little-endian float64 binary
     - {session_id}_haptic.json: sidecar describing columns, dtype,
-      sample count
     """
 
     _POLL_TIMEOUT_MS: int = 50

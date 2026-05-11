@@ -304,7 +304,7 @@ class TrialManager:
 
         all_columns = list(_FIXED_COLUMNS) + extra_columns
 
-        with path.open("w") as f:
+        with path.open("w", newline="", encoding="utf-8") as f:
             f.write("\t".join(all_columns) + "\n")
 
             for entry in self._trial_log:

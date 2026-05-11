@@ -18,7 +18,7 @@ import numpy as np
 TOPIC_STATE = b"state"
 TOPIC_EVENT = b"event"
 TOPIC_DISPLAY = b"display"
-TOPIC_TRIAL = b"trial"
+TOPIC_TRIAL = b"trial"  # Reserved. Not currently used for publishing.
 TOPIC_SESSION = b"session"
 TOPIC_SYNC = b"sync"
 TOPIC_PARAM = b"param"

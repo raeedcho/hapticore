@@ -9,11 +9,11 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import msgpack
 import zmq
 
 from hapticore.core.messages import (
     TOPIC_EVENT,
-    TOPIC_TRIAL,
 )
 from hapticore.core.messaging import EventPublisher, EventSubscriber, make_ipc_address
 from hapticore.display.mock import MockDisplay
@@ -175,7 +175,7 @@ class TestFullSession:
         ctx = zmq.Context()
         address = make_ipc_address("int")
         publisher = EventPublisher(ctx, address)
-        subscriber = EventSubscriber(ctx, address, topics=[TOPIC_EVENT, TOPIC_TRIAL])
+        subscriber = EventSubscriber(ctx, address, topics=[TOPIC_EVENT])
 
         conditions = [{"target_id": i} for i in range(5)]
         tm = TrialManager(
@@ -211,8 +211,14 @@ class TestFullSession:
                 events.append(msg)
 
             # Should have received state transition events
-            state_events = [e for e in events if e[0] == TOPIC_EVENT]
-            trial_events = [e for e in events if e[0] == TOPIC_TRIAL]
+            state_events = [
+                e for e in events
+                if msgpack.unpackb(e[1], raw=False).get("__msg_type__") == "StateTransition"
+            ]
+            trial_events = [
+                e for e in events
+                if msgpack.unpackb(e[1], raw=False).get("__msg_type__") == "TrialEvent"
+            ]
 
             # Each trial has 3 state transitions: iti→active, active→success, success→iti
             # 5 trials × 3 transitions = 15 events (first trial_begin is also a transition)

@@ -215,7 +215,12 @@ class RecordingConfig(BaseModel):
 
     save_dir: Path = Field(default=Path("data"))
     granularity: Literal["session", "block", "trial"] = "session"
-    lsl_enabled: bool = True
+    data_logging_enabled: bool = Field(
+        default=True,
+        description="Write behavioral events (TSV) and haptic state "
+                    "(binary) to the session's behavior/ directory during "
+                    "recording.",
+    )
     ripple: RippleRecordingConfig | None = None
 
 

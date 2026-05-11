@@ -34,16 +34,16 @@ Hapticore is a three-tier system for primate neurophysiology experiments involvi
 │  SyncProcess                     HapticClientProcess          │
 │  - Teensy serial wrapper         - ZMQ SUB: haptic state      │
 │  - Event code translation        - ZMQ DEALER: commands       │
-│  - LSL marker outlet             - Bridges C++ ↔ Python       │
+│  - Camera/sync TTL commands      - Bridges C++ ↔ Python       │
 └──────────────────┬────────────────────────────────────────────┘
-                   │ ZMQ PUB-SUB + LSL
+                   │ ZMQ PUB-SUB
 ┌──────────────────▼────────────────────────────────────────────┐
 │            TIER 3: RECORDING & ANALYSIS (10-100 ms)           │
 │                                                               │
-│  RippleProcess           SpikeGLXProcess      LabRecorder     │
-│  - xipppy API            - SpikeGLX SDK       - LSL streams   │
-│  - Start/stop recording  - Start/stop run     - XDF files     │
-│  - NEV/NS* files         - Binary files       - Sync markers  │
+│  RippleProcess           SpikeGLXProcess      DataLoggerProcess│
+│  - xipppy API            - SpikeGLX SDK       - ZMQ SUB       │
+│  - Start/stop recording  - Start/stop run     - Events TSV     │
+│  - NEV/NS* files         - Binary files       - Haptic binary  │
 │                                                               │
 │  Camera recording                                             │
 │  - separate repository                                        │
@@ -206,17 +206,15 @@ Offline alignment extracts sync edges from each system (emitted by the Teensy sy
 ```
 data/sub-{subject}/ses-{date}_{num}/
 ├── behavior/
-│   ├── *_events.csv        # all state transitions and events
-│   ├── *_trials.csv        # per-trial summary
-│   ├── *_config.json       # resolved experiment config
-│   └── *_haptic.bin        # high-rate haptic state log
+│   ├── *_events.tsv          # all state transitions and events
+│   ├── *_haptic.bin          # high-rate haptic state (float64)
+│   ├── *_haptic.json         # haptic binary sidecar (column names, dtype)
+│   └── *_trials.tsv          # per-trial summary (future: TrialManager)
 ├── neural/
-│   ├── ripple/             # NEV/NS* files from Trellis
-│   └── spikeglx/           # binary files from SpikeGLX
-├── sync/
-│   └── *_sync_edges.csv    # extracted sync edges for alignment
-└── lsl/
-    └── *_recording.xdf     # LSL LabRecorder output
+│   ├── ripple/               # NEV/NS* files from Trellis
+│   └── spikeglx/             # binary files from SpikeGLX (future)
+└── sync/
+    └── *_sync_edges.tsv      # extracted sync edges for alignment
 ```
 
 ## Message schemas

@@ -26,6 +26,7 @@ from hapticore.core.config import ExperimentConfig, ZMQConfig
 from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
 from hapticore.core.messages import TOPIC_SESSION, SessionControl, serialize
 from hapticore.core.messaging import EventPublisher
+from hapticore.datalog import DataLoggerProcess
 from hapticore.display import make_display_interface
 from hapticore.haptic import make_haptic_interface
 from hapticore.recording.ripple_process import RippleProcess
@@ -49,6 +50,13 @@ _RIPPLE_SUBSCRIPTION_GRACE_S = 0.05
 # Shutdown timeouts.
 _RIPPLE_SHUTDOWN_TIMEOUT_S = 5.0
 _RIPPLE_TERMINATE_JOIN_TIMEOUT_S = 2.0
+
+# DataLoggerProcess timeouts.
+_DATA_LOGGER_READY_TIMEOUT_S = 5.0
+_DATA_LOGGER_READY_POLL_INTERVAL_S = 0.1
+_DATA_LOGGER_SUBSCRIPTION_GRACE_S = 0.05
+_DATA_LOGGER_SHUTDOWN_TIMEOUT_S = 3.0
+_DATA_LOGGER_TERMINATE_JOIN_TIMEOUT_S = 2.0
 
 
 class SessionManager:
@@ -114,6 +122,9 @@ class SessionManager:
         self._ripple_proc: RippleProcess | None = None
         self._ripple_proc_started: bool = False
 
+        self._data_logger_proc: DataLoggerProcess | None = None
+        self._data_logger_started: bool = False
+
     # -- Process lifecycle --------------------------------------------------
 
     def start(self) -> None:
@@ -126,7 +137,9 @@ class SessionManager:
         5. Enter hardware factories (haptic, display, sync) via ExitStack.
         6. If config.recording.ripple is not None: start RippleProcess
            with ready_event, wait with polling loop, ZMQ grace period.
-        7. Record session start time.
+        7. If config.recording.data_logging_enabled: start DataLoggerProcess
+           with ready_event, wait with polling loop, ZMQ grace period.
+        8. Record session start time.
         """
         # Validate backend compatibility before launching anything.
         if (
@@ -178,6 +191,9 @@ class SessionManager:
             if self._config.recording.ripple is not None:
                 self._start_ripple_process()
 
+            if self._config.recording.data_logging_enabled:
+                self._start_data_logger()
+
         except Exception:
             try:
                 if self._exit_stack is not None:
@@ -187,6 +203,7 @@ class SessionManager:
                 self._haptic = None
                 self._display = None
                 self._sync = None
+                self._stop_data_logger()
                 self._cleanup_zmq()
             raise
 
@@ -197,10 +214,11 @@ class SessionManager:
         """Shut down hardware interfaces, recording subprocesses, and ZMQ.
 
         1. If recording is active, call stop_recording() first.
-        2. Shut down RippleProcess.
-        3. Close hardware interface ExitStack (haptic, display, sync).
-        4. Write session receipt JSON.
-        5. Clean up interface refs, ZMQ publisher and context.
+        2. Shut down DataLoggerProcess.
+        3. Shut down RippleProcess.
+        4. Close hardware interface ExitStack (haptic, display, sync).
+        5. Write session receipt JSON.
+        6. Clean up interface refs, ZMQ publisher and context.
 
         Uses try/finally so that interface refs and ZMQ infrastructure are
         always cleared even if ExitStack.close() or receipt writing raises.
@@ -209,6 +227,7 @@ class SessionManager:
             if self._is_recording:
                 self.stop_recording()
 
+            self._stop_data_logger()
             self._stop_ripple_process()
 
             if self._exit_stack is not None:
@@ -401,7 +420,7 @@ class SessionManager:
             / self._session_id
         )
         # Always create these subdirectories.
-        for subdir in ("behavior", "sync", "lsl"):
+        for subdir in ("behavior", "sync"):
             (session_dir / subdir).mkdir(parents=True, exist_ok=True)
 
         # Only create neural/ripple when ripple is configured.
@@ -492,6 +511,66 @@ class SessionManager:
                     proc.pid,
                 )
 
+    def _start_data_logger(self) -> None:
+        """Start DataLoggerProcess with readiness polling loop."""
+        assert self._zmq_config is not None
+        assert self._session_dir is not None
+        assert self._session_id is not None
+        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        proc = DataLoggerProcess(
+            session_dir=self._session_dir,
+            session_id=self._session_id,
+            zmq_config=self._zmq_config,
+            ready_event=ready_event,
+        )
+        self._data_logger_proc = proc
+        self._data_logger_started = False
+
+        proc.start()
+        self._data_logger_started = True
+
+        try:
+            deadline = time.monotonic() + _DATA_LOGGER_READY_TIMEOUT_S
+            while not ready_event.is_set():
+                if not proc.is_alive():
+                    raise RuntimeError(
+                        f"DataLoggerProcess died during startup "
+                        f"(exit code: {proc.exitcode})."
+                    )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        f"DataLoggerProcess started but did not become ready "
+                        f"within {_DATA_LOGGER_READY_TIMEOUT_S}s."
+                    )
+                ready_event.wait(
+                    timeout=min(_DATA_LOGGER_READY_POLL_INTERVAL_S, remaining),
+                )
+        except Exception:
+            self._stop_data_logger()
+            raise
+
+        # Brief grace period for ZMQ subscription propagation.
+        time.sleep(_DATA_LOGGER_SUBSCRIPTION_GRACE_S)
+        logger.info("DataLoggerProcess ready (pid=%d)", proc.pid)
+
+    def _stop_data_logger(self) -> None:
+        """Shut down DataLoggerProcess with the standard shutdown sequence."""
+        if self._data_logger_proc is None or not self._data_logger_started:
+            return
+        proc = self._data_logger_proc
+        proc.request_shutdown()
+        proc.join(timeout=_DATA_LOGGER_SHUTDOWN_TIMEOUT_S)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=_DATA_LOGGER_TERMINATE_JOIN_TIMEOUT_S)
+            if proc.is_alive():
+                logger.warning(
+                    "DataLoggerProcess (pid=%d) still alive after "
+                    "terminate(); may leak.",
+                    proc.pid,
+                )
+
     def _publish_session(self, action: str, params: dict[str, Any] | None = None) -> None:
         """Publish a SessionControl message on TOPIC_SESSION."""
         msg = SessionControl(
@@ -514,8 +593,8 @@ class SessionManager:
         recording_systems: list[str] = []
         if self._config.recording.ripple is not None:
             recording_systems.append("ripple")
-        if self._config.recording.lsl_enabled:
-            recording_systems.append("lsl")
+        if self._config.recording.data_logging_enabled:
+            recording_systems.append("data_logger")
 
         ripple_info: dict[str, Any] | None = None
         if self._config.recording.ripple is not None:
@@ -546,7 +625,7 @@ class SessionManager:
                 "session_dir": str(self._session_dir),
                 "granularity": self._config.recording.granularity,
                 "ripple": ripple_info,
-                "lsl_enabled": self._config.recording.lsl_enabled,
+                "data_logging_enabled": self._config.recording.data_logging_enabled,
             },
             "trial_summary": (
                 self._trial_manager.get_summary() if self._trial_manager else None

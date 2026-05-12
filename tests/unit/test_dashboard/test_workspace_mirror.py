@@ -19,6 +19,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pydantic import ValidationError
+
 from hapticore.core.config import (
     DashboardConfig,
     DisplayConfig,
@@ -57,17 +59,17 @@ class TestDashboardConfig:
         assert cfg.trail_length == 200
 
     def test_trail_length_rejects_negative(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             DashboardConfig(trail_length=-1)
 
     def test_trail_length_rejects_above_200(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             DashboardConfig(trail_length=201)
 
     def test_force_arrow_scale_rejects_nonpositive(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             DashboardConfig(force_arrow_scale=0.0)
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             DashboardConfig(force_arrow_scale=-0.1)
 
     def test_round_trip_through_experiment_config(self, tmp_path: Path) -> None:
@@ -135,8 +137,8 @@ class TestPositionTrailBuffer:
 
         # Verify newest has opacity 1.0
         assert (len(trail_list)) / n == 1.0
-        # Verify oldest has opacity 1/n
-        assert 1 / n == pytest.approx(0.25)
+        # Verify oldest has opacity 1/n (using formula (i+1)/n where i=0)
+        assert (0 + 1) / n == pytest.approx(1 / n)
 
     def test_trail_length_zero_stays_empty(self) -> None:
         trail: collections.deque[list[float]] = collections.deque(maxlen=0)

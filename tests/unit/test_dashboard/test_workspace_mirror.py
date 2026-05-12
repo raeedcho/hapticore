@@ -71,7 +71,7 @@ class TestDashboardConfig:
             DashboardConfig(force_arrow_scale=-0.1)
 
     def test_round_trip_through_experiment_config(self, tmp_path: Path) -> None:
-        """DashboardConfig survives round-trip through ExperimentConfig."""
+        """DashboardConfig round-trips through ExperimentConfig model_dump/model_validate."""
         cfg = ExperimentConfig(
             experiment_name="test",
             subject=SubjectConfig(subject_id="monk"),
@@ -83,11 +83,16 @@ class TestDashboardConfig:
             ),
             dashboard=DashboardConfig(trail_length=20, force_arrow_scale=0.05),
         )
-        assert cfg.dashboard is not None
-        assert cfg.dashboard.trail_length == 20
-        assert cfg.dashboard.force_arrow_scale == 0.05
+        dumped = cfg.model_dump()
+        assert dumped["dashboard"]["trail_length"] == 20
+        assert dumped["dashboard"]["force_arrow_scale"] == pytest.approx(0.05)
+        # Validate that it round-trips through model_validate
+        cfg2 = ExperimentConfig.model_validate(dumped)
+        assert cfg2.dashboard is not None
+        assert cfg2.dashboard.trail_length == 20
+        assert cfg2.dashboard.force_arrow_scale == pytest.approx(0.05)
 
-    def test_experiment_config_no_dashboard_by_default(self, tmp_path: Path) -> None:
+    def test_experiment_config_no_dashboard_by_default(self) -> None:
         cfg = ExperimentConfig(
             experiment_name="test",
             subject=SubjectConfig(subject_id="monk"),
@@ -113,7 +118,6 @@ class TestPositionTrailBuffer:
         for i in range(10):
             trail.append([float(i), 0.0])
         assert len(trail) == maxlen
-        # Oldest 5 remaining are 5,6,7,8,9
         assert list(trail)[0] == [5.0, 0.0]
         assert list(trail)[-1] == [9.0, 0.0]
 

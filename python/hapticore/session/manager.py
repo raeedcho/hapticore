@@ -200,10 +200,9 @@ class SessionManager:
                 and self._config.dashboard.screen == self._config.display.screen
             ):
                 logger.warning(
-                    "Dashboard screen (%d) is the same as display screen (%d). "
+                    "Dashboard and display are both on screen %d. "
                     "Both PsychoPy windows will fight for the same X screen.",
                     self._config.dashboard.screen,
-                    self._config.display.screen,
                 )
 
             # Start workspace mirror after rig display is up, so both

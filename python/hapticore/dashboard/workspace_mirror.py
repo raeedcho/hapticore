@@ -301,8 +301,9 @@ class WorkspaceMirrorProcess(multiprocessing.Process):
             arrow_line.opacity = 1.0
 
             arrow_head.pos = tuple(tip_cm)
-            # PsychoPy orientation is in degrees, measured counter-clockwise from +X.
-            arrow_head.ori = -math.degrees(angle)  # negative: PsychoPy uses CW convention
+            # PsychoPy orientation is degrees CCW from +X. Vertices point right (+X),
+            # so we negate the atan2 angle to rotate CW toward the force direction.
+            arrow_head.ori = -math.degrees(angle)
             arrow_head.opacity = 1.0
 
     def _draw_overlays(

@@ -16,13 +16,13 @@ from typing import Any, Self
 import msgpack
 import zmq
 
-logger = logging.getLogger(__name__)
-
 from hapticore.core.messages import (
     Command,
     CommandResponse,
     serialize,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def drain_sub_messages(socket: zmq.Socket[Any]) -> list[dict[str, Any]]:

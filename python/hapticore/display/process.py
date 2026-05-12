@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import math
 import multiprocessing
 import multiprocessing.queues
 import os
@@ -18,12 +17,12 @@ import time
 from queue import Full
 from typing import TYPE_CHECKING, Any
 
-import msgpack
 import zmq
 
 from hapticore.core.config import DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_EVENT, TOPIC_STATE, TrialEvent, serialize
-from hapticore.display._field_visuals import CART_PENDULUM_STIM_IDS, physics_body_stim_id
+from hapticore.core.messaging import drain_sub_messages
+from hapticore.display._x11 import restore_pointer_focus
 
 if TYPE_CHECKING:
     from psychopy.event import Mouse as _PsychoPyMouse
@@ -33,23 +32,6 @@ if TYPE_CHECKING:
     from hapticore.display.scene_manager import SceneManager
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Fixed meters → cm conversion — property of the PsychoPy backend (units="cm").
-# ---------------------------------------------------------------------------
-_METERS_TO_CM: float = 100.0
-
-# Spatial parameter key categories for _convert_spatial_params().
-_SPATIAL_POSITION_KEYS = frozenset({"position", "start", "end"})
-_SPATIAL_DIMENSION_KEYS = frozenset({
-    "radius", "width", "height", "size", "field_size", "dot_size",
-})
-_SPATIAL_VERTEX_KEYS = frozenset({"vertices"})
-
-# ---------------------------------------------------------------------------
-# Cup-and-ball visual constants used by the renderer's per-frame updates.
-# Creation-time defaults live in _field_visuals.py (task-controlled lifecycle).
-# ---------------------------------------------------------------------------
 
 
 class DisplayProcess(multiprocessing.Process):
@@ -74,43 +56,6 @@ class DisplayProcess(multiprocessing.Process):
         self._shutdown = multiprocessing.Event()
         self._mouse_queue = mouse_queue
 
-    # ------------------------------------------------------------------
-    # Spatial conversion helpers
-    # ------------------------------------------------------------------
-
-    def _effective_scale(self) -> float:
-        """Combined workspace scale × meters→cm conversion factor."""
-        return self._display_config.display_scale * _METERS_TO_CM
-
-    def _effective_offset_cm(self) -> list[float]:
-        """Display offset (meters) converted to cm."""
-        s = self._effective_scale()
-        return [o * s for o in self._display_config.display_offset]
-
-    def _convert_spatial_params(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Convert spatial parameters from meters to display cm.
-
-        Position-like keys get scale + offset; dimension-like keys get
-        scale only; vertex lists get per-vertex position conversion.
-        Non-spatial keys pass through unchanged.
-        """
-        eff = self._effective_scale()
-        offset = self._effective_offset_cm()
-        out: dict[str, Any] = {}
-        for k, v in params.items():
-            if k in _SPATIAL_POSITION_KEYS:
-                out[k] = [v[0] * eff + offset[0], v[1] * eff + offset[1]]
-            elif k in _SPATIAL_DIMENSION_KEYS:
-                out[k] = v * eff if isinstance(v, (int, float)) else [c * eff for c in v]
-            elif k in _SPATIAL_VERTEX_KEYS:
-                out[k] = [
-                    [vx * eff, vy * eff]
-                    for vx, vy in v
-                ]
-            else:
-                out[k] = v
-        return out
-
     def request_shutdown(self) -> None:
         """Signal the process to exit its frame loop and shut down."""
         self._shutdown.set()
@@ -134,7 +79,7 @@ class DisplayProcess(multiprocessing.Process):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
         win = self._create_window(visual)
-        self._restore_pointer_focus()
+        restore_pointer_focus()
 
         # In mouse mode, create a PsychoPy Mouse bound to the window.
         mouse = None
@@ -161,9 +106,7 @@ class DisplayProcess(multiprocessing.Process):
         timing_pub.setsockopt(zmq.LINGER, 0)
         timing_pub.bind(self._zmq_config.display_event_address)
 
-        scene = SceneManager(
-            win, self._display_config, spatial_scale=self._effective_scale(),
-        )
+        scene = SceneManager(win, self._display_config)
         photodiode_render_corner = remap_corner_for_mirror(
             self._display_config.photodiode_corner,
             mirror_horizontal=self._display_config.mirror_horizontal,
@@ -214,7 +157,7 @@ class DisplayProcess(multiprocessing.Process):
 
         while not self._shutdown.is_set():
             # 1. Drain display commands and dispatch
-            display_msgs = self._drain_messages(display_sub)
+            display_msgs = drain_sub_messages(display_sub)
             shown_stim_ids: list[str] = []
             command_timestamp: float | None = None
             for cmd in display_msgs:
@@ -229,7 +172,7 @@ class DisplayProcess(multiprocessing.Process):
                 photodiode.trigger()
 
             # 2. Drain haptic state — keep only the latest
-            state_msgs = self._drain_messages(state_sub)
+            state_msgs = drain_sub_messages(state_sub)
             if state_msgs:
                 latest_state = state_msgs[-1]
                 state_receive_time = time.monotonic()
@@ -246,16 +189,14 @@ class DisplayProcess(multiprocessing.Process):
                     mx_cm = -mx_cm
                 if self._display_config.mirror_vertical:
                     my_cm = -my_cm
-                eff = self._effective_scale()
-                offset = self._effective_offset_cm()
+                eff = scene.effective_scale
+                offset = scene.effective_offset_cm
                 x_m = (mx_cm - offset[0]) / eff
                 y_m = (my_cm - offset[1]) / eff
                 with contextlib.suppress(Full):
                     self._mouse_queue.put_nowait((x_m, y_m))
-                scene.set_cursor_position([mx_cm, my_cm])
+                scene.set_cursor_position([x_m, y_m])
             elif latest_state is not None:
-                eff_scale = self._effective_scale()
-                eff_offset = self._effective_offset_cm()
                 if interpolation_enabled:
                     dt = min(
                         time.monotonic() - state_receive_time,
@@ -265,15 +206,11 @@ class DisplayProcess(multiprocessing.Process):
                 else:
                     raw = latest_state.get("position", [0.0, 0.0, 0.0])
 
-                cursor_pos = [
-                    raw[0] * eff_scale + eff_offset[0],
-                    raw[1] * eff_scale + eff_offset[1],
-                ]
-                scene.set_cursor_position(cursor_pos)
+                scene.set_cursor_position(raw[:2])
 
             # 2b. Update scene from field_state data
             if latest_state is not None:
-                self._update_from_field_state(scene, latest_state)
+                scene.update_from_field_state(latest_state)
 
             # 3. Draw all stimuli
             scene.draw_all()
@@ -335,7 +272,8 @@ class DisplayProcess(multiprocessing.Process):
         """Dispatch a single display command to the SceneManager.
 
         Spatial parameters in ``"show"`` and ``"update_scene"`` commands are
-        converted from meters to display cm via :meth:`_convert_spatial_params`.
+        passed in meters-space directly to SceneManager, which converts
+        internally to display cm.
 
         Returns the stim_id for successful ``"show"`` commands, ``None`` otherwise.
         """
@@ -343,7 +281,7 @@ class DisplayProcess(multiprocessing.Process):
         try:
             if action == "show":
                 stim_id = cmd["stim_id"]
-                params = self._convert_spatial_params(cmd.get("params", {}))
+                params = cmd.get("params", {})  # pass meters-space directly
                 scene.show(stim_id, params)
                 return stim_id
             elif action == "hide":
@@ -358,101 +296,12 @@ class DisplayProcess(multiprocessing.Process):
                 if cursor_cmd is not None and "visible" in cursor_cmd:
                     scene.set_cursor_visible(cursor_cmd["visible"])
                 for stim_id, stim_params in params.items():
-                    scene.update(stim_id, self._convert_spatial_params(stim_params))
+                    scene.update(stim_id, stim_params)  # pass meters-space directly
             else:
                 logger.warning("Unknown display action: %r", action)
         except Exception:
             logger.exception("Error handling display command: %r", cmd)
         return None
-
-    # ------------------------------------------------------------------
-    # Field-state rendering
-    # ------------------------------------------------------------------
-
-    def _update_from_field_state(self, scene: SceneManager, state: dict[str, Any]) -> None:
-        """Update scene from haptic field_state data."""
-        active_field = state.get("active_field", "")
-        field_state = state.get("field_state", {})
-
-        if active_field == "cart_pendulum":
-            self._update_cart_pendulum(scene, field_state)
-        elif active_field == "physics_world":
-            self._update_physics_bodies(scene, field_state)
-        elif active_field == "composite":
-            # Composite wraps multiple children. Scan for recognizable
-            # child states and dispatch to the appropriate renderer.
-            for child_state in field_state.get("children", []):
-                if "cup_x" in child_state:
-                    self._update_cart_pendulum(scene, child_state)
-                elif "bodies" in child_state:
-                    self._update_physics_bodies(scene, child_state)
-        # Other field types (null, spring_damper, constant, workspace_limit, channel):
-        # no continuous visual updates needed — task controller manages
-        # discrete stimuli via show/hide commands.
-
-    def _update_cart_pendulum(
-        self,
-        scene: SceneManager,
-        field_state: dict[str, Any],
-    ) -> None:
-        """Update cup and ball positions from CartPendulumField state.
-
-        Positions are converted from meters to cm via _effective_scale/offset.
-        Only updates stimuli that already exist — the task is responsible for
-        showing and hiding them via CartPendulumVisuals.show() /
-        CartPendulumVisuals.hide().
-
-        Note: ball color is NOT changed here. The task controller calls
-        CartPendulumVisuals.set_ball_color() / reset_ball_color() to manage
-        the ball color on spill and reset, avoiding a race between this
-        renderer reading field_state and the task controller transitioning
-        state.
-        """
-        _CUP_ID, _BALL_ID = CART_PENDULUM_STIM_IDS
-        eff_scale = self._effective_scale()
-        eff_offset = self._effective_offset_cm()
-
-        cup_x = field_state.get("cup_x", 0.0)
-        ball_x = field_state.get("ball_x", 0.0)
-        ball_y = field_state.get("ball_y", 0.0)
-
-        cup_cx = cup_x * eff_scale + eff_offset[0]
-        cup_cy = eff_offset[1]
-        ball_cx = ball_x * eff_scale + eff_offset[0]
-        ball_cy = ball_y * eff_scale + eff_offset[1]
-
-        # Update cup position
-        if scene.has_stimulus(_CUP_ID):
-            scene.update(_CUP_ID, {"position": [cup_cx, cup_cy]})
-
-        # Update ball position only — color is managed by the task controller
-        if scene.has_stimulus(_BALL_ID):
-            scene.update(_BALL_ID, {"position": [ball_cx, ball_cy]})
-
-    def _update_physics_bodies(
-        self, scene: SceneManager, field_state: dict[str, Any],
-    ) -> None:
-        """Update positions and angles of physics body stimuli.
-
-        The task controller creates visual stimuli for each body via
-        ``show_stimulus("__body_<id>", ...)``. This method only updates
-        positions and angles from the physics simulation.
-        """
-        eff_scale = self._effective_scale()
-        eff_offset = self._effective_offset_cm()
-        bodies = field_state.get("bodies", {})
-        for body_id, body_state in bodies.items():
-            stim_id = physics_body_stim_id(body_id)
-            if scene.has_stimulus(stim_id):
-                pos = body_state.get("position", [0, 0])
-                angle_rad = body_state.get("angle", 0.0)
-                scene.update(stim_id, {
-                    "position": [
-                        pos[0] * eff_scale + eff_offset[0],
-                        pos[1] * eff_scale + eff_offset[1],
-                    ],
-                    "orientation": angle_rad * (180.0 / math.pi),
-                })
 
     def _create_window(self, visual_module: Any) -> Window:
         """Create a PsychoPy Window from the display configuration."""
@@ -483,79 +332,3 @@ class DisplayProcess(multiprocessing.Process):
             screen=cfg.screen,
             viewScale=view_scale,
         )
-
-    def _restore_pointer_focus(self) -> None:
-        """Restore X11 keyboard focus to follow the mouse pointer.
-
-        After creating a PsychoPy window on a WM-less Zaphod screen, pyglet
-        calls XSetInputFocus on the new window, which moves keyboard focus
-        away from the control-room screen. Without a window manager on the
-        rig screen, nothing returns focus when the operator interacts with
-        the control room. Setting focus to PointerRoot causes keyboard
-        input to follow the mouse pointer across X screens.
-
-        No-op on non-Linux platforms or when libX11 / a display connection
-        is unavailable (e.g. headless CI).
-        """
-        if sys.platform != "linux":
-            return
-        import ctypes
-        import ctypes.util
-
-        try:
-            x11_path = ctypes.util.find_library("X11")
-            if not x11_path:
-                return
-            x11 = ctypes.cdll.LoadLibrary(x11_path)
-
-            # Declare C signatures — without these, ctypes assumes c_int for
-            # all args/returns, truncating 64-bit pointers on x86_64.
-            x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
-            x11.XOpenDisplay.restype = ctypes.c_void_p
-            x11.XSetInputFocus.argtypes = [
-                ctypes.c_void_p,  # display
-                ctypes.c_long,    # focus (Window / PointerRoot)
-                ctypes.c_int,     # revert_to
-                ctypes.c_ulong,   # time
-            ]
-            x11.XSetInputFocus.restype = ctypes.c_int
-            x11.XFlush.argtypes = [ctypes.c_void_p]
-            x11.XFlush.restype = ctypes.c_int
-            x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
-            x11.XCloseDisplay.restype = ctypes.c_int
-
-            display = x11.XOpenDisplay(None)
-            if not display:
-                return
-            POINTER_ROOT = 1
-            REVERT_TO_POINTER_ROOT = 1
-            CURRENT_TIME = 0
-            try:
-                x11.XSetInputFocus(
-                    display, POINTER_ROOT, REVERT_TO_POINTER_ROOT, CURRENT_TIME
-                )
-                x11.XFlush(display)
-            finally:
-                x11.XCloseDisplay(display)
-        except (OSError, AttributeError):
-            logger.debug("Could not restore X11 keyboard focus to PointerRoot")
-
-
-    @staticmethod
-    def _drain_messages(socket: zmq.Socket[Any]) -> list[dict[str, Any]]:
-        """Read all pending messages from a SUB socket without blocking.
-
-        Returns a list of deserialized msgpack dicts. Returns an empty
-        list immediately if no messages are pending.
-        """
-        messages: list[dict[str, Any]] = []
-        while True:
-            try:
-                _topic, payload = socket.recv_multipart(zmq.NOBLOCK)
-            except zmq.Again:
-                break
-            try:
-                messages.append(msgpack.unpackb(payload, raw=False))
-            except (msgpack.UnpackException, ValueError):
-                logger.warning("Skipping malformed display message")
-        return messages

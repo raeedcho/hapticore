@@ -1,25 +1,25 @@
-"""Tests for DisplayProcess import safety, subclass checks, and drain logic."""
+"""Tests for DisplayProcess import safety, subclass checks, and command handling."""
 
 from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import math
 import multiprocessing
 import os
 import time
 import unittest.mock
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import msgpack
 import zmq
 
 from hapticore.core.config import DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY
-from hapticore.core.messaging import make_ipc_address
-
-# Type alias used in TestUpdatePhysicsBodies
+from hapticore.core.messaging import drain_sub_messages, make_ipc_address
 from hapticore.display.process import DisplayProcess
+from hapticore.display.scene_manager import SceneManager
 
 
 class TestImportSafety:
@@ -72,11 +72,9 @@ class TestRequestShutdown:
 
 
 class TestDrainMessages:
-    """Verify _drain_messages returns all pending messages without blocking."""
+    """Verify drain_sub_messages returns all pending messages without blocking."""
 
     def test_empty_socket_returns_empty_list(self) -> None:
-        from hapticore.display.process import DisplayProcess
-
         addr = make_ipc_address("drain")
         ctx = zmq.Context()
         pub = ctx.socket(zmq.PUB)
@@ -89,7 +87,7 @@ class TestDrainMessages:
         sub.subscribe(TOPIC_DISPLAY)
         time.sleep(0.1)
 
-        result = DisplayProcess._drain_messages(sub)
+        result = drain_sub_messages(sub)
         assert result == []
 
         sub.close()
@@ -97,8 +95,6 @@ class TestDrainMessages:
         ctx.term()
 
     def test_drains_all_pending_messages(self) -> None:
-        from hapticore.display.process import DisplayProcess
-
         addr = make_ipc_address("drain")
         ctx = zmq.Context()
         pub = ctx.socket(zmq.PUB)
@@ -118,14 +114,14 @@ class TestDrainMessages:
 
         time.sleep(0.05)
 
-        result = DisplayProcess._drain_messages(sub)
+        result = drain_sub_messages(sub)
         assert len(result) == 3
         assert result[0]["index"] == 0
         assert result[1]["index"] == 1
         assert result[2]["index"] == 2
 
         # Socket should be empty now
-        result2 = DisplayProcess._drain_messages(sub)
+        result2 = drain_sub_messages(sub)
         assert result2 == []
 
         sub.close()
@@ -173,67 +169,57 @@ class TestPhotodiodeInFrameLoop:
 
 
 class TestUpdateFromFieldState:
-    """Verify _update_from_field_state dispatches based on active_field."""
+    """Verify update_from_field_state dispatches based on active_field."""
 
-    def _make_proc(self) -> DisplayProcess:
-        from hapticore.display.process import DisplayProcess
-
-        return DisplayProcess(
-            display_config=DisplayConfig(),
-            zmq_config=ZMQConfig(),
-            headless=True,
-        )
+    def _make_scene(self) -> SceneManager:
+        win = MagicMock()
+        return SceneManager(win, DisplayConfig())
 
     def test_cart_pendulum_calls_update_cart_pendulum(self) -> None:
-        proc = self._make_proc()
-        scene = MagicMock()
+        scene = self._make_scene()
         state = {
             "active_field": "cart_pendulum",
             "field_state": {"cup_x": 0.0, "ball_x": 0.02, "ball_y": 0.1},
         }
-        with unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp:
-            proc._update_from_field_state(scene, state)
-            mock_cp.assert_called_once_with(scene, state["field_state"])
+        with unittest.mock.patch.object(scene, "_update_cart_pendulum") as mock_cp:
+            scene.update_from_field_state(state)
+            mock_cp.assert_called_once_with(state["field_state"])
 
     def test_physics_world_calls_update_physics_bodies(self) -> None:
-        proc = self._make_proc()
-        scene = MagicMock()
+        scene = self._make_scene()
         state = {
             "active_field": "physics_world",
             "field_state": {"bodies": {"puck": {"position": [0, 0], "angle": 0.0}}},
         }
-        with unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb:
-            proc._update_from_field_state(scene, state)
-            mock_pb.assert_called_once_with(scene, state["field_state"])
+        with unittest.mock.patch.object(scene, "_update_physics_bodies") as mock_pb:
+            scene.update_from_field_state(state)
+            mock_pb.assert_called_once_with(state["field_state"])
 
     def test_null_field_calls_neither(self) -> None:
-        proc = self._make_proc()
-        scene = MagicMock()
+        scene = self._make_scene()
         state = {"active_field": "null", "field_state": {}}
         with (
-            unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp,
-            unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb,
+            unittest.mock.patch.object(scene, "_update_cart_pendulum") as mock_cp,
+            unittest.mock.patch.object(scene, "_update_physics_bodies") as mock_pb,
         ):
-            proc._update_from_field_state(scene, state)
+            scene.update_from_field_state(state)
             mock_cp.assert_not_called()
             mock_pb.assert_not_called()
 
     def test_spring_damper_field_calls_neither(self) -> None:
-        proc = self._make_proc()
-        scene = MagicMock()
+        scene = self._make_scene()
         state = {"active_field": "spring_damper", "field_state": {}}
         with (
-            unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp,
-            unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb,
+            unittest.mock.patch.object(scene, "_update_cart_pendulum") as mock_cp,
+            unittest.mock.patch.object(scene, "_update_physics_bodies") as mock_pb,
         ):
-            proc._update_from_field_state(scene, state)
+            scene.update_from_field_state(state)
             mock_cp.assert_not_called()
             mock_pb.assert_not_called()
 
     def test_composite_with_cart_pendulum_child(self) -> None:
         """Composite field dispatches to _update_cart_pendulum for cup_x child."""
-        proc = self._make_proc()
-        scene = MagicMock()
+        scene = self._make_scene()
         cp_child = {"cup_x": 0.01, "ball_x": 0.02, "ball_y": 0.05, "spilled": False}
         state = {
             "active_field": "composite",
@@ -244,14 +230,13 @@ class TestUpdateFromFieldState:
                 ],
             },
         }
-        with unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp:
-            proc._update_from_field_state(scene, state)
-            mock_cp.assert_called_once_with(scene, cp_child)
+        with unittest.mock.patch.object(scene, "_update_cart_pendulum") as mock_cp:
+            scene.update_from_field_state(state)
+            mock_cp.assert_called_once_with(cp_child)
 
     def test_composite_with_physics_world_child(self) -> None:
         """Composite field dispatches to _update_physics_bodies for bodies child."""
-        proc = self._make_proc()
-        scene = MagicMock()
+        scene = self._make_scene()
         pw_child = {"bodies": {"puck": {"position": [0, 0], "angle": 0.0}}}
         state = {
             "active_field": "composite",
@@ -262,14 +247,13 @@ class TestUpdateFromFieldState:
                 ],
             },
         }
-        with unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb:
-            proc._update_from_field_state(scene, state)
-            mock_pb.assert_called_once_with(scene, pw_child)
+        with unittest.mock.patch.object(scene, "_update_physics_bodies") as mock_pb:
+            scene.update_from_field_state(state)
+            mock_pb.assert_called_once_with(pw_child)
 
     def test_composite_with_no_visual_children(self) -> None:
         """Composite with only channel/spring_damper children calls neither renderer."""
-        proc = self._make_proc()
-        scene = MagicMock()
+        scene = self._make_scene()
         state = {
             "active_field": "composite",
             "field_state": {
@@ -280,115 +264,108 @@ class TestUpdateFromFieldState:
             },
         }
         with (
-            unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp,
-            unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb,
+            unittest.mock.patch.object(scene, "_update_cart_pendulum") as mock_cp,
+            unittest.mock.patch.object(scene, "_update_physics_bodies") as mock_pb,
         ):
-            proc._update_from_field_state(scene, state)
+            scene.update_from_field_state(state)
             mock_cp.assert_not_called()
             mock_pb.assert_not_called()
 
     def test_composite_with_empty_children(self) -> None:
         """Composite with empty children list calls neither renderer."""
-        proc = self._make_proc()
-        scene = MagicMock()
+        scene = self._make_scene()
         state = {
             "active_field": "composite",
             "field_state": {"children": []},
         }
         with (
-            unittest.mock.patch.object(proc, "_update_cart_pendulum") as mock_cp,
-            unittest.mock.patch.object(proc, "_update_physics_bodies") as mock_pb,
+            unittest.mock.patch.object(scene, "_update_cart_pendulum") as mock_cp,
+            unittest.mock.patch.object(scene, "_update_physics_bodies") as mock_pb,
         ):
-            proc._update_from_field_state(scene, state)
+            scene.update_from_field_state(state)
             mock_cp.assert_not_called()
             mock_pb.assert_not_called()
 
 
 class TestUpdatePhysicsBodies:
-    """Verify _update_physics_bodies scales positions and updates orientation."""
+    """Verify _update_physics_bodies passes meters to self.update() correctly."""
 
-    def _make_proc(
+    def _make_scene(
         self, display_scale: float = 1.0, offset: list[float] | None = None,
-    ) -> DisplayProcess:
-        from hapticore.display.process import DisplayProcess
-
-        return DisplayProcess(
-            display_config=DisplayConfig(
+    ) -> SceneManager:
+        win = MagicMock()
+        return SceneManager(
+            win,
+            DisplayConfig(
                 display_scale=display_scale,
                 display_offset=offset or [0.0, 0.0],
             ),
-            zmq_config=ZMQConfig(),
-            headless=True,
         )
 
     def test_updates_position_and_orientation(self) -> None:
-        import math
-
-        from hapticore.display.process import _METERS_TO_CM
-
-        # display_scale=1.0 → eff_scale = 1.0 * 100 = 100
-        # offset=[0.01, 0.02] m → eff_offset = [1.0, 2.0] cm
-        proc = self._make_proc(display_scale=1.0, offset=[0.01, 0.02])
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
+        # _update_physics_bodies calls self.update() with meters-space values;
+        # self.update() handles the conversion internally.
+        scene = self._make_scene(display_scale=1.0, offset=[0.01, 0.02])
 
         field_state = {
             "bodies": {
                 "puck": {"position": [0.05, 0.1], "angle": 1.5708},
             },
         }
-        proc._update_physics_bodies(scene, field_state)
+        with (
+            patch.object(scene, "has_stimulus", return_value=True),
+            patch.object(scene, "update") as mock_update,
+        ):
+            scene._update_physics_bodies(field_state)
 
-        eff = 1.0 * _METERS_TO_CM
-        scene.update.assert_called_once_with(
-            "__body_puck",
-            {
-                "position": [0.05 * eff + 0.01 * eff, 0.1 * eff + 0.02 * eff],
-                "orientation": 1.5708 * (180.0 / math.pi),
-            },
-        )
+            mock_update.assert_called_once_with(
+                "__body_puck",
+                {
+                    "position": [0.05, 0.1],
+                    "orientation": 1.5708 * (180.0 / math.pi),
+                },
+            )
 
     def test_skips_bodies_not_in_scene(self) -> None:
-        proc = self._make_proc()
-        scene = MagicMock()
-        scene.has_stimulus.return_value = False
-
+        scene = self._make_scene()
         field_state = {
             "bodies": {
                 "puck": {"position": [0.05, 0.1], "angle": 0.0},
             },
         }
-        proc._update_physics_bodies(scene, field_state)
-        scene.update.assert_not_called()
+        with patch.object(scene, "update") as mock_update:
+            scene._update_physics_bodies(field_state)
+            mock_update.assert_not_called()
 
     def test_handles_multiple_bodies(self) -> None:
-        proc = self._make_proc(display_scale=1.0, offset=[0.0, 0.0])
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
-
+        scene = self._make_scene(display_scale=1.0, offset=[0.0, 0.0])
         field_state = {
             "bodies": {
                 "puck": {"position": [0.01, 0.02], "angle": 0.0},
                 "striker": {"position": [0.03, 0.04], "angle": 0.5},
             },
         }
-        proc._update_physics_bodies(scene, field_state)
-        assert scene.update.call_count == 2
+        with (
+            patch.object(scene, "has_stimulus", return_value=True),
+            patch.object(scene, "update") as mock_update,
+        ):
+            scene._update_physics_bodies(field_state)
+            assert mock_update.call_count == 2
 
 
 class TestUpdateCartPendulum:
-    """Verify _update_cart_pendulum updates cup/ball positions only."""
+    """Verify _update_cart_pendulum passes meters to self.update() correctly."""
 
-    def _make_proc(
+    def _make_scene(
         self, display_scale: float = 1.0, offset: list[float] | None = None,
-    ) -> DisplayProcess:
-        return DisplayProcess(
-            display_config=DisplayConfig(
+    ) -> SceneManager:
+        win = MagicMock()
+        return SceneManager(
+            win,
+            DisplayConfig(
                 display_scale=display_scale,
                 display_offset=offset or [0.0, 0.0],
             ),
-            zmq_config=ZMQConfig(),
-            headless=True,
         )
 
     def _make_field_state(
@@ -410,59 +387,49 @@ class TestUpdateCartPendulum:
 
     def test_no_creation_when_stimuli_missing(self) -> None:
         """When stimuli don't exist, renderer does nothing (no creation)."""
-        proc = self._make_proc()
-        scene = MagicMock()
-        scene.has_stimulus.return_value = False
-        scene.get_stimulus.return_value = None
+        scene = self._make_scene()
 
         fs = self._make_field_state()
-        proc._update_cart_pendulum(scene, fs)
-
-        # No stimuli should be created via show()
-        scene.show.assert_not_called()
-        # No stimuli should be updated via update()
-        scene.update.assert_not_called()
+        with patch.object(scene, "update") as mock_update:
+            scene._update_cart_pendulum(fs)
+            # No stimuli should be updated via update() (has_stimulus returns False)
+            mock_update.assert_not_called()
 
     def test_updates_existing_stimuli_on_subsequent_calls(self) -> None:
-        """Subsequent calls should update __cup and __ball via scene.update()."""
-        proc = self._make_proc()
-        scene = MagicMock()
-        # Simulate stimuli already existing
-        scene.has_stimulus.return_value = True
+        """Subsequent calls should update __cup and __ball via self.update()."""
+        scene = self._make_scene()
 
         fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=0.08)
-        proc._update_cart_pendulum(scene, fs)
+        with (
+            patch.object(scene, "has_stimulus", return_value=True),
+            patch.object(scene, "update") as mock_update,
+        ):
+            scene._update_cart_pendulum(fs)
 
-        # Cup and ball should be updated (not created)
-        scene.show.assert_not_called()
-        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
-        assert "__cup" in update_calls
-        assert "__ball" in update_calls
+            # Cup and ball should be updated (not created)
+            update_calls = {call.args[0]: call.args[1] for call in mock_update.call_args_list}
+            assert "__cup" in update_calls
+            assert "__ball" in update_calls
 
-    def test_positions_scaled_by_display_scale_and_offset(self) -> None:
-        """Positions from field_state (meters) are converted via eff_scale + offset."""
-        from hapticore.display.process import _METERS_TO_CM
+    def test_positions_passed_as_meters(self) -> None:
+        """Positions from field_state (meters) are passed unchanged to self.update().
 
-        # display_scale=1.0, offset=[0.05, 0.1] m
-        # eff_scale = 1.0 * 100 = 100, eff_offset = [5.0, 10.0] cm
-        proc = self._make_proc(display_scale=1.0, offset=[0.05, 0.1])
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
+        self.update() applies the scale + offset conversion internally.
+        """
+        scene = self._make_scene(display_scale=1.0, offset=[0.05, 0.1])
 
         # ball_y=0.08 m is non-negative (L*(1-cos(phi)) convention)
         fs = self._make_field_state(cup_x=0.03, ball_x=0.05, ball_y=0.08)
-        proc._update_cart_pendulum(scene, fs)
+        with (
+            patch.object(scene, "has_stimulus", return_value=True),
+            patch.object(scene, "update") as mock_update,
+        ):
+            scene._update_cart_pendulum(fs)
 
-        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
-
-        eff = 1.0 * _METERS_TO_CM
-        # Cup: cup_x * eff + offset_x * eff = 0.03*100 + 0.05*100 = 8.0
-        assert update_calls["__cup"]["position"] == [0.03 * eff + 0.05 * eff, 0.1 * eff]
-        # Ball: ball_x * eff + off_x, ball_y * eff + off_y
-        assert update_calls["__ball"]["position"] == [
-            0.05 * eff + 0.05 * eff,
-            0.08 * eff + 0.1 * eff,
-        ]
+        update_calls = {call.args[0]: call.args[1] for call in mock_update.call_args_list}
+        # _update_cart_pendulum passes meters values; cup_y is 0.0 (on the x-axis)
+        assert update_calls["__cup"]["position"] == [0.03, 0.0]
+        assert update_calls["__ball"]["position"] == [0.05, 0.08]
 
     def test_renderer_does_not_change_ball_color(self) -> None:
         """Renderer only updates position — ball color is managed by task controller.
@@ -471,106 +438,105 @@ class TestUpdateCartPendulum:
         helpers for changing ball color, avoiding a race with the continuous
         renderer.
         """
-        proc = self._make_proc()
-        scene = MagicMock()
-        scene.has_stimulus.return_value = True
+        scene = self._make_scene()
 
         # Even with spilled=True, the renderer must not set ball color
         fs = self._make_field_state(spilled=True)
-        proc._update_cart_pendulum(scene, fs)
+        with (
+            patch.object(scene, "has_stimulus", return_value=True),
+            patch.object(scene, "update") as mock_update,
+        ):
+            scene._update_cart_pendulum(fs)
 
-        update_calls = {call.args[0]: call.args[1] for call in scene.update.call_args_list}
+        update_calls = {call.args[0]: call.args[1] for call in mock_update.call_args_list}
         assert "color" not in update_calls.get("__ball", {})
 
 
 class TestEffectiveScale:
-    """Verify _effective_scale combines display_scale with _METERS_TO_CM."""
+    """Verify effective_scale property combines display_scale with _METERS_TO_CM."""
+
+    def _make_scene(self, display_scale: float = 1.0) -> SceneManager:
+        win = MagicMock()
+        return SceneManager(win, DisplayConfig(display_scale=display_scale))
 
     def test_default_scale(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
+        from hapticore.display.scene_manager import _METERS_TO_CM
 
-        proc = DisplayProcess(
-            display_config=DisplayConfig(),  # display_scale=1.0
-            zmq_config=ZMQConfig(),
-            headless=True,
-        )
-        assert proc._effective_scale() == 1.0 * _METERS_TO_CM
+        scene = self._make_scene(display_scale=1.0)
+        assert scene.effective_scale == 1.0 * _METERS_TO_CM
 
     def test_custom_scale(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
+        from hapticore.display.scene_manager import _METERS_TO_CM
 
-        proc = DisplayProcess(
-            display_config=DisplayConfig(display_scale=2.0),
-            zmq_config=ZMQConfig(),
-            headless=True,
-        )
-        assert proc._effective_scale() == 2.0 * _METERS_TO_CM
+        scene = self._make_scene(display_scale=2.0)
+        assert scene.effective_scale == 2.0 * _METERS_TO_CM
 
 
 class TestEffectiveOffsetCm:
-    """Verify _effective_offset_cm converts meters offset to cm."""
+    """Verify effective_offset_cm property converts meters offset to cm."""
+
+    def _make_scene(
+        self, display_scale: float = 1.0, offset: list[float] | None = None,
+    ) -> SceneManager:
+        win = MagicMock()
+        return SceneManager(
+            win,
+            DisplayConfig(
+                display_scale=display_scale,
+                display_offset=offset or [0.0, 0.0],
+            ),
+        )
 
     def test_zero_offset(self) -> None:
-        proc = DisplayProcess(
-            display_config=DisplayConfig(display_offset=[0.0, 0.0]),
-            zmq_config=ZMQConfig(),
-            headless=True,
-        )
-        assert proc._effective_offset_cm() == [0.0, 0.0]
+        scene = self._make_scene(offset=[0.0, 0.0])
+        assert scene.effective_offset_cm == [0.0, 0.0]
 
     def test_nonzero_offset(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
+        from hapticore.display.scene_manager import _METERS_TO_CM
 
-        proc = DisplayProcess(
-            display_config=DisplayConfig(
-                display_scale=1.0,
-                display_offset=[0.05, -0.03],
-            ),
-            zmq_config=ZMQConfig(),
-            headless=True,
-        )
+        scene = self._make_scene(display_scale=1.0, offset=[0.05, -0.03])
         eff = 1.0 * _METERS_TO_CM
-        assert proc._effective_offset_cm() == [0.05 * eff, -0.03 * eff]
+        assert scene.effective_offset_cm == [0.05 * eff, -0.03 * eff]
 
 
 class TestConvertSpatialParams:
     """Verify _convert_spatial_params converts meters → cm for spatial keys."""
 
-    def _make_proc(
+    def _make_scene(
         self, display_scale: float = 1.0, offset: list[float] | None = None,
-    ) -> DisplayProcess:
-        return DisplayProcess(
-            display_config=DisplayConfig(
+    ) -> SceneManager:
+        win = MagicMock()
+        return SceneManager(
+            win,
+            DisplayConfig(
                 display_scale=display_scale,
                 display_offset=offset or [0.0, 0.0],
             ),
-            zmq_config=ZMQConfig(),
-            headless=True,
         )
 
     def test_position_converted(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
+        from hapticore.display.scene_manager import _METERS_TO_CM
 
-        proc = self._make_proc(display_scale=1.0, offset=[0.01, 0.02])
+        scene = self._make_scene(display_scale=1.0, offset=[0.01, 0.02])
         eff = 1.0 * _METERS_TO_CM
-        result = proc._convert_spatial_params({"position": [0.05, 0.1]})
+        result = scene._convert_spatial_params({"position": [0.05, 0.1]})
         assert result["position"] == [0.05 * eff + 0.01 * eff, 0.1 * eff + 0.02 * eff]
 
     def test_radius_converted(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
+        from hapticore.display.scene_manager import _METERS_TO_CM
 
-        proc = self._make_proc(display_scale=1.0)
+        scene = self._make_scene(display_scale=1.0)
         eff = 1.0 * _METERS_TO_CM
-        result = proc._convert_spatial_params({"radius": 0.015})
+        result = scene._convert_spatial_params({"radius": 0.015})
         assert result["radius"] == 0.015 * eff
 
     def test_vertices_converted(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
+        from hapticore.display.scene_manager import _METERS_TO_CM
 
-        proc = self._make_proc(display_scale=1.0, offset=[0.01, 0.0])
+        scene = self._make_scene(display_scale=1.0, offset=[0.01, 0.0])
         eff = 1.0 * _METERS_TO_CM
         verts = [[-0.01, 0.0], [0.01, 0.0], [0.0, 0.02]]
-        result = proc._convert_spatial_params({"vertices": verts})
+        result = scene._convert_spatial_params({"vertices": verts})
         expected = [
             [-0.01 * eff, 0.0],
             [0.01 * eff, 0.0],
@@ -579,8 +545,8 @@ class TestConvertSpatialParams:
         assert result["vertices"] == expected
 
     def test_nonspatial_passes_through(self) -> None:
-        proc = self._make_proc()
-        result = proc._convert_spatial_params({
+        scene = self._make_scene()
+        result = scene._convert_spatial_params({
             "color": [1.0, 0.0, 0.0],
             "opacity": 0.5,
             "type": "circle",
@@ -588,11 +554,11 @@ class TestConvertSpatialParams:
         assert result == {"color": [1.0, 0.0, 0.0], "opacity": 0.5, "type": "circle"}
 
     def test_mixed_params(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
+        from hapticore.display.scene_manager import _METERS_TO_CM
 
-        proc = self._make_proc(display_scale=1.0)
+        scene = self._make_scene(display_scale=1.0)
         eff = 1.0 * _METERS_TO_CM
-        result = proc._convert_spatial_params({
+        result = scene._convert_spatial_params({
             "type": "circle",
             "position": [0.05, 0.0],
             "radius": 0.01,
@@ -604,11 +570,11 @@ class TestConvertSpatialParams:
         assert result["color"] == [1.0, 1.0, 0.0]
 
     def test_start_end_converted(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
+        from hapticore.display.scene_manager import _METERS_TO_CM
 
-        proc = self._make_proc(display_scale=1.0)
+        scene = self._make_scene(display_scale=1.0)
         eff = 1.0 * _METERS_TO_CM
-        result = proc._convert_spatial_params({
+        result = scene._convert_spatial_params({
             "start": [0.0, 0.0],
             "end": [0.1, 0.05],
         })
@@ -616,17 +582,17 @@ class TestConvertSpatialParams:
         assert result["end"] == [0.1 * eff, 0.05 * eff]
 
     def test_width_height_converted(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
+        from hapticore.display.scene_manager import _METERS_TO_CM
 
-        proc = self._make_proc(display_scale=2.0)
+        scene = self._make_scene(display_scale=2.0)
         eff = 2.0 * _METERS_TO_CM
-        result = proc._convert_spatial_params({"width": 0.02, "height": 0.01})
+        result = scene._convert_spatial_params({"width": 0.02, "height": 0.01})
         assert result["width"] == 0.02 * eff
         assert result["height"] == 0.01 * eff
 
 
 class TestHandleDisplayCommandConversion:
-    """Verify _handle_display_command converts spatial params for show/update_scene."""
+    """Verify _handle_display_command passes meters-space params to SceneManager."""
 
     def _make_proc(self) -> DisplayProcess:
         return DisplayProcess(
@@ -635,9 +601,8 @@ class TestHandleDisplayCommandConversion:
             headless=True,
         )
 
-    def test_show_converts_radius(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
-
+    def test_show_passes_meters_to_scene(self) -> None:
+        """'show' passes meters-space params directly to scene.show() unchanged."""
         proc = self._make_proc()
         scene = MagicMock()
         cmd = {
@@ -647,16 +612,14 @@ class TestHandleDisplayCommandConversion:
         }
         proc._handle_display_command(scene, cmd)
 
-        eff = 1.0 * _METERS_TO_CM
         args = scene.show.call_args
-        assert args[0][1]["radius"] == 0.015 * eff
-        assert args[0][1]["position"] == [0.08 * eff, 0.0]
-        # Non-spatial keys pass through
+        # DisplayProcess passes meters directly; SceneManager converts internally
+        assert args[0][1]["radius"] == 0.015
+        assert args[0][1]["position"] == [0.08, 0.0]
         assert args[0][1]["type"] == "circle"
 
-    def test_update_scene_converts_positions(self) -> None:
-        from hapticore.display.process import _METERS_TO_CM
-
+    def test_update_scene_passes_meters_to_scene(self) -> None:
+        """'update_scene' passes meters-space params directly to scene.update()."""
         proc = self._make_proc()
         scene = MagicMock()
         cmd = {
@@ -667,9 +630,9 @@ class TestHandleDisplayCommandConversion:
         }
         proc._handle_display_command(scene, cmd)
 
-        eff = 1.0 * _METERS_TO_CM
         args = scene.update.call_args
-        assert args[0][1]["position"] == [0.05 * eff, 0.1 * eff]
+        # Meters are passed through unchanged; conversion is inside SceneManager
+        assert args[0][1]["position"] == [0.05, 0.1]
 
     def test_update_scene_cursor_visibility(self) -> None:
         """update_scene with __cursor key calls set_cursor_visible."""
@@ -684,8 +647,6 @@ class TestHandleDisplayCommandConversion:
 
     def test_update_scene_cursor_visibility_with_other_params(self) -> None:
         """__cursor is handled and other stimulus updates still process."""
-        from hapticore.display.process import _METERS_TO_CM
-
         proc = self._make_proc()
         scene = MagicMock()
         cmd = {
@@ -697,12 +658,10 @@ class TestHandleDisplayCommandConversion:
         }
         proc._handle_display_command(scene, cmd)
         scene.set_cursor_visible.assert_called_once_with(True)
-        # Normal stimulus update should also fire
-        eff = 1.0 * _METERS_TO_CM
         scene.update.assert_called_once()
         args = scene.update.call_args
         assert args[0][0] == "target"
-        assert args[0][1]["position"] == [0.05 * eff, 0.0]
+        assert args[0][1]["position"] == [0.05, 0.0]  # meters, no conversion here
 
 
 class TestCreateWindowKwargs:
@@ -814,8 +773,8 @@ class TestShadowWindowEnv:
                 with unittest.mock.patch.object(
                     proc, "_create_window", return_value=MagicMock()
                 ):
-                    with unittest.mock.patch.object(
-                        proc, "_restore_pointer_focus"
+                    with unittest.mock.patch(
+                        "hapticore.display.process.restore_pointer_focus"
                     ):
                         try:
                             proc.run()
@@ -852,37 +811,27 @@ class TestShadowWindowEnv:
 
 
 class TestRestorePointerFocus:
-    """Verify _restore_pointer_focus() is safe in all environments."""
-
-    def _make_proc(self) -> DisplayProcess:
-        return DisplayProcess(
-            display_config=DisplayConfig(),
-            zmq_config=ZMQConfig(),
-            headless=True,
-        )
+    """Verify restore_pointer_focus() from display._x11 is safe in all environments."""
 
     def test_restore_pointer_focus_does_not_crash(self) -> None:
-        """_restore_pointer_focus() raises no exception on Linux without a display.
-
-        On CI, XOpenDisplay(None) returns null and the method returns early.
-        """
-        proc = self._make_proc()
+        """restore_pointer_focus() raises no exception on Linux without a display."""
+        from hapticore.display._x11 import restore_pointer_focus
         with unittest.mock.patch("sys.platform", "linux"):
-            proc._restore_pointer_focus()  # must not raise
+            restore_pointer_focus()  # must not raise
 
     def test_restore_pointer_focus_no_op_on_non_linux(self) -> None:
-        """_restore_pointer_focus() is a no-op on non-Linux platforms."""
-        proc = self._make_proc()
+        """restore_pointer_focus() is a no-op on non-Linux platforms."""
+        from hapticore.display._x11 import restore_pointer_focus
         with unittest.mock.patch("sys.platform", "darwin"):
             with unittest.mock.patch.object(
                 ctypes.util, "find_library"
             ) as mock_find:
-                proc._restore_pointer_focus()
+                restore_pointer_focus()
                 mock_find.assert_not_called()
 
     def test_restore_pointer_focus_x11_sequence(self) -> None:
-        """_restore_pointer_focus() calls XOpenDisplay → XSetInputFocus → XFlush → XCloseDisplay."""
-        proc = self._make_proc()
+        """restore_pointer_focus() calls XOpenDisplay → XSetInputFocus → XFlush → XCloseDisplay."""
+        from hapticore.display._x11 import restore_pointer_focus
 
         mock_x11 = MagicMock()
         mock_display = MagicMock()
@@ -895,7 +844,7 @@ class TestRestorePointerFocus:
                 with unittest.mock.patch.object(
                     ctypes.cdll, "LoadLibrary", return_value=mock_x11
                 ):
-                    proc._restore_pointer_focus()
+                    restore_pointer_focus()
 
         mock_x11.XOpenDisplay.assert_called_once_with(None)
         mock_x11.XSetInputFocus.assert_called_once()

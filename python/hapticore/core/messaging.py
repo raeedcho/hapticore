@@ -6,6 +6,7 @@ CommandClient/CommandServer (DEALER-ROUTER) for request-reply commands.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import uuid
@@ -15,11 +16,32 @@ from typing import Any, Self
 import msgpack
 import zmq
 
+logger = logging.getLogger(__name__)
+
 from hapticore.core.messages import (
     Command,
     CommandResponse,
     serialize,
 )
+
+
+def drain_sub_messages(socket: zmq.Socket[Any]) -> list[dict[str, Any]]:
+    """Read all pending messages from a SUB socket without blocking.
+
+    Returns a list of deserialized msgpack dicts. Returns an empty
+    list immediately if no messages are pending.
+    """
+    messages: list[dict[str, Any]] = []
+    while True:
+        try:
+            _topic, payload = socket.recv_multipart(zmq.NOBLOCK)
+        except zmq.Again:
+            break
+        try:
+            messages.append(msgpack.unpackb(payload, raw=False))
+        except (msgpack.UnpackException, ValueError):
+            logger.warning("Skipping malformed message on SUB socket")
+    return messages
 
 
 def _sanitize_ipc_label(label: str) -> str:

@@ -26,6 +26,7 @@ from hapticore.core.config import ExperimentConfig, ZMQConfig
 from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
 from hapticore.core.messages import TOPIC_SESSION, SessionControl, serialize
 from hapticore.core.messaging import EventPublisher
+from hapticore.dashboard.workspace_mirror import WorkspaceMirrorProcess
 from hapticore.datalog import DataLoggerProcess
 from hapticore.display import make_display_interface
 from hapticore.haptic import make_haptic_interface
@@ -57,6 +58,13 @@ _DATA_LOGGER_READY_POLL_INTERVAL_S = 0.1
 _DATA_LOGGER_SUBSCRIPTION_GRACE_S = 0.05
 _DATA_LOGGER_SHUTDOWN_TIMEOUT_S = 3.0
 _DATA_LOGGER_TERMINATE_JOIN_TIMEOUT_S = 2.0
+
+# WorkspaceMirrorProcess timeouts.
+_WORKSPACE_MIRROR_READY_TIMEOUT_S = 10.0  # PsychoPy window creation can be slow
+_WORKSPACE_MIRROR_READY_POLL_INTERVAL_S = 0.1
+_WORKSPACE_MIRROR_SUBSCRIPTION_GRACE_S = 0.05
+_WORKSPACE_MIRROR_SHUTDOWN_TIMEOUT_S = 5.0
+_WORKSPACE_MIRROR_TERMINATE_JOIN_TIMEOUT_S = 2.0
 
 
 class SessionManager:
@@ -125,6 +133,9 @@ class SessionManager:
         self._data_logger_proc: DataLoggerProcess | None = None
         self._data_logger_started: bool = False
 
+        self._workspace_mirror_proc: WorkspaceMirrorProcess | None = None
+        self._workspace_mirror_started: bool = False
+
     # -- Process lifecycle --------------------------------------------------
 
     def start(self) -> None:
@@ -181,6 +192,28 @@ class SessionManager:
                     publisher=self._publisher, mouse_queue=self._mouse_queue,
                 )
             )
+
+            # Warn if dashboard screen collides with rig display screen.
+            if (
+                self._config.dashboard is not None
+                and self._config.display.backend == "psychopy"
+                and self._config.dashboard.screen == self._config.display.screen
+            ):
+                logger.warning(
+                    "Dashboard screen (%d) is the same as display screen (%d). "
+                    "Both PsychoPy windows will fight for the same X screen.",
+                    self._config.dashboard.screen,
+                    self._config.display.screen,
+                )
+
+            # Start workspace mirror after rig display is up, so both
+            # PsychoPy windows don't race to create X11 contexts simultaneously.
+            if (
+                self._config.dashboard is not None
+                and self._config.display.backend == "psychopy"
+            ):
+                self._start_workspace_mirror()
+
             self._sync = self._exit_stack.enter_context(
                 make_sync_interface(
                     self._config.sync, self._zmq_config,
@@ -203,6 +236,7 @@ class SessionManager:
                 self._haptic = None
                 self._display = None
                 self._sync = None
+                self._stop_workspace_mirror()
                 self._stop_data_logger()
                 self._cleanup_zmq()
             raise
@@ -229,6 +263,7 @@ class SessionManager:
 
             self._stop_data_logger()
             self._stop_ripple_process()
+            self._stop_workspace_mirror()
 
             if self._exit_stack is not None:
                 self._exit_stack.close()
@@ -577,6 +612,64 @@ class SessionManager:
             if proc.is_alive():
                 logger.warning(
                     "DataLoggerProcess (pid=%d) still alive after "
+                    "terminate(); may leak.",
+                    proc.pid,
+                )
+
+    def _start_workspace_mirror(self) -> None:
+        """Start WorkspaceMirrorProcess with readiness polling loop."""
+        assert self._config.dashboard is not None
+        assert self._zmq_config is not None
+        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        proc = WorkspaceMirrorProcess(
+            dashboard_config=self._config.dashboard,
+            display_config=self._config.display,
+            zmq_config=self._zmq_config,
+            ready_event=ready_event,
+        )
+        self._workspace_mirror_proc = proc
+        self._workspace_mirror_started = False
+
+        proc.start()
+        self._workspace_mirror_started = True
+
+        try:
+            deadline = time.monotonic() + _WORKSPACE_MIRROR_READY_TIMEOUT_S
+            while not ready_event.is_set():
+                if not proc.is_alive():
+                    raise RuntimeError(
+                        f"WorkspaceMirrorProcess died during startup "
+                        f"(exit code: {proc.exitcode})."
+                    )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        f"WorkspaceMirrorProcess started but did not become ready "
+                        f"within {_WORKSPACE_MIRROR_READY_TIMEOUT_S}s."
+                    )
+                ready_event.wait(
+                    timeout=min(_WORKSPACE_MIRROR_READY_POLL_INTERVAL_S, remaining),
+                )
+        except Exception:
+            self._stop_workspace_mirror()
+            raise
+
+        time.sleep(_WORKSPACE_MIRROR_SUBSCRIPTION_GRACE_S)
+        logger.info("WorkspaceMirrorProcess ready (pid=%d)", proc.pid)
+
+    def _stop_workspace_mirror(self) -> None:
+        """Shut down WorkspaceMirrorProcess with the standard shutdown sequence."""
+        if self._workspace_mirror_proc is None or not self._workspace_mirror_started:
+            return
+        proc = self._workspace_mirror_proc
+        proc.request_shutdown()
+        proc.join(timeout=_WORKSPACE_MIRROR_SHUTDOWN_TIMEOUT_S)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=_WORKSPACE_MIRROR_TERMINATE_JOIN_TIMEOUT_S)
+            if proc.is_alive():
+                logger.warning(
+                    "WorkspaceMirrorProcess (pid=%d) still alive after "
                     "terminate(); may leak.",
                     proc.pid,
                 )

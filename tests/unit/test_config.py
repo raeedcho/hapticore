@@ -269,7 +269,7 @@ class TestSerializationCompatibility:
         dumped = config.model_dump()
         expected_keys = {
             "experiment_name", "subject", "haptic", "display",
-            "recording", "task", "sync", "zmq",
+            "recording", "task", "sync", "zmq", "dashboard",
         }
         assert set(dumped.keys()) == expected_keys
 

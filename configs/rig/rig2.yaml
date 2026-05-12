@@ -59,3 +59,7 @@ zmq:
   haptic_state_address: "ipc:///tmp/hapticore_haptic_state"
   haptic_command_address: "ipc:///tmp/hapticore_haptic_cmd"
   transport: "ipc"
+
+dashboard:
+  screen: 0
+  resolution: [1920, 1080]

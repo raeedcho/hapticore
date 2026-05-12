@@ -202,20 +202,21 @@ class TestCursorVisibility:
             args, _kwargs = mock_create.call_args
             # create_stimulus(win, "circle", params_dict)
             params = args[2]
-            # spatial_scale defaults to 1.0, so radius is unscaled
-            assert params["radius"] == 0.008 * 1.0
+            # effective_scale = display_scale(1.0) * METERS_TO_CM(100.0) = 100.0
+            assert params["radius"] == 0.008 * 100.0
             assert params["color"] == [1.0, 0.0, 0.0]
 
     def test_cursor_radius_uses_spatial_scale(self) -> None:
         win = MagicMock()
-        config = DisplayConfig(cursor_visible=True, cursor_radius=0.005)
-        scene = SceneManager(win, config, spatial_scale=100.0)
+        config = DisplayConfig(cursor_visible=True, cursor_radius=0.005, display_scale=2.0)
+        scene = SceneManager(win, config)
         with patch("hapticore.display.scene_manager.create_stimulus") as mock_create:
             mock_create.return_value = MagicMock()
             scene.set_cursor_position([0.0, 0.0])
             args, _kwargs = mock_create.call_args
             params = args[2]
-            assert params["radius"] == 0.005 * 100.0  # 0.5 cm
+            # effective_scale = display_scale(2.0) * METERS_TO_CM(100.0) = 200.0
+            assert params["radius"] == 0.005 * 200.0
 
     def test_cursor_position_updates_on_subsequent_calls(self) -> None:
         scene = self._make_scene(cursor_visible=True)
@@ -226,7 +227,8 @@ class TestCursorVisibility:
             scene.set_cursor_position([0.1, 0.0])
             # Second call should update pos, not create new
             assert mock_create.call_count == 1
-            assert list(cursor_mock.pos) == [0.1, 0.0]
+            # 0.1 m * effective_scale(100.0) + offset(0.0) = 10.0 cm
+            assert list(cursor_mock.pos) == [10.0, 0.0]
 
 
 class TestUpdate:
@@ -247,7 +249,8 @@ class TestUpdate:
             mock_create.return_value = stim
             scene.show("target", {"type": "circle"})
             scene.update("target", {"position": [0.1, 0.0]})
-            mock_update.assert_called_once_with(stim, {"position": [0.1, 0.0]})
+            # _convert_spatial_params converts 0.1 m → 10.0 cm
+            mock_update.assert_called_once_with(stim, {"position": [10.0, 0.0]})
 
     def test_update_unknown_warns(self) -> None:
         scene = self._make_scene()
@@ -301,7 +304,8 @@ class TestRuntimeCursorToggle:
 
             scene.set_cursor_visible(False)
             scene.set_cursor_position([0.5, 0.3])
-            assert list(cursor.pos) == [0.5, 0.3]
+            # 0.5 m → 50.0 cm, 0.3 m → 30.0 cm
+            assert list(cursor.pos) == [50.0, 30.0]
 
     def test_hidden_state_persists_across_clear(self) -> None:
         """clear() destroys the cursor stim but _cursor_hidden persists.

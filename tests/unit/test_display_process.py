@@ -128,6 +128,34 @@ class TestDrainMessages:
         pub.close()
         ctx.term()
 
+    def test_skips_malformed_messages(self) -> None:
+        addr = make_ipc_address("drain")
+        ctx = zmq.Context()
+        pub = ctx.socket(zmq.PUB)
+        pub.setsockopt(zmq.LINGER, 0)
+        pub.bind(addr)
+
+        sub = ctx.socket(zmq.SUB)
+        sub.setsockopt(zmq.LINGER, 0)
+        sub.connect(addr)
+        sub.subscribe(TOPIC_DISPLAY)
+        time.sleep(0.1)
+
+        # Send a valid message, then a malformed one, then another valid one
+        pub.send_multipart([TOPIC_DISPLAY, msgpack.packb({"index": 0}, use_bin_type=True)])
+        pub.send_multipart([TOPIC_DISPLAY, b"not valid msgpack \xff\xfe"])
+        pub.send_multipart([TOPIC_DISPLAY, msgpack.packb({"index": 2}, use_bin_type=True)])
+        time.sleep(0.05)
+
+        result = drain_sub_messages(sub)
+        assert len(result) == 2
+        assert result[0]["index"] == 0
+        assert result[1]["index"] == 2
+
+        sub.close()
+        pub.close()
+        ctx.term()
+
 
 class TestPhotodiodeInFrameLoop:
     """Verify _handle_display_command returns stim_id on show, None otherwise.

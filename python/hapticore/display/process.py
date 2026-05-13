@@ -326,7 +326,7 @@ class DisplayProcess(multiprocessing.Process):
             color=cfg.background_color,
             monitor=mon,
             units="cm",
-            allowGUI=False,
+            allowGUI=cfg.window_gui,
             winType="pyglet",
             checkTiming=False,
             screen=cfg.screen,

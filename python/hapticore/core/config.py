@@ -162,6 +162,12 @@ class DisplayConfig(BaseModel):
                     "In Zaphod multi-screen setups, screen 0 is the control-room "
                     "monitor and screen 1 is the rig monitor.",
     )
+    window_gui: bool = Field(
+        default=False,
+        description="Allow the window manager's title bar and borders on the window. "
+                    "True allows dragging the window or seeing its title bar for debugging. "
+                    "False for a clean and locked borderless display."
+    )
     mirror_horizontal: bool = Field(
         default=False,
         description="Mirror the rendered image across the vertical axis. Use "
@@ -300,6 +306,57 @@ class SyncConfig(BaseModel):
         return self
 
 
+class DashboardConfig(BaseModel):
+    """Configuration for the control-room monitoring dashboard.
+
+    Presence of this block in the rig config enables the workspace mirror.
+    When ``None`` (the default in ``ExperimentConfig``), no dashboard is
+    launched.  When present, ``SessionManager`` starts a
+    ``WorkspaceMirrorProcess`` on the configured screen.
+    """
+
+    screen: int = Field(
+        default=0, ge=0,
+        description="Monitor index for the workspace mirror window (0-based). "
+                    "Typically 0 (control-room monitor) in a Zaphod dual-screen setup.",
+    )
+    resolution: tuple[int, int] = (1920, 1080)
+    background_color: list[float] = Field(
+        default_factory=lambda: [0.0, 0.0, 0.0],
+    )
+    window_gui: bool = Field(
+        default=True,
+        description="Allow the window manager's title bar and borders on the window. "
+                    "True allows dragging the window or seeing its title bar for debugging. "
+                    "False for a clean and locked borderless display."
+    )
+    mirror_horizontal: bool = Field(
+        default=False,
+        description="Mirror the workspace view horizontally. Default False: "
+                    "experimenter sees the workspace as the hand moves (rightward "
+                    "hand = rightward cursor), NOT as the subject sees it through "
+                    "the canted mirror.",
+    )
+    trail_length: int = Field(
+        default=40, ge=0, le=200,
+        description="Number of past positions to show in the position trail. "
+                    "At 200 Hz haptic state, 40 samples is approx 200 ms.",
+    )
+    trail_color: list[float] = Field(
+        default_factory=lambda: [0.3, 0.8, 1.0],
+        description="RGB color for the position trail dots.",
+    )
+    force_arrow_scale: float = Field(
+        default=0.01, gt=0,
+        description="Meters of arrow length per Newton of force. "
+                    "At 0.01, a 5 N force produces a 5 cm arrow.",
+    )
+    force_arrow_color: list[float] = Field(
+        default_factory=lambda: [1.0, 0.3, 0.3],
+        description="RGB color for the force vector arrow.",
+    )
+
+
 class ExperimentConfig(BaseSettings):
     """Top-level experiment configuration.
 
@@ -325,6 +382,7 @@ class ExperimentConfig(BaseSettings):
     task: TaskConfig
     sync: SyncConfig = Field(default_factory=SyncConfig)
     zmq: ZMQConfig = Field(default_factory=ZMQConfig)
+    dashboard: DashboardConfig | None = None
 
 
 def load_config(

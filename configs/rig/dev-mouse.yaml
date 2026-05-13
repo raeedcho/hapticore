@@ -21,6 +21,7 @@ display:
   background_color: [0.0, 0.0, 0.0]
   photodiode_enabled: false
   mirror_horizontal: false
+  window_gui: true
 
 recording:
   save_dir: "data"
@@ -38,3 +39,8 @@ zmq:
   haptic_state_address: "ipc:///tmp/hapticore_dev_haptic_state"
   haptic_command_address: "ipc:///tmp/hapticore_dev_haptic_cmd"
   transport: "ipc"
+
+dashboard:
+  screen: 0
+  resolution: [640, 400]
+  window_gui: true

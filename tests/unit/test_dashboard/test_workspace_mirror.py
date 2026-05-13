@@ -2,8 +2,6 @@
 
 Tests cover:
 - DashboardConfig validation
-- Position trail ring buffer logic
-- Force arrow geometry
 - SessionManager integration (backend gating)
 
 Does NOT test PsychoPy rendering — that lives in tests/display/.
@@ -106,68 +104,6 @@ class TestDashboardConfig:
             ),
         )
         assert cfg.dashboard is None
-
-
-# ---------------------------------------------------------------------------
-# Force arrow geometry
-# ---------------------------------------------------------------------------
-
-
-class TestForceArrowGeometry:
-    """Test force arrow length, angle, and hiding below threshold."""
-
-    def _arrow_length_cm(
-        self,
-        fx: float,
-        fy: float,
-        force_arrow_scale: float,
-        effective_scale: float,
-    ) -> float:
-        return (fx ** 2 + fy ** 2) ** 0.5 * force_arrow_scale * effective_scale
-
-    def test_arrow_length_known_vector(self) -> None:
-        """Force [3,4] (magnitude 5 N) with scale=0.01 and eff=100."""
-        fx, fy = 3.0, 4.0
-        scale = 0.01
-        eff = 100.0  # 1.0 m/m display_scale × 100 cm/m
-        length = self._arrow_length_cm(fx, fy, scale, eff)
-        # magnitude=5 N, scale=0.01 m/N, eff=100 cm/m -> 5*0.01*100 = 5 cm
-        assert length == pytest.approx(5.0)
-
-    def test_zero_force_below_threshold(self) -> None:
-        """Zero force should produce length below 0.05 cm threshold."""
-        length = self._arrow_length_cm(0.0, 0.0, 0.01, 100.0)
-        assert length < 0.05
-
-    def test_angle_positive_x(self) -> None:
-        """Force [1, 0] → angle = 0."""
-        angle = math.atan2(0.0, 1.0)
-        assert angle == pytest.approx(0.0)
-
-    def test_angle_positive_y(self) -> None:
-        """Force [0, 1] → angle = π/2."""
-        angle = math.atan2(1.0, 0.0)
-        assert angle == pytest.approx(math.pi / 2)
-
-    def test_angle_negative_x(self) -> None:
-        """Force [-1, 0] → angle = π."""
-        angle = math.atan2(0.0, -1.0)
-        assert abs(angle) == pytest.approx(math.pi)
-
-    def test_tip_position(self) -> None:
-        """Arrow tip computed correctly for a known force."""
-        fx, fy = 1.0, 0.0  # pointing right
-        scale = 0.01
-        eff = 100.0
-        cursor_cm = [0.0, 0.0]
-        length_cm = self._arrow_length_cm(fx, fy, scale, eff)
-        angle = math.atan2(fy, fx)
-        tip = [
-            cursor_cm[0] + math.cos(angle) * length_cm,
-            cursor_cm[1] + math.sin(angle) * length_cm,
-        ]
-        assert tip[0] == pytest.approx(length_cm)
-        assert tip[1] == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------

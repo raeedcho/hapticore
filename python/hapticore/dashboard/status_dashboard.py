@@ -295,15 +295,17 @@ class StatusDashboardProcess(multiprocessing.Process):
                 str(self._num_blocks) if self._num_blocks is not None else "∞"
             )
             for i in range(self._block_size):
-                trial_num = block_idx * self._block_size + i
                 item = QtWidgets.QGraphicsEllipseItem(
                     i * (d + sp), 2, d, d,
                 )
                 item.setBrush(QtGui.QBrush(QtCore.Qt.GlobalColor.transparent))
                 pen = QtGui.QPen(QtGui.QColor(_COLOR_UPCOMING_DOT), 1.5)
                 item.setPen(pen)
+                block_label_str = (
+                    f"Block {block_idx + 1} / {block_num_str}"
+                )
                 item.setToolTip(
-                    f"Trial {i + 1} / {trial_in_block_str} (Block {block_idx + 1} / {block_num_str})\n"
+                    f"Trial {i + 1} / {trial_in_block_str} ({block_label_str})\n"
                     "Pending"
                 )
                 item.setAcceptHoverEvents(True)

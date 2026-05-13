@@ -25,6 +25,7 @@ python-bidi = "*"
 arabic_reshaper = "*"
 freetype-py = "*"
 requests = "*"
+pyqt = ">=6.5"
 
 [target.osx-arm64.pypi-dependencies]
 pyobjc-framework-Cocoa = "*"

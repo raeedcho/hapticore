@@ -355,6 +355,12 @@ class DashboardConfig(BaseModel):
         default_factory=lambda: [1.0, 0.3, 0.3],
         description="RGB color for the force vector arrow.",
     )
+    status_enabled: bool = Field(
+        default=True,
+        description="Launch the Qt status dashboard window showing state machine "
+                    "and trial/block progress. Set to False to launch only the "
+                    "workspace mirror.",
+    )
 
 
 class ExperimentConfig(BaseSettings):

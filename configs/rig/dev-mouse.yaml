@@ -21,6 +21,7 @@ display:
   background_color: [0.0, 0.0, 0.0]
   photodiode_enabled: false
   mirror_horizontal: false
+  window_gui: true
 
 recording:
   save_dir: "data"
@@ -41,4 +42,5 @@ zmq:
 
 dashboard:
   screen: 0
-  resolution: [1280, 800]
+  resolution: [640, 400]
+  window_gui: True

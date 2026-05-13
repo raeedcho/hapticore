@@ -162,6 +162,12 @@ class DisplayConfig(BaseModel):
                     "In Zaphod multi-screen setups, screen 0 is the control-room "
                     "monitor and screen 1 is the rig monitor.",
     )
+    window_gui: bool = Field(
+        default=False,
+        description="Whether to allow the window manager's title bar and borders on the display window. "
+                    "Set to True to allow dragging the window or seeing its title bar for debugging. "
+                    "Set to False for a clean borderless display (default) and to avoid accidental dragging"
+    )
     mirror_horizontal: bool = Field(
         default=False,
         description="Mirror the rendered image across the vertical axis. Use "
@@ -317,6 +323,12 @@ class DashboardConfig(BaseModel):
     resolution: tuple[int, int] = (1920, 1080)
     background_color: list[float] = Field(
         default_factory=lambda: [0.0, 0.0, 0.0],
+    )
+    window_gui: bool = Field(
+        default=True,
+        description="Whether to allow the window manager's title bar and borders on the display window. "
+                    "Set to True to allow dragging the window or seeing its title bar for debugging. "
+                    "Set to False for a clean borderless display (default) and to avoid accidental dragging"
     )
     mirror_horizontal: bool = Field(
         default=False,

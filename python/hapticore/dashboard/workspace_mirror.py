@@ -368,7 +368,7 @@ class WorkspaceMirrorProcess(multiprocessing.Process):
             color=dash.background_color,
             monitor=mon,
             units="cm",
-            allowGUI=False,
+            allowGUI=dash.window_gui,
             winType="pyglet",
             checkTiming=False,
             screen=dash.screen,

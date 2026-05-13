@@ -10,7 +10,6 @@ import collections
 import logging
 import math
 import multiprocessing
-import multiprocessing.queues
 import os
 import signal
 import sys

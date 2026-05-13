@@ -7,7 +7,6 @@ marker is selected.
 from __future__ import annotations
 
 import pytest
-pytest.importorskip("psychopy")
 
 import multiprocessing
 import time
@@ -19,6 +18,7 @@ from hapticore.core.config import DashboardConfig, DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_STATE
 from hapticore.core.messaging import make_ipc_address
 
+pytest.importorskip("psychopy")
 
 @pytest.mark.display
 class TestWorkspaceMirrorLifecycle:

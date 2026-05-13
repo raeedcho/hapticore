@@ -43,4 +43,4 @@ zmq:
 dashboard:
   screen: 0
   resolution: [640, 400]
-  window_gui: True
+  window_gui: true

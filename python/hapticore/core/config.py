@@ -164,9 +164,9 @@ class DisplayConfig(BaseModel):
     )
     window_gui: bool = Field(
         default=False,
-        description="Whether to allow the window manager's title bar and borders on the display window. "
-                    "Set to True to allow dragging the window or seeing its title bar for debugging. "
-                    "Set to False for a clean borderless display (default) and to avoid accidental dragging"
+        description="Allow the window manager's title bar and borders on the window. "
+                    "True allows dragging the window or seeing its title bar for debugging."
+                    "False for a clean and locked borderless display."
     )
     mirror_horizontal: bool = Field(
         default=False,
@@ -326,9 +326,9 @@ class DashboardConfig(BaseModel):
     )
     window_gui: bool = Field(
         default=True,
-        description="Whether to allow the window manager's title bar and borders on the display window. "
-                    "Set to True to allow dragging the window or seeing its title bar for debugging. "
-                    "Set to False for a clean borderless display (default) and to avoid accidental dragging"
+        description="Allow the window manager's title bar and borders on the window. "
+                    "True allows dragging the window or seeing its title bar for debugging."
+                    "False for a clean and locked borderless display."
     )
     mirror_horizontal: bool = Field(
         default=False,

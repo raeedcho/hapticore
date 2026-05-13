@@ -109,57 +109,6 @@ class TestDashboardConfig:
 
 
 # ---------------------------------------------------------------------------
-# Position trail ring buffer logic
-# ---------------------------------------------------------------------------
-
-
-class TestPositionTrailBuffer:
-    def test_ring_buffer_evicts_oldest(self) -> None:
-        maxlen = 5
-        trail: collections.deque[list[float]] = collections.deque(maxlen=maxlen)
-        for i in range(10):
-            trail.append([float(i), 0.0])
-        assert len(trail) == maxlen
-        assert list(trail)[0] == [5.0, 0.0]
-        assert list(trail)[-1] == [9.0, 0.0]
-
-    def test_opacity_oldest_to_newest(self) -> None:
-        """Opacity increases linearly from oldest to newest."""
-        n = 4
-        trail: collections.deque[list[float]] = collections.deque(maxlen=n)
-        for i in range(n):
-            trail.append([float(i), 0.0])
-
-        trail_list = list(trail)
-        for i, _ in enumerate(trail_list):
-            opacity = (i + 1) / n
-            assert abs(opacity - (i + 1) / n) < 1e-9
-
-        # Verify newest has opacity 1.0
-        assert (len(trail_list)) / n == 1.0
-        # Verify oldest has opacity 1/n (using formula (i+1)/n where i=0)
-        assert (0 + 1) / n == pytest.approx(1 / n)
-
-    def test_trail_length_zero_stays_empty(self) -> None:
-        trail: collections.deque[list[float]] = collections.deque(maxlen=0)
-        trail.append([1.0, 2.0])
-        assert len(trail) == 0
-
-    def test_partial_fill_opacities(self) -> None:
-        """Opacity computation when deque has fewer entries than maxlen."""
-        maxlen = 10
-        trail: collections.deque[list[float]] = collections.deque(maxlen=maxlen)
-        trail.append([0.0, 0.0])
-        trail.append([1.0, 0.0])
-        trail.append([2.0, 0.0])
-        n = len(trail)
-        assert n == 3
-        opacities = [(i + 1) / n for i in range(n)]
-        assert opacities[0] == pytest.approx(1 / 3)
-        assert opacities[-1] == pytest.approx(1.0)
-
-
-# ---------------------------------------------------------------------------
 # Force arrow geometry
 # ---------------------------------------------------------------------------
 

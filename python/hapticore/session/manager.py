@@ -260,9 +260,9 @@ class SessionManager:
             if self._is_recording:
                 self.stop_recording()
 
+            self._stop_workspace_mirror()
             self._stop_data_logger()
             self._stop_ripple_process()
-            self._stop_workspace_mirror()
 
             if self._exit_stack is not None:
                 self._exit_stack.close()

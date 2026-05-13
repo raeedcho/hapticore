@@ -74,13 +74,11 @@ class WorkspaceMirrorProcess(multiprocessing.Process):
 
         from psychopy import visual  # noqa: F811 — import ONLY here
 
-        from hapticore.display._x11 import restore_pointer_focus
         from hapticore.display.scene_manager import SceneManager
 
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
         win = self._create_window(visual)
-        restore_pointer_focus()
 
         ctx = zmq.Context()
         display_sub = ctx.socket(zmq.SUB)

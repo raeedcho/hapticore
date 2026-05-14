@@ -121,8 +121,8 @@ class StatusDashboardProcess(multiprocessing.Process):
 
     Displays:
     - State machine pipeline with current state highlighted
-    - Trial dot row (current block) with per-trial outcome colors and tooltips
-    - Block dot row (session) with per-block success-rate gradient colors
+    - Trial dot column (current block) with per-trial outcome colors and tooltips
+    - Block dot column (session) with per-block success-rate gradient colors
 
     Subscribes to ``TOPIC_EVENT`` for ``StateTransition`` and ``TrialEvent``
     messages.  Read-only subscriber — does not publish any messages.
@@ -196,29 +196,30 @@ class StatusDashboardProcess(multiprocessing.Process):
         window = QtWidgets.QWidget()
         window.setWindowTitle("Hapticore — Session Status")
         window.setStyleSheet("background-color: #212121; color: #FFFFFF;")
-        root_layout = QtWidgets.QVBoxLayout(window)
+        root_layout = QtWidgets.QHBoxLayout(window)
         root_layout.setContentsMargins(8, 8, 8, 8)
         root_layout.setSpacing(6)
 
         # -- State machine pipeline (top section) --
         state_scene = QtWidgets.QGraphicsScene()
         state_view = QtWidgets.QGraphicsView(state_scene)
-        state_view.setFixedHeight(80)
-        state_view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        state_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        state_view.setFixedWidth(150)
+        state_view.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
+        state_view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        state_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         state_view.setStyleSheet("background-color: #212121; border: none;")
         root_layout.addWidget(state_view)
 
         # Build state boxes
         box_w, box_h = 90, 36
-        gap = 22  # gap between boxes (for arrow)
+        gap = 15  # gap between boxes
         state_items: dict[str, Any] = {}
         text_items: dict[str, Any] = {}
-        x = 4
-        for idx, state_name in enumerate(self._task_states):
+        y = 4
+        for state_name in self._task_states:
             # Rounded-rect path
             path = QtGui.QPainterPath()
-            path.addRoundedRect(x, 4, box_w, box_h, 6, 6)
+            path.addRoundedRect(4, y, box_w, box_h, 6, 6)
             item = QtWidgets.QGraphicsPathItem(path)
             if state_name == self._task_initial_state:
                 item.setBrush(QtGui.QBrush(QtGui.QColor(_COLOR_CURRENT_STATE)))
@@ -231,65 +232,59 @@ class StatusDashboardProcess(multiprocessing.Process):
             # Label
             label = QtWidgets.QGraphicsSimpleTextItem(state_name)
             label.setBrush(QtGui.QBrush(QtGui.QColor(_COLOR_STATE_TEXT)))
-            font = QtGui.QFont("monospace", 7)
+            font = QtGui.QFont("monospace", 11)
             label.setFont(font)
             br = label.boundingRect()
             label.setPos(
-                x + (box_w - br.width()) / 2,
-                4 + (box_h - br.height()) / 2,
+                4 + (box_w - br.width()) / 2,
+                y + (box_h - br.height()) / 2,
             )
             state_scene.addItem(label)
             text_items[state_name] = label
 
-            # Arrow to next state
-            if idx < len(self._task_states) - 1:
-                arrow_x = x + box_w + gap // 2 - 4
-                arr = QtWidgets.QGraphicsSimpleTextItem("→")
-                arr.setBrush(QtGui.QBrush(QtGui.QColor("#9E9E9E")))
-                arr.setPos(arrow_x, 4 + (box_h - arr.boundingRect().height()) / 2)
-                state_scene.addItem(arr)
+            y += box_h + gap
 
-            x += box_w + gap
+        state_scene.setSceneRect(0, 0, box_w + 8, y - gap + 4)
 
-        state_scene.setSceneRect(0, 0, x - gap + 4, box_h + 8)
-
-        # -- Block dots row (middle section) --
-        block_row = QtWidgets.QHBoxLayout()
+        # -- Block dots column (middle section) --
+        block_col = QtWidgets.QVBoxLayout()
         num_blocks_str = str(self._num_blocks) if self._num_blocks is not None else "∞"
         block_label = QtWidgets.QLabel(f"Block 1 / {num_blocks_str}")
         block_label.setFixedWidth(110)
         block_label.setStyleSheet("color: #FFFFFF; font-size: 11px;")
-        block_row.addWidget(block_label)
+        block_col.addWidget(block_label)
 
         block_scene = QtWidgets.QGraphicsScene()
         block_view = QtWidgets.QGraphicsView(block_scene)
-        block_view.setFixedHeight(40)
+        block_view.setFixedWidth(40)
+        block_view.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
         block_view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        block_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        block_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         block_view.setStyleSheet("background-color: #212121; border: none;")
-        block_row.addWidget(block_view)
-        root_layout.addLayout(block_row)
+        block_col.addWidget(block_view)
+        root_layout.addLayout(block_col)
 
-        # -- Trial dots row (bottom section) --
-        trial_row = QtWidgets.QHBoxLayout()
+        # -- Trial dots column (bottom section) --
+        trial_col = QtWidgets.QVBoxLayout()
         trial_label = QtWidgets.QLabel(f"Trial 1 / {self._block_size}")
-        trial_label.setFixedWidth(110)
+        trial_label.setFixedWidth(130)
         trial_label.setStyleSheet("color: #FFFFFF; font-size: 11px;")
-        trial_row.addWidget(trial_label)
+        trial_col.addWidget(trial_label)
 
         trial_scene = QtWidgets.QGraphicsScene()
         trial_view = QtWidgets.QGraphicsView(trial_scene)
-        trial_view.setFixedHeight(40)
+        trial_view.setFixedWidth(40)
+        trial_view.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
         trial_view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        trial_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        trial_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         trial_view.setStyleSheet("background-color: #212121; border: none;")
-        trial_row.addWidget(trial_view)
-        root_layout.addLayout(trial_row)
+        trial_col.addWidget(trial_view)
 
         # Outcome label
         outcome_label = QtWidgets.QLabel("Last outcome: —")
         outcome_label.setStyleSheet("color: #9E9E9E; font-size: 11px; padding-left: 4px;")
-        root_layout.addWidget(outcome_label)
+        trial_col.addWidget(outcome_label)
+        root_layout.addLayout(trial_col)
 
         # ---- Helper to create a fresh set of trial dots --------------------
         d = _DOT_DIAMETER
@@ -304,7 +299,7 @@ class StatusDashboardProcess(multiprocessing.Process):
             )
             for i in range(self._block_size):
                 item = QtWidgets.QGraphicsEllipseItem(
-                    i * (d + sp), 2, d, d,
+                    2, i * (d + sp), d, d,
                 )
                 item.setBrush(QtGui.QBrush(QtCore.Qt.GlobalColor.transparent))
                 pen = QtGui.QPen(QtGui.QColor(_COLOR_UPCOMING_DOT), 1.5)
@@ -320,7 +315,7 @@ class StatusDashboardProcess(multiprocessing.Process):
                 trial_scene.addItem(item)
                 dots.append(item)
             trial_scene.setSceneRect(
-                0, 0, self._block_size * (d + sp) - sp + 4, d + 8,
+                0, 0, d + 8, self._block_size * (d + sp) - sp + 4,
             )
             return dots
 
@@ -334,7 +329,7 @@ class StatusDashboardProcess(multiprocessing.Process):
             total_str = str(self._num_blocks) if self._num_blocks is not None else "∞"
             for i in range(num):
                 item = QtWidgets.QGraphicsEllipseItem(
-                    i * (bd + sp), 2, bd, bd,
+                    2, i * (bd + sp), bd, bd,
                 )
                 item.setBrush(QtGui.QBrush(QtCore.Qt.GlobalColor.transparent))
                 pen = QtGui.QPen(QtGui.QColor(_COLOR_UPCOMING_DOT), 1.5)
@@ -346,14 +341,14 @@ class StatusDashboardProcess(multiprocessing.Process):
                 block_scene.addItem(item)
                 block_items.append(item)
             block_scene.setSceneRect(
-                0, 0, max(1, num) * (bd + sp) - sp + 4, bd + 8,
+                0, 0, bd + 8, max(1, num) * (bd + sp) - sp + 4,
             )
 
         def add_block_dot(block_idx: int) -> None:
             """Add one new block dot for open-ended sessions."""
             i = block_idx
             item = QtWidgets.QGraphicsEllipseItem(
-                i * (bd + sp), 2, bd, bd,
+                2, i * (bd + sp), bd, bd,
             )
             item.setBrush(QtGui.QBrush(QtCore.Qt.GlobalColor.transparent))
             pen = QtGui.QPen(QtGui.QColor(_COLOR_UPCOMING_DOT), 1.5)
@@ -363,7 +358,7 @@ class StatusDashboardProcess(multiprocessing.Process):
             block_scene.addItem(item)
             block_items.append(item)
             block_scene.setSceneRect(
-                0, 0, len(block_items) * (bd + sp) - sp + 4, bd + 8,
+                0, 0, bd + 8, len(block_items) * (bd + sp) - sp + 4,
             )
 
         # Initialize block and trial dots
@@ -375,7 +370,7 @@ class StatusDashboardProcess(multiprocessing.Process):
 
         trial_items: list[Any] = make_trial_dots(0)
 
-        window.resize(900, 220)
+        window.resize(220, 700)
         window.show()
 
         if self._ready_event is not None:

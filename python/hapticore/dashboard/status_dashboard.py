@@ -366,7 +366,6 @@ class StatusDashboardProcess(multiprocessing.Process):
 
         trial_items: list[Any] = make_trial_dots(0)
 
-        window.resize(220, 700)
         window.show()
 
         if self._ready_event is not None:

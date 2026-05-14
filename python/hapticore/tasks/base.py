@@ -119,7 +119,11 @@ class BaseTask(ABC):
             event_name="trial_complete",
             event_code=0,
             trial_number=self.trial_number,
-            data={"outcome": outcome, **extra_data},
+            data={
+                "outcome": outcome,
+                "condition": dict(self.current_condition),
+                **extra_data,
+            },
         )
         self.event_bus.publish(TOPIC_EVENT, serialize(event))
 

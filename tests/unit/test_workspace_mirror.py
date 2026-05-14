@@ -148,7 +148,7 @@ class TestSessionManagerWorkspaceMirrorGating:
         """Dashboard config present but display.backend='mock' → no mirror."""
         from hapticore.session import SessionManager
 
-        cfg = _minimal_config(tmp_path, dashboard=DashboardConfig())
+        cfg = _minimal_config(tmp_path, dashboard=DashboardConfig(status_enabled=False))
         sm = SessionManager(cfg)
         sm.start()
         try:

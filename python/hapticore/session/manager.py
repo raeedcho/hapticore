@@ -26,6 +26,7 @@ from hapticore.core.config import ExperimentConfig, ZMQConfig
 from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
 from hapticore.core.messages import TOPIC_SESSION, SessionControl, serialize
 from hapticore.core.messaging import EventPublisher
+from hapticore.dashboard.status_dashboard import StatusDashboardProcess
 from hapticore.dashboard.workspace_mirror import WorkspaceMirrorProcess
 from hapticore.datalog import DataLoggerProcess
 from hapticore.display import make_display_interface
@@ -65,6 +66,13 @@ _WORKSPACE_MIRROR_READY_POLL_INTERVAL_S = 0.1
 _WORKSPACE_MIRROR_SUBSCRIPTION_GRACE_S = 0.05
 _WORKSPACE_MIRROR_SHUTDOWN_TIMEOUT_S = 5.0
 _WORKSPACE_MIRROR_TERMINATE_JOIN_TIMEOUT_S = 2.0
+
+# StatusDashboardProcess timeouts.
+_STATUS_DASHBOARD_READY_TIMEOUT_S = 10.0
+_STATUS_DASHBOARD_READY_POLL_INTERVAL_S = 0.1
+_STATUS_DASHBOARD_SUBSCRIPTION_GRACE_S = 0.05
+_STATUS_DASHBOARD_SHUTDOWN_TIMEOUT_S = 5.0
+_STATUS_DASHBOARD_TERMINATE_JOIN_TIMEOUT_S = 2.0
 
 
 class SessionManager:
@@ -135,6 +143,9 @@ class SessionManager:
 
         self._workspace_mirror_proc: WorkspaceMirrorProcess | None = None
         self._workspace_mirror_started: bool = False
+
+        self._status_dashboard_proc: StatusDashboardProcess | None = None
+        self._status_dashboard_started: bool = False
 
     # -- Process lifecycle --------------------------------------------------
 
@@ -213,6 +224,13 @@ class SessionManager:
             ):
                 self._start_workspace_mirror()
 
+            # Start status dashboard (Qt only — no PsychoPy, works with mock backend).
+            if (
+                self._config.dashboard is not None
+                and self._config.dashboard.status_enabled
+            ):
+                self._start_status_dashboard()
+
             self._sync = self._exit_stack.enter_context(
                 make_sync_interface(
                     self._config.sync, self._zmq_config,
@@ -236,6 +254,7 @@ class SessionManager:
                 self._display = None
                 self._sync = None
                 self._stop_workspace_mirror()
+                self._stop_status_dashboard()
                 self._stop_data_logger()
                 self._cleanup_zmq()
             raise
@@ -261,6 +280,7 @@ class SessionManager:
                 self.stop_recording()
 
             self._stop_workspace_mirror()
+            self._stop_status_dashboard()
             self._stop_data_logger()
             self._stop_ripple_process()
 
@@ -669,6 +689,75 @@ class SessionManager:
             if proc.is_alive():
                 logger.warning(
                     "WorkspaceMirrorProcess (pid=%d) still alive after "
+                    "terminate(); may leak.",
+                    proc.pid,
+                )
+
+    def _start_status_dashboard(self) -> None:
+        """Start StatusDashboardProcess with readiness polling loop."""
+        assert self._config.dashboard is not None
+        assert self._zmq_config is not None
+
+        import importlib  # noqa: PLC0415
+
+        module_path, class_name = self._config.task.task_class.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        task_cls = getattr(module, class_name)
+
+        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        proc = StatusDashboardProcess(
+            dashboard_config=self._config.dashboard,
+            zmq_config=self._zmq_config,
+            task_states=task_cls.STATES,
+            task_initial_state=task_cls.INITIAL_STATE,
+            block_size=self._config.task.block_size,
+            num_blocks=self._config.task.num_blocks,
+            num_conditions=len(self._config.task.conditions),
+            ready_event=ready_event,
+        )
+        self._status_dashboard_proc = proc
+        self._status_dashboard_started = False
+
+        proc.start()
+        self._status_dashboard_started = True
+
+        try:
+            deadline = time.monotonic() + _STATUS_DASHBOARD_READY_TIMEOUT_S
+            while not ready_event.is_set():
+                if not proc.is_alive():
+                    raise RuntimeError(
+                        f"StatusDashboardProcess died during startup "
+                        f"(exit code: {proc.exitcode})."
+                    )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        f"StatusDashboardProcess started but did not become ready "
+                        f"within {_STATUS_DASHBOARD_READY_TIMEOUT_S}s."
+                    )
+                ready_event.wait(
+                    timeout=min(_STATUS_DASHBOARD_READY_POLL_INTERVAL_S, remaining),
+                )
+        except Exception:
+            self._stop_status_dashboard()
+            raise
+
+        time.sleep(_STATUS_DASHBOARD_SUBSCRIPTION_GRACE_S)
+        logger.info("StatusDashboardProcess ready (pid=%d)", proc.pid)
+
+    def _stop_status_dashboard(self) -> None:
+        """Shut down StatusDashboardProcess with the standard shutdown sequence."""
+        if self._status_dashboard_proc is None or not self._status_dashboard_started:
+            return
+        proc = self._status_dashboard_proc
+        proc.request_shutdown()
+        proc.join(timeout=_STATUS_DASHBOARD_SHUTDOWN_TIMEOUT_S)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=_STATUS_DASHBOARD_TERMINATE_JOIN_TIMEOUT_S)
+            if proc.is_alive():
+                logger.warning(
+                    "StatusDashboardProcess (pid=%d) still alive after "
                     "terminate(); may leak.",
                     proc.pid,
                 )

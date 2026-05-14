@@ -137,7 +137,7 @@ jobs:
           cache: true
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y xvfb libsdl2-2.0-0 libglu1-mesa libgl1-mesa-dri
+        run: sudo apt-get update && sudo apt-get install -y xvfb libsdl2-2.0-0 libglu1-mesa libgl1-mesa-dri libegl1
 
       - name: Install PsychoPy (no-deps)
         run: pixi run install-psychopy
@@ -146,6 +146,8 @@ jobs:
         run: xvfb-run -a pixi run test-unit
 
       - name: Run display tests under xvfb
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: xvfb-run -a -s "-screen 0 1920x1080x24" pixi run test-display
 
   firmware-build:

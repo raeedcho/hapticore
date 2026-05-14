@@ -146,6 +146,8 @@ jobs:
         run: xvfb-run -a pixi run test-unit
 
       - name: Run display tests under xvfb
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: xvfb-run -a -s "-screen 0 1920x1080x24" pixi run test-display
 
   firmware-build:

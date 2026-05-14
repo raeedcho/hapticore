@@ -525,7 +525,9 @@ class StatusDashboardProcess(multiprocessing.Process):
                     # Outcome label
                     hex_color = outcome_color(out)
                     outcome_label.setText(f"Last outcome: {out}")
-                    outcome_label.setStyleSheet(f"color: {hex_color}; font-size: 11px; padding-left: 4px;")
+                    outcome_label.setStyleSheet(
+                        f"color: {hex_color}; font-size: 11px; padding-left: 4px;"
+                    )
 
                     # Update block dot
                     if blk < len(block_items):

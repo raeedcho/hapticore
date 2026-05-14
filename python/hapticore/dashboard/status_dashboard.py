@@ -204,7 +204,7 @@ class StatusDashboardProcess(multiprocessing.Process):
         state_scene = QtWidgets.QGraphicsScene()
         state_view = QtWidgets.QGraphicsView(state_scene)
         state_view.setFixedHeight(80)
-        state_view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        state_view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         state_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         state_view.setStyleSheet("background-color: #212121; border: none;")
         root_layout.addWidget(state_view)

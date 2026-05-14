@@ -137,7 +137,7 @@ jobs:
           cache: true
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y xvfb libsdl2-2.0-0 libglu1-mesa libgl1-mesa-dri
+        run: sudo apt-get update && sudo apt-get install -y xvfb libsdl2-2.0-0 libglu1-mesa libgl1-mesa-dri libegl1
 
       - name: Install PsychoPy (no-deps)
         run: pixi run install-psychopy

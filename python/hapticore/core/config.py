@@ -358,8 +358,8 @@ class DashboardConfig(BaseModel):
     status_enabled: bool = Field(
         default=True,
         description="Launch the Qt status dashboard window showing state machine "
-                    "and trial/block progress. Set to False to launch only the "
-                    "workspace mirror.",
+                    "and trial/block progress. Set to False to disable the status "
+                    "dashboard.",
     )
 
 

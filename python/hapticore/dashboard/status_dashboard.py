@@ -174,7 +174,15 @@ class StatusDashboardProcess(multiprocessing.Process):
 
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-        app = QtWidgets.QApplication([])
+        try:
+            app = QtWidgets.QApplication([])
+        except Exception:
+            logger.warning(
+                "Could not create QApplication (no display?); status dashboard disabled."
+            )
+            if self._ready_event is not None:
+                self._ready_event.set()  # unblock SessionManager
+            return
 
         # ---- ZMQ subscriber ------------------------------------------------
         ctx = zmq.Context()

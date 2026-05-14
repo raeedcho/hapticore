@@ -194,11 +194,6 @@ class TestProgressComputation:
     def test_trial_within_block_first_of_second_block(self) -> None:
         assert compute_trial_within_block(8, 8) == 0
 
-    def test_total_trials_finite(self) -> None:
-        """Total trials = block_size * num_blocks."""
-        block_size, num_blocks = 8, 4
-        assert block_size * num_blocks == 32
-
     def test_open_ended_detection(self) -> None:
         """num_blocks=None signals open-ended session."""
         from hapticore.core.config import TaskConfig

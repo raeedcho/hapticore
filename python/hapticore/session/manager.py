@@ -699,15 +699,6 @@ class SessionManager:
         assert self._zmq_config is not None
 
         import importlib  # noqa: PLC0415
-        import importlib.util  # noqa: PLC0415
-
-        # Skip gracefully if PyQt6 is not installed.
-        if importlib.util.find_spec("PyQt6") is None:
-            logger.warning(
-                "PyQt6 not installed; StatusDashboardProcess will not be launched. "
-                "Run 'pixi run install-pyqt' to enable the status dashboard."
-            )
-            return
 
         module_path, class_name = self._config.task.task_class.rsplit(".", 1)
         module = importlib.import_module(module_path)

@@ -48,7 +48,7 @@ def outcome_color(outcome: str) -> str:
 
 
 def block_success_rate_color(success_rate: float) -> tuple[int, int, int]:
-    """Map a success rate (0.0–1.0) to an RGB tuple via green→red gradient.
+    """Map a success rate (0.0–1.0) to an RGB tuple via red→green gradient.
 
     Uses HSV(hue, 1, 1) → RGB conversion:
     - 0.0 (0% success) → hue 0° → red   (255, 0, 0)
@@ -135,7 +135,6 @@ class StatusDashboardProcess(multiprocessing.Process):
         dashboard_config: DashboardConfig,
         zmq_config: ZMQConfig,
         task_states: list[str],
-        task_transitions: list[dict[str, Any]],
         task_initial_state: str,
         block_size: int,
         num_blocks: int | None,
@@ -147,7 +146,6 @@ class StatusDashboardProcess(multiprocessing.Process):
         self._dashboard_config = dashboard_config
         self._zmq_config = zmq_config
         self._task_states = list(task_states)
-        self._task_transitions = list(task_transitions)
         self._task_initial_state = task_initial_state
         self._block_size = block_size
         self._num_blocks = num_blocks
@@ -176,11 +174,11 @@ class StatusDashboardProcess(multiprocessing.Process):
 
         try:
             app = QtWidgets.QApplication([])
-        except Exception:
+        except Exception as err:
             logger.exception(
                 "Could not create QApplication (no display?); status dashboard startup failed."
             )
-            raise SystemExit(1)
+            raise SystemExit(1) from err
 
         # ---- ZMQ subscriber ------------------------------------------------
         ctx = zmq.Context()
@@ -525,16 +523,9 @@ class StatusDashboardProcess(multiprocessing.Process):
                     block_completed_trials[blk] += 1
 
                     # Outcome label
-                    color_map = {
-                        "success": "color: #4CAF50;",
-                        "spill": "color: #F44336;",
-                        "failure": "color: #F44336;",
-                        "timeout": "color: #FF9800;",
-                        "abort": "color: #FF9800;",
-                    }
-                    style = color_map.get(out, "color: #FFEB3B;")
+                    hex_color = outcome_color(out)
                     outcome_label.setText(f"Last outcome: {out}")
-                    outcome_label.setStyleSheet(f"{style} font-size: 11px; padding-left: 4px;")
+                    outcome_label.setStyleSheet(f"color: {hex_color}; font-size: 11px; padding-left: 4px;")
 
                     # Update block dot
                     if blk < len(block_items):

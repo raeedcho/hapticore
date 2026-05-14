@@ -709,7 +709,6 @@ class SessionManager:
             dashboard_config=self._config.dashboard,
             zmq_config=self._zmq_config,
             task_states=task_cls.STATES,
-            task_transitions=task_cls.TRANSITIONS,
             task_initial_state=task_cls.INITIAL_STATE,
             block_size=self._config.task.block_size,
             num_blocks=self._config.task.num_blocks,

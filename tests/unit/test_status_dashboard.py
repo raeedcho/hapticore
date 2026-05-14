@@ -357,8 +357,6 @@ class TestSessionManagerStatusDashboardGating:
         # the gating logic reaches it, without spawning a real Qt process.
         reached: list[bool] = []
 
-        original = sm._start_status_dashboard
-
         def patched_start() -> None:
             reached.append(True)
             # Create a minimal proc object without starting it

@@ -32,12 +32,20 @@ logger = logging.getLogger(__name__)
 class TaskController:
     """Orchestrates task execution: state machine, trial management, and main loop.
 
-    Lifecycle::
+    CLI lifecycle::
 
         controller = TaskController(config, hardware)
-        controller.setup()        # creates Machine, wires task
-        controller.run()          # blocks in main loop until session complete or stopped
-        controller.teardown()     # cleanup
+        controller.setup()
+        controller.run()          # blocks until session complete or stopped
+        controller.teardown()
+
+    GUI lifecycle (QTimer-driven)::
+
+        controller = TaskController(config, hardware)
+        controller.setup()
+        controller.start_first_trial()
+        # call controller.tick() from a QTimer at poll_rate_hz
+        controller.teardown()
     """
 
     def __init__(
@@ -180,7 +188,6 @@ class TaskController:
         """
         if self._stop_requested:
             return
-        self._stop_requested = False
         tick_duration = 1.0 / self.poll_rate_hz
 
         # --- SIGINT handler --------------------------------------------------

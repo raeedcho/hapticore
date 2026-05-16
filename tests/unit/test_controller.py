@@ -588,3 +588,74 @@ class TestControllerSigint:
             controller.teardown()
             pub.close()
             ctx.term()
+
+
+class TestControllerTick:
+    def test_tick_returns_true_while_running(self) -> None:
+        """tick() returns True when the session is still active."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller(task, num_trials=3)
+        try:
+            controller.setup()
+            assert controller.start_first_trial()
+            # First tick — trial 0 just started, session not complete
+            assert controller.tick() is True
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_tick_returns_false_when_complete(self) -> None:
+        """tick() returns False after all trials complete."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller(task, num_trials=1)
+        try:
+            controller.setup()
+            assert controller.start_first_trial()
+            # Tick until the session finishes (TimerTestTask uses 1ms timers)
+            for _ in range(500):
+                if not controller.tick():
+                    break
+                time.sleep(0.001)
+            assert tm.is_complete
+            assert controller.tick() is False
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_start_first_trial_returns_false_for_empty_session(self) -> None:
+        """start_first_trial() returns False when TrialManager has no more trials."""
+        task = SimpleTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller(task, num_trials=1)
+        try:
+            controller.setup()
+            # Exhaust the trial manager by requesting an immediate stop.
+            # After request_stop(after="trial"), advance() returns None.
+            tm.request_stop(after="trial")
+            assert controller.start_first_trial() is False
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_tick_driven_full_session(self) -> None:
+        """A full session can be driven entirely by tick() calls."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller(task, num_trials=3)
+        try:
+            controller.setup()
+            assert controller.start_first_trial()
+            for _ in range(2000):
+                if not controller.tick():
+                    break
+                time.sleep(0.001)
+            assert tm.is_complete
+            log = tm.get_trial_log()
+            assert len(log) == 3
+            for entry in log:
+                assert entry["outcome"] == "success"
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()

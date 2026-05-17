@@ -237,7 +237,8 @@ class TaskController:
                         raise KeyboardInterrupt
 
                 # Delegate to tick()
-                self.tick()
+                if not self.tick():
+                    break
 
                 # Sleep to maintain poll rate
                 remaining = next_tick - time.monotonic()
@@ -265,6 +266,10 @@ class TaskController:
         call this explicitly before starting the QTimer that drives
         ``tick()``.
         """
+        if self._running:
+            raise RuntimeError(
+                "start_first_trial() called while controller already running"
+            )
         if not self._start_next_trial():
             logger.warning("No trials to run")
             return False

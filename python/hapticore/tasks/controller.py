@@ -316,13 +316,17 @@ class TaskController:
         if self._param_sub is not None:
             for msg in drain_sub_messages(self._param_sub):
                 if msg.get("__msg_type__") == "ParamUpdate":
-                    update = ParamUpdate(
-                        timestamp=msg["timestamp"],
-                        trial_number=msg["trial_number"],
-                        param=msg["param"],
-                        old_value=msg["old_value"],
-                        new_value=msg["new_value"],
-                    )
+                    try:
+                        update = ParamUpdate(
+                            timestamp=msg["timestamp"],
+                            trial_number=msg["trial_number"],
+                            param=msg["param"],
+                            old_value=msg["old_value"],
+                            new_value=msg["new_value"],
+                        )
+                    except (TypeError, KeyError):
+                        logger.warning("Skipping malformed ParamUpdate message")
+                        continue
                     self._pending_param_updates.append(update)
 
         # 1. Read haptic state
@@ -425,7 +429,7 @@ class TaskController:
             return
 
         for update in self._pending_param_updates:
-            if update.param not in self.task.PARAMS:
+            if update.param not in self.task.params:
                 logger.warning(
                     "Ignoring ParamUpdate for unknown param '%s'",
                     update.param,

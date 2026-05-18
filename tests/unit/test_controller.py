@@ -9,6 +9,7 @@ import pytest
 import zmq
 
 from hapticore.core.messages import TOPIC_EVENT, StateTransition, deserialize
+from hapticore.core.messages import TOPIC_PARAM, ParamUpdate, serialize
 from hapticore.core.messaging import EventPublisher, EventSubscriber, make_ipc_address
 from hapticore.display.mock import MockDisplay
 from hapticore.haptic.mock import MockHapticInterface
@@ -658,4 +659,230 @@ class TestControllerTick:
         finally:
             controller.teardown()
             pub.close()
+            ctx.term()
+
+
+def _make_controller_with_param_sub(
+    task: BaseTask,
+    num_trials: int = 3,
+    poll_rate_hz: float = 1000.0,
+    params: dict[str, Any] | None = None,
+) -> tuple[
+    TaskController, MockHapticInterface, MockSync,
+    EventPublisher, TrialManager, zmq.Context,
+]:
+    """Like _make_controller, but wires up TOPIC_PARAM subscription."""
+    haptic = MockHapticInterface()
+    display = MockDisplay()
+    sync = MockSync()
+
+    ctx = zmq.Context()
+    address = make_ipc_address("test-param")
+    publisher = EventPublisher(ctx, address)
+
+    conditions = [{"target_id": i} for i in range(num_trials)]
+    trial_manager = TrialManager(
+        conditions=conditions,
+        block_size=num_trials,
+        num_blocks=1,
+        randomization="sequential",
+    )
+
+    controller = TaskController(
+        task=task,
+        haptic=haptic,
+        display=display,
+        sync=sync,
+        event_publisher=publisher,
+        trial_manager=trial_manager,
+        params=params,
+        poll_rate_hz=poll_rate_hz,
+        zmq_context=ctx,
+        event_address=address,
+    )
+    return controller, haptic, sync, publisher, trial_manager, ctx
+
+
+class TestControllerParamUpdates:
+    def test_param_update_applied_at_trial_boundary(self) -> None:
+        """ParamUpdate on TOPIC_PARAM takes effect at the next trial start."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller_with_param_sub(
+            task, num_trials=3,
+        )
+        try:
+            controller.setup()
+            assert controller.start_first_trial()
+            time.sleep(0.05)  # slow-joiner grace for SUB socket
+
+            # Param starts at default
+            assert task.params["hold_time"] == 0.5
+
+            # Publish a param update
+            update = ParamUpdate(
+                timestamp=time.monotonic(),
+                trial_number=0,
+                param="hold_time",
+                old_value=0.5,
+                new_value=0.3,
+            )
+            pub.publish(TOPIC_PARAM, serialize(update))
+            time.sleep(0.01)  # let ZMQ deliver
+
+            # Tick through current trial — param should NOT change yet
+            # (it's queued, not applied until next trial start)
+            controller.tick()
+            assert task.params["hold_time"] == 0.5
+
+            # Run until trial boundary (TimerTestTask auto-completes)
+            for _ in range(500):
+                if not controller.tick():
+                    break
+                time.sleep(0.001)
+                # Check if we've advanced past trial 0
+                if tm.current_trial > 0:
+                    break
+
+            # Now the param should be updated
+            assert task.params["hold_time"] == 0.3
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_param_update_unknown_param_ignored(self) -> None:
+        """ParamUpdate for an unknown param is logged and ignored."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller_with_param_sub(
+            task, num_trials=2,
+        )
+        try:
+            controller.setup()
+            assert controller.start_first_trial()
+            time.sleep(0.05)  # slow-joiner grace
+
+            update = ParamUpdate(
+                timestamp=time.monotonic(),
+                trial_number=0,
+                param="nonexistent_param",
+                old_value=None,
+                new_value=42,
+            )
+            pub.publish(TOPIC_PARAM, serialize(update))
+            time.sleep(0.01)
+
+            # Tick through trial boundary — should not raise
+            for _ in range(500):
+                if not controller.tick():
+                    break
+                time.sleep(0.001)
+                if tm.current_trial > 0:
+                    break
+
+            # Original params unchanged
+            assert task.params["hold_time"] == 0.5
+            assert task.params["timeout"] == 2.0
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_param_update_without_sub_is_noop(self) -> None:
+        """Controller without param subscription ticks normally."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller(task, num_trials=1)
+        try:
+            controller.setup()
+            assert controller.start_first_trial()
+            for _ in range(500):
+                if not controller.tick():
+                    break
+                time.sleep(0.001)
+            assert tm.is_complete
+        finally:
+            controller.teardown()
+            pub.close()
+            ctx.term()
+
+    def test_param_update_republished_on_topic_event(self) -> None:
+        """Applied ParamUpdate is re-published on TOPIC_EVENT."""
+        task = TimerTestTask()
+        controller, _, _, pub, tm, ctx = _make_controller_with_param_sub(
+            task, num_trials=2,
+        )
+        sub = EventSubscriber(
+            ctx,
+            pub._socket.getsockopt_string(zmq.LAST_ENDPOINT),
+            topics=[TOPIC_EVENT],
+        )
+        try:
+            controller.setup()
+            assert controller.start_first_trial()
+            time.sleep(0.05)  # slow-joiner grace
+
+            update = ParamUpdate(
+                timestamp=time.monotonic(),
+                trial_number=0,
+                param="hold_time",
+                old_value=0.5,
+                new_value=0.3,
+            )
+            pub.publish(TOPIC_PARAM, serialize(update))
+            time.sleep(0.01)
+
+            # Tick through to next trial
+            for _ in range(500):
+                if not controller.tick():
+                    break
+                time.sleep(0.001)
+                if tm.current_trial > 0:
+                    break
+
+            # Drain TOPIC_EVENT messages — one of them should be a ParamUpdate
+            found_param_update = False
+            for _ in range(50):
+                msg = sub.recv(timeout_ms=50)
+                if msg is None:
+                    break
+                topic, payload = msg
+                try:
+                    deserialized = deserialize(payload, ParamUpdate)
+                except (TypeError, KeyError):
+                    continue  # Not a ParamUpdate — skip
+                if deserialized.param == "hold_time":
+                    found_param_update = True
+                    assert deserialized.new_value == 0.3
+                    break
+            assert found_param_update, "Expected a ParamUpdate on TOPIC_EVENT"
+        finally:
+            controller.teardown()
+            sub.close()
+            pub.close()
+            ctx.term()
+
+    def test_zmq_context_and_address_must_be_paired(self) -> None:
+        """Providing only one of zmq_context/event_address raises ValueError."""
+        task = SimpleTestTask()
+        haptic = MockHapticInterface()
+        display = MockDisplay()
+        sync = MockSync()
+        ctx = zmq.Context()
+        address = make_ipc_address("test")
+        publisher = EventPublisher(ctx, address)
+        tm = TrialManager(
+            conditions=[{"target_id": 0}],
+            block_size=1,
+            num_blocks=1,
+            randomization="sequential",
+        )
+        try:
+            with pytest.raises(ValueError, match="zmq_context and event_address"):
+                TaskController(
+                    task=task, haptic=haptic, display=display, sync=sync,
+                    event_publisher=publisher, trial_manager=tm,
+                    zmq_context=ctx,
+                    # event_address intentionally omitted
+                )
+        finally:
+            publisher.close()
             ctx.term()

@@ -13,15 +13,18 @@ import threading
 import time
 from typing import Any
 
+import zmq
 from transitions import Machine
 
 from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
 from hapticore.core.messages import (
     TOPIC_EVENT,
+    TOPIC_PARAM,
+    ParamUpdate,
     StateTransition,
     serialize,
 )
-from hapticore.core.messaging import EventPublisher
+from hapticore.core.messaging import EventPublisher, drain_sub_messages
 from hapticore.tasks.base import BaseTask
 from hapticore.tasks.timer import TimerManager
 from hapticore.tasks.trial_manager import TrialManager
@@ -58,9 +61,16 @@ class TaskController:
         trial_manager: TrialManager,
         params: dict[str, Any] | None = None,
         poll_rate_hz: float = 100.0,
+        *,
+        zmq_context: zmq.Context[Any] | None = None,
+        event_address: str | None = None,
     ) -> None:
         if poll_rate_hz <= 0:
             raise ValueError(f"poll_rate_hz must be positive, got {poll_rate_hz}")
+        if (zmq_context is None) != (event_address is None):
+            raise ValueError(
+                "zmq_context and event_address must both be provided or both None"
+            )
         self.task = task
         self.haptic = haptic
         self.display = display
@@ -74,6 +84,10 @@ class TaskController:
         self._stop_requested = False
         self._trial_ended = False
         self._machine: Machine | None = None
+        self._zmq_context = zmq_context
+        self._event_address = event_address
+        self._param_sub: zmq.Socket[Any] | None = None
+        self._pending_param_updates: list[ParamUpdate] = []
         # Test synchronization point: set after the SIGINT handler is
         # installed in run(), cleared when restored.  Allows tests to wait
         # until it's safe to send SIGINT without a race.
@@ -113,6 +127,13 @@ class TaskController:
             trial_manager=self.trial_manager,
             timer_manager=self.timer,
         )
+
+        # Subscribe to TOPIC_PARAM for mid-session parameter updates
+        if self._zmq_context is not None and self._event_address is not None:
+            self._param_sub = self._zmq_context.socket(zmq.SUB)
+            self._param_sub.setsockopt(zmq.LINGER, 0)
+            self._param_sub.connect(self._event_address)
+            self._param_sub.subscribe(TOPIC_PARAM)
 
     def _validate_params(self) -> dict[str, Any]:
         """Validate and merge task parameters against ParamSpec definitions.
@@ -291,6 +312,19 @@ class TaskController:
         if not self._running:
             return False
 
+        # Poll for param updates (non-blocking)
+        if self._param_sub is not None:
+            for msg in drain_sub_messages(self._param_sub):
+                if msg.get("__msg_type__") == "ParamUpdate":
+                    update = ParamUpdate(
+                        timestamp=msg["timestamp"],
+                        trial_number=msg["trial_number"],
+                        param=msg["param"],
+                        old_value=msg["old_value"],
+                        new_value=msg["new_value"],
+                    )
+                    self._pending_param_updates.append(update)
+
         # 1. Read haptic state
         haptic_state = self.haptic.get_latest_state()
 
@@ -327,6 +361,9 @@ class TaskController:
         """Clean up resources."""
         self.task.cleanup()
         self.timer.cancel_all()
+        if self._param_sub is not None:
+            self._param_sub.close()
+            self._param_sub = None
 
     def _on_state_change(self, event: Any) -> None:
         """Callback invoked by the transitions library after every state change.
@@ -368,6 +405,49 @@ class TaskController:
         if condition is None:
             return False
         self.task.trial_number = self.trial_manager.current_trial
+
+        # Apply pending param updates before the trial begins
+        self._apply_pending_params()
+
         self.task.on_trial_start(condition)
         self.task.trigger("trial_begin")
         return True
+
+    def _apply_pending_params(self) -> None:
+        """Apply queued ParamUpdate messages to task.params.
+
+        For each pending update, validates the param name exists and applies
+        the new value. Publishes an applied ParamUpdate on TOPIC_EVENT so
+        the event stream records when the change actually took effect (which
+        may differ from when the user requested it).
+        """
+        if not self._pending_param_updates:
+            return
+
+        for update in self._pending_param_updates:
+            if update.param not in self.task.PARAMS:
+                logger.warning(
+                    "Ignoring ParamUpdate for unknown param '%s'",
+                    update.param,
+                )
+                continue
+            self.task.params[update.param] = update.new_value
+            logger.info(
+                "Param '%s' changed: %s -> %s (applied at trial %d)",
+                update.param,
+                update.old_value,
+                update.new_value,
+                self.trial_manager.current_trial,
+            )
+            # Re-publish on TOPIC_EVENT so the event stream has a record
+            # of when the param change actually took effect.
+            applied = ParamUpdate(
+                timestamp=time.monotonic(),
+                trial_number=self.trial_manager.current_trial,
+                param=update.param,
+                old_value=update.old_value,
+                new_value=update.new_value,
+            )
+            self.event_publisher.publish(TOPIC_EVENT, serialize(applied))
+
+        self._pending_param_updates.clear()

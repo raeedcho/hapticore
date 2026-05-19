@@ -111,10 +111,10 @@ class SessionControl:
 class ParamUpdate:
     """Published when task parameters change mid-session.
 
-    Logged in the event stream alongside StateTransition events so
-    parameter history can be reconstructed post-hoc.
-
-    Not yet wired to an input mechanism — planted for Phase 5C+.
+    The control center (or other publisher) sends these on TOPIC_PARAM.
+    TaskController queues them and applies at the next trial boundary,
+    then re-publishes on TOPIC_EVENT so the event stream records when
+    each change actually took effect.
     """
 
     timestamp: float

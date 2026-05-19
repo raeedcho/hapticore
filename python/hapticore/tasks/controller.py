@@ -13,15 +13,18 @@ import threading
 import time
 from typing import Any
 
+import zmq
 from transitions import Machine
 
 from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
 from hapticore.core.messages import (
     TOPIC_EVENT,
+    TOPIC_PARAM,
+    ParamUpdate,
     StateTransition,
     serialize,
 )
-from hapticore.core.messaging import EventPublisher
+from hapticore.core.messaging import EventPublisher, drain_sub_messages
 from hapticore.tasks.base import BaseTask
 from hapticore.tasks.timer import TimerManager
 from hapticore.tasks.trial_manager import TrialManager
@@ -58,9 +61,16 @@ class TaskController:
         trial_manager: TrialManager,
         params: dict[str, Any] | None = None,
         poll_rate_hz: float = 100.0,
+        *,
+        zmq_context: zmq.Context[Any] | None = None,
+        event_address: str | None = None,
     ) -> None:
         if poll_rate_hz <= 0:
             raise ValueError(f"poll_rate_hz must be positive, got {poll_rate_hz}")
+        if (zmq_context is None) != (event_address is None):
+            raise ValueError(
+                "zmq_context and event_address must both be provided or both None"
+            )
         self.task = task
         self.haptic = haptic
         self.display = display
@@ -74,6 +84,10 @@ class TaskController:
         self._stop_requested = False
         self._trial_ended = False
         self._machine: Machine | None = None
+        self._zmq_context = zmq_context
+        self._event_address = event_address
+        self._param_sub: zmq.Socket[Any] | None = None
+        self._pending_param_updates: list[ParamUpdate] = []
         # Test synchronization point: set after the SIGINT handler is
         # installed in run(), cleared when restored.  Allows tests to wait
         # until it's safe to send SIGINT without a race.
@@ -114,6 +128,13 @@ class TaskController:
             timer_manager=self.timer,
         )
 
+        # Subscribe to TOPIC_PARAM for mid-session parameter updates
+        if self._zmq_context is not None and self._event_address is not None:
+            self._param_sub = self._zmq_context.socket(zmq.SUB)
+            self._param_sub.setsockopt(zmq.LINGER, 0)
+            self._param_sub.connect(self._event_address)
+            self._param_sub.subscribe(TOPIC_PARAM)
+
     def _validate_params(self) -> dict[str, Any]:
         """Validate and merge task parameters against ParamSpec definitions.
 
@@ -131,43 +152,49 @@ class TaskController:
         result: dict[str, Any] = {}
         for name, spec in self.task.PARAMS.items():
             value = self._param_overrides.get(name, spec.default)
-            # Type check with numeric special-casing:
-            # - allow ints for float params (but not bool) and coerce to float
-            # - reject bool for int params
-            expected_type = spec.type
-            if expected_type is float:
-                # Accept ints and floats, but not bools (bool is a subclass of int)
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
-                    raise TypeError(
-                        f"Parameter '{name}' must be {expected_type.__name__}, "
-                        f"got {type(value).__name__}"
-                    )
-                value = float(value)
-            elif expected_type is int:
-                # Require real ints, excluding bool
-                if not isinstance(value, int) or isinstance(value, bool):
-                    raise TypeError(
-                        f"Parameter '{name}' must be {expected_type.__name__}, "
-                        f"got {type(value).__name__}"
-                    )
-            else:
-                if not isinstance(value, expected_type):
-                    raise TypeError(
-                        f"Parameter '{name}' must be {expected_type.__name__}, "
-                        f"got {type(value).__name__}"
-                    )
-            # Bounds check for numeric types (exclude bool, which is a subclass of int)
-            is_numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
-            if spec.min is not None and is_numeric and value < spec.min:
-                raise ValueError(
-                    f"Parameter '{name}' = {value} is below minimum {spec.min}"
-                )
-            if spec.max is not None and is_numeric and value > spec.max:
-                raise ValueError(
-                    f"Parameter '{name}' = {value} is above maximum {spec.max}"
-                )
-            result[name] = value
+            result[name] = self._validate_single_param(name, value)
         return result
+
+    def _validate_single_param(self, name: str, value: Any) -> Any:
+        """Validate a single parameter value against its ParamSpec.
+
+        Returns the (possibly coerced) value, or raises ``TypeError`` /
+        ``ValueError`` if the value is invalid.
+        """
+        spec = self.task.PARAMS[name]
+        expected_type = spec.type
+        if expected_type is float:
+            # Accept ints and floats, but not bools (bool is a subclass of int)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(
+                    f"Parameter '{name}' must be {expected_type.__name__}, "
+                    f"got {type(value).__name__}"
+                )
+            value = float(value)
+        elif expected_type is int:
+            # Require real ints, excluding bool
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise TypeError(
+                    f"Parameter '{name}' must be {expected_type.__name__}, "
+                    f"got {type(value).__name__}"
+                )
+        else:
+            if not isinstance(value, expected_type):
+                raise TypeError(
+                    f"Parameter '{name}' must be {expected_type.__name__}, "
+                    f"got {type(value).__name__}"
+                )
+        # Bounds check for numeric types (exclude bool, which is a subclass of int)
+        is_numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if spec.min is not None and is_numeric and value < spec.min:
+            raise ValueError(
+                f"Parameter '{name}' = {value} is below minimum {spec.min}"
+            )
+        if spec.max is not None and is_numeric and value > spec.max:
+            raise ValueError(
+                f"Parameter '{name}' = {value} is above maximum {spec.max}"
+            )
+        return value
 
     def run(self) -> None:
         """Main loop. Blocks until the session is complete or stop() is called.
@@ -291,6 +318,25 @@ class TaskController:
         if not self._running:
             return False
 
+        # Poll for param updates (non-blocking)
+        if self._param_sub is not None:
+            for msg in drain_sub_messages(self._param_sub):
+                if not isinstance(msg, dict):
+                    continue
+                if msg.get("__msg_type__") == "ParamUpdate":
+                    try:
+                        update = ParamUpdate(
+                            timestamp=msg["timestamp"],
+                            trial_number=msg["trial_number"],
+                            param=msg["param"],
+                            old_value=msg["old_value"],
+                            new_value=msg["new_value"],
+                        )
+                    except (TypeError, KeyError):
+                        logger.warning("Skipping malformed ParamUpdate message")
+                        continue
+                    self._pending_param_updates.append(update)
+
         # 1. Read haptic state
         haptic_state = self.haptic.get_latest_state()
 
@@ -327,6 +373,9 @@ class TaskController:
         """Clean up resources."""
         self.task.cleanup()
         self.timer.cancel_all()
+        if self._param_sub is not None:
+            self._param_sub.close()
+            self._param_sub = None
 
     def _on_state_change(self, event: Any) -> None:
         """Callback invoked by the transitions library after every state change.
@@ -368,6 +417,57 @@ class TaskController:
         if condition is None:
             return False
         self.task.trial_number = self.trial_manager.current_trial
+
+        # Apply pending param updates before the trial begins
+        self._apply_pending_params()
+
         self.task.on_trial_start(condition)
         self.task.trigger("trial_begin")
         return True
+
+    def _apply_pending_params(self) -> None:
+        """Apply queued ParamUpdate messages to task.params.
+
+        For each pending update, validates the param name and value against its
+        ParamSpec, then applies it. Publishes an applied ParamUpdate on
+        TOPIC_EVENT so the event stream records when the change actually took
+        effect (which may differ from when the user requested it).
+        """
+        if not self._pending_param_updates:
+            return
+
+        for update in self._pending_param_updates:
+            if update.param not in self.task.params:
+                logger.warning(
+                    "Ignoring ParamUpdate for unknown param '%s'",
+                    update.param,
+                )
+                continue
+            try:
+                validated = self._validate_single_param(update.param, update.new_value)
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    "Ignoring invalid ParamUpdate for '%s': %s", update.param, exc,
+                )
+                continue
+            actual_old = self.task.params[update.param]
+            self.task.params[update.param] = validated
+            logger.info(
+                "Param '%s' changed: %s -> %s (applied at trial %d)",
+                update.param,
+                actual_old,
+                validated,
+                self.trial_manager.current_trial,
+            )
+            # Re-publish on TOPIC_EVENT so the event stream has a record
+            # of when the param change actually took effect.
+            applied = ParamUpdate(
+                timestamp=time.monotonic(),
+                trial_number=self.trial_manager.current_trial,
+                param=update.param,
+                old_value=actual_old,
+                new_value=validated,
+            )
+            self.event_publisher.publish(TOPIC_EVENT, serialize(applied))
+
+        self._pending_param_updates.clear()

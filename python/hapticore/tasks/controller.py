@@ -152,43 +152,49 @@ class TaskController:
         result: dict[str, Any] = {}
         for name, spec in self.task.PARAMS.items():
             value = self._param_overrides.get(name, spec.default)
-            # Type check with numeric special-casing:
-            # - allow ints for float params (but not bool) and coerce to float
-            # - reject bool for int params
-            expected_type = spec.type
-            if expected_type is float:
-                # Accept ints and floats, but not bools (bool is a subclass of int)
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
-                    raise TypeError(
-                        f"Parameter '{name}' must be {expected_type.__name__}, "
-                        f"got {type(value).__name__}"
-                    )
-                value = float(value)
-            elif expected_type is int:
-                # Require real ints, excluding bool
-                if not isinstance(value, int) or isinstance(value, bool):
-                    raise TypeError(
-                        f"Parameter '{name}' must be {expected_type.__name__}, "
-                        f"got {type(value).__name__}"
-                    )
-            else:
-                if not isinstance(value, expected_type):
-                    raise TypeError(
-                        f"Parameter '{name}' must be {expected_type.__name__}, "
-                        f"got {type(value).__name__}"
-                    )
-            # Bounds check for numeric types (exclude bool, which is a subclass of int)
-            is_numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
-            if spec.min is not None and is_numeric and value < spec.min:
-                raise ValueError(
-                    f"Parameter '{name}' = {value} is below minimum {spec.min}"
-                )
-            if spec.max is not None and is_numeric and value > spec.max:
-                raise ValueError(
-                    f"Parameter '{name}' = {value} is above maximum {spec.max}"
-                )
-            result[name] = value
+            result[name] = self._validate_single_param(name, value)
         return result
+
+    def _validate_single_param(self, name: str, value: Any) -> Any:
+        """Validate a single parameter value against its ParamSpec.
+
+        Returns the (possibly coerced) value, or raises ``TypeError`` /
+        ``ValueError`` if the value is invalid.
+        """
+        spec = self.task.PARAMS[name]
+        expected_type = spec.type
+        if expected_type is float:
+            # Accept ints and floats, but not bools (bool is a subclass of int)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(
+                    f"Parameter '{name}' must be {expected_type.__name__}, "
+                    f"got {type(value).__name__}"
+                )
+            value = float(value)
+        elif expected_type is int:
+            # Require real ints, excluding bool
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise TypeError(
+                    f"Parameter '{name}' must be {expected_type.__name__}, "
+                    f"got {type(value).__name__}"
+                )
+        else:
+            if not isinstance(value, expected_type):
+                raise TypeError(
+                    f"Parameter '{name}' must be {expected_type.__name__}, "
+                    f"got {type(value).__name__}"
+                )
+        # Bounds check for numeric types (exclude bool, which is a subclass of int)
+        is_numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if spec.min is not None and is_numeric and value < spec.min:
+            raise ValueError(
+                f"Parameter '{name}' = {value} is below minimum {spec.min}"
+            )
+        if spec.max is not None and is_numeric and value > spec.max:
+            raise ValueError(
+                f"Parameter '{name}' = {value} is above maximum {spec.max}"
+            )
+        return value
 
     def run(self) -> None:
         """Main loop. Blocks until the session is complete or stop() is called.
@@ -315,6 +321,8 @@ class TaskController:
         # Poll for param updates (non-blocking)
         if self._param_sub is not None:
             for msg in drain_sub_messages(self._param_sub):
+                if not isinstance(msg, dict):
+                    continue
                 if msg.get("__msg_type__") == "ParamUpdate":
                     try:
                         update = ParamUpdate(
@@ -420,10 +428,10 @@ class TaskController:
     def _apply_pending_params(self) -> None:
         """Apply queued ParamUpdate messages to task.params.
 
-        For each pending update, validates the param name exists and applies
-        the new value. Publishes an applied ParamUpdate on TOPIC_EVENT so
-        the event stream records when the change actually took effect (which
-        may differ from when the user requested it).
+        For each pending update, validates the param name and value against its
+        ParamSpec, then applies it. Publishes an applied ParamUpdate on
+        TOPIC_EVENT so the event stream records when the change actually took
+        effect (which may differ from when the user requested it).
         """
         if not self._pending_param_updates:
             return
@@ -435,12 +443,20 @@ class TaskController:
                     update.param,
                 )
                 continue
-            self.task.params[update.param] = update.new_value
+            try:
+                validated = self._validate_single_param(update.param, update.new_value)
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    "Ignoring invalid ParamUpdate for '%s': %s", update.param, exc,
+                )
+                continue
+            actual_old = self.task.params[update.param]
+            self.task.params[update.param] = validated
             logger.info(
                 "Param '%s' changed: %s -> %s (applied at trial %d)",
                 update.param,
-                update.old_value,
-                update.new_value,
+                actual_old,
+                validated,
                 self.trial_manager.current_trial,
             )
             # Re-publish on TOPIC_EVENT so the event stream has a record
@@ -449,8 +465,8 @@ class TaskController:
                 timestamp=time.monotonic(),
                 trial_number=self.trial_manager.current_trial,
                 param=update.param,
-                old_value=update.old_value,
-                new_value=update.new_value,
+                old_value=actual_old,
+                new_value=validated,
             )
             self.event_publisher.publish(TOPIC_EVENT, serialize(applied))
 

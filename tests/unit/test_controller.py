@@ -8,8 +8,14 @@ from typing import Any
 import pytest
 import zmq
 
-from hapticore.core.messages import TOPIC_EVENT, StateTransition, deserialize
-from hapticore.core.messages import TOPIC_PARAM, ParamUpdate, serialize
+from hapticore.core.messages import (
+    TOPIC_EVENT,
+    TOPIC_PARAM,
+    ParamUpdate,
+    StateTransition,
+    deserialize,
+    serialize,
+)
 from hapticore.core.messaging import EventPublisher, EventSubscriber, make_ipc_address
 from hapticore.display.mock import MockDisplay
 from hapticore.haptic.mock import MockHapticInterface
@@ -844,7 +850,7 @@ class TestControllerParamUpdates:
                 msg = sub.recv(timeout_ms=50)
                 if msg is None:
                     break
-                topic, payload = msg
+                _topic, payload = msg
                 try:
                     deserialized = deserialize(payload, ParamUpdate)
                 except (TypeError, KeyError):
@@ -885,4 +891,48 @@ class TestControllerParamUpdates:
                 )
         finally:
             publisher.close()
+            ctx.term()
+
+    def test_param_update_invalid_value_ignored(self) -> None:
+        """ParamUpdate with an out-of-bounds value is ignored; param unchanged."""
+
+        class BoundedTask(TimerTestTask):
+            PARAMS = {
+                "hold_time": ParamSpec(type=float, default=0.5, unit="s", min=0.0, max=1.0),
+                "timeout": ParamSpec(type=float, default=2.0, unit="s"),
+            }
+
+        task = BoundedTask()
+        controller, _, _, pub, tm, ctx = _make_controller_with_param_sub(
+            task, num_trials=2,
+        )
+        try:
+            controller.setup()
+            assert controller.start_first_trial()
+            time.sleep(0.05)  # slow-joiner grace
+
+            # Publish an update with a value below the min
+            update = ParamUpdate(
+                timestamp=time.monotonic(),
+                trial_number=0,
+                param="hold_time",
+                old_value=0.5,
+                new_value=-5.0,
+            )
+            pub.publish(TOPIC_PARAM, serialize(update))
+            time.sleep(0.01)
+
+            # Tick through trial boundary — invalid update should be silently ignored
+            for _ in range(500):
+                if not controller.tick():
+                    break
+                time.sleep(0.001)
+                if tm.current_trial > 0:
+                    break
+
+            # Param must be unchanged
+            assert task.params["hold_time"] == 0.5
+        finally:
+            controller.teardown()
+            pub.close()
             ctx.term()

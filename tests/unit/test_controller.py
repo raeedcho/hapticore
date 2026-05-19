@@ -911,12 +911,14 @@ class TestControllerParamUpdates:
             assert controller.start_first_trial()
             time.sleep(0.05)  # slow-joiner grace
 
-            # Publish an update with a value below the min
+            # Publish an update with a value below the min.
+            # Use a deliberately stale old_value (99.0) to confirm the controller
+            # reads the actual current value from task.params, not the message field.
             update = ParamUpdate(
                 timestamp=time.monotonic(),
                 trial_number=0,
                 param="hold_time",
-                old_value=0.5,
+                old_value=99.0,  # intentionally wrong — controller should ignore this
                 new_value=-5.0,
             )
             pub.publish(TOPIC_PARAM, serialize(update))

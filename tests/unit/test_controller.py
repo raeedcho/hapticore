@@ -850,7 +850,7 @@ class TestControllerParamUpdates:
                 msg = sub.recv(timeout_ms=50)
                 if msg is None:
                     break
-                _topic, payload = msg
+                _, payload = msg
                 try:
                     deserialized = deserialize(payload, ParamUpdate)
                 except (TypeError, KeyError):

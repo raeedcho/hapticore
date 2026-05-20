@@ -240,8 +240,8 @@ class DataLoggerProcess(multiprocessing.Process):
         Returns None if required fields are missing.
 
         Columns: timestamp_s, trial_number, text
-        Tab characters in the note text are replaced with spaces to
-        preserve TSV structure.
+        Tab and newline characters in the note text are replaced with
+        spaces to preserve TSV structure.
         """
         try:
             text = str(msg["text"]).replace("\t", " ").replace("\n", " ")

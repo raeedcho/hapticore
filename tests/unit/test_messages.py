@@ -11,6 +11,7 @@ from hapticore.core.messages import (
     HapticState,
     ParamUpdate,
     SessionControl,
+    SessionNote,
     StateTransition,
     TrialEvent,
     deserialize,
@@ -281,3 +282,25 @@ class TestParamUpdate:
         assert restored.param == msg.param
         assert restored.old_value == msg.old_value
         assert restored.new_value == msg.new_value
+
+
+class TestSessionNote:
+    def test_round_trip(self) -> None:
+        msg = SessionNote(
+            timestamp=100.5,
+            trial_number=42,
+            text="monkey seemed drowsy",
+        )
+        data = serialize(msg)
+        restored = deserialize(data, SessionNote)
+        assert isinstance(restored, SessionNote)
+        assert restored.timestamp == msg.timestamp
+        assert restored.trial_number == msg.trial_number
+        assert restored.text == msg.text
+
+    def test_negative_trial_number(self) -> None:
+        """trial_number -1 is valid (pre-trial note)."""
+        msg = SessionNote(timestamp=1.0, trial_number=-1, text="setup note")
+        data = serialize(msg)
+        restored = deserialize(data, SessionNote)
+        assert restored.trial_number == -1

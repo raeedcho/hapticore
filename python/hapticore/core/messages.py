@@ -124,6 +124,24 @@ class ParamUpdate:
     new_value: Any
 
 
+@dataclasses.dataclass(slots=True)
+class SessionNote:
+    """Timestamped experimenter note, published on TOPIC_EVENT.
+
+    The control center publishes these when the experimenter types a
+    note. DataLoggerProcess routes them to a separate
+    ``{session_id}_notes.tsv`` file.
+
+    ``trial_number`` is the trial active at the time the note was
+    entered, or -1 if no trial is active (e.g., before the first
+    trial or between recording segments).
+    """
+
+    timestamp: float
+    trial_number: int
+    text: str
+
+
 # Type alias for all message types
 MessageType = (
     HapticState
@@ -133,6 +151,7 @@ MessageType = (
     | CommandResponse
     | SessionControl
     | ParamUpdate
+    | SessionNote
 )
 
 # Map class names to classes for deserialization
@@ -155,7 +174,8 @@ def deserialize(
     | type[Command]
     | type[CommandResponse]
     | type[SessionControl]
-    | type[ParamUpdate],
+    | type[ParamUpdate]
+    | type[SessionNote],
 ) -> MessageType:
     """Deserialize msgpack bytes to a message dataclass."""
     unpacked = msgpack.unpackb(data, raw=False)

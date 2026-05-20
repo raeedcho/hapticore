@@ -30,10 +30,10 @@ class DataLoggerProcess(multiprocessing.Process):
     notes to disk.
 
     Subscribes to two ZMQ streams:
-    - event_pub_address / TOPIC_EVENT: StateTransition, TrialEvent, and
-      SessionNote messages. StateTransition and TrialEvent are appended
-      to a TSV events file. SessionNote messages are routed to a
-      separate notes TSV file.
+    - event_pub_address / TOPIC_EVENT: StateTransition, TrialEvent,
+      ParamUpdate, and SessionNote messages. StateTransition, TrialEvent,
+      and ParamUpdate are appended to a TSV events file. SessionNote
+      messages are routed to a separate notes TSV file.
     - haptic_state_address / TOPIC_STATE: HapticState messages →
       appended as float64 binary to a .bin file.
 
@@ -261,8 +261,10 @@ class DataLoggerProcess(multiprocessing.Process):
         Returns None for unrecognized message types (silently skipped).
 
         Columns: timestamp_s, trial_number, msg_type, name, event_code
-        - StateTransition: msg_type="state", name=new_state
-        - TrialEvent: msg_type="event", name=event_name
+        - StateTransition: msg_type="state", name=new_state, event_code=<int>
+        - TrialEvent: msg_type="event", name=event_name, event_code=<int>
+        - ParamUpdate: msg_type="param", name=param_name,
+          event_code="old_value->new_value"
         """
         msg_type = msg.get("__msg_type__")
         if msg_type == "StateTransition":
@@ -274,6 +276,11 @@ class DataLoggerProcess(multiprocessing.Process):
             return (
                 f"{msg['timestamp']}\t{msg['trial_number']}\t"
                 f"event\t{msg['event_name']}\t{msg['event_code']}\n"
+            )
+        if msg_type == "ParamUpdate":
+            return (
+                f"{msg['timestamp']}\t{msg['trial_number']}\t"
+                f"param\t{msg['param']}\t{msg['old_value']}->{msg['new_value']}\n"
             )
         return None
 

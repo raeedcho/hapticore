@@ -32,7 +32,6 @@ from hapticore.core.config import (
 )
 from hapticore.datalog.data_logger_process import DataLoggerProcess
 
-
 # ---------------------------------------------------------------------------
 # TestFormatEvent
 # ---------------------------------------------------------------------------
@@ -112,6 +111,50 @@ class TestFormatEvent:
         assert result is not None
         parts = result.rstrip("\n").split("\t")
         assert parts == ["3.14", "12", "event", "reward", "20"]
+
+    def test_param_update_format(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "ParamUpdate",
+            "timestamp": 3.5,
+            "trial_number": 10,
+            "param": "hold_time",
+            "old_value": 0.5,
+            "new_value": 0.3,
+        }
+        result = DataLoggerProcess._format_event(msg)
+        assert result == "3.5\t10\tparam\thold_time\t0.5->0.3\n"
+
+    def test_param_update_columns_order(self) -> None:
+        """Verify exact tab-separated column order for ParamUpdate."""
+        msg: dict[str, Any] = {
+            "__msg_type__": "ParamUpdate",
+            "timestamp": 7.77,
+            "trial_number": 25,
+            "param": "reach_timeout",
+            "old_value": 5.0,
+            "new_value": 3.0,
+        }
+        result = DataLoggerProcess._format_event(msg)
+        assert result is not None
+        parts = result.rstrip("\n").split("\t")
+        assert len(parts) == 5
+        assert parts == ["7.77", "25", "param", "reach_timeout", "5.0->3.0"]
+
+    def test_param_update_string_values(self) -> None:
+        """ParamUpdate with non-numeric values formats correctly."""
+        msg: dict[str, Any] = {
+            "__msg_type__": "ParamUpdate",
+            "timestamp": 1.0,
+            "trial_number": 0,
+            "param": "some_mode",
+            "old_value": "easy",
+            "new_value": "hard",
+        }
+        result = DataLoggerProcess._format_event(msg)
+        assert result is not None
+        parts = result.rstrip("\n").split("\t")
+        assert parts[3] == "some_mode"
+        assert parts[4] == "easy->hard"
 
 
 # ---------------------------------------------------------------------------

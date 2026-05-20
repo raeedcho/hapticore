@@ -537,3 +537,100 @@ class TestConfigChanges:
     def test_recording_config_default_data_logging_enabled_true(self) -> None:
         cfg = RecordingConfig()
         assert cfg.data_logging_enabled is True
+
+
+# ---------------------------------------------------------------------------
+# TestFormatNote
+# ---------------------------------------------------------------------------
+
+
+class TestFormatNote:
+    def test_session_note_format(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "SessionNote",
+            "timestamp": 5.678,
+            "trial_number": 12,
+            "text": "adjusted mirror",
+        }
+        result = DataLoggerProcess._format_note(msg)
+        assert result == "5.678\t12\tadjusted mirror\n"
+
+    def test_tab_in_text_replaced(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "SessionNote",
+            "timestamp": 1.0,
+            "trial_number": 0,
+            "text": "has\ttab",
+        }
+        result = DataLoggerProcess._format_note(msg)
+        assert result is not None
+        assert "\t" not in result.split("\t", 2)[2].rstrip("\n")
+        parts = result.rstrip("\n").split("\t")
+        assert len(parts) == 3  # TSV structure preserved
+
+    def test_newline_in_text_replaced(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "SessionNote",
+            "timestamp": 1.0,
+            "trial_number": 0,
+            "text": "line1\nline2",
+        }
+        result = DataLoggerProcess._format_note(msg)
+        assert result is not None
+        assert result.count("\n") == 1  # only the trailing newline
+
+    def test_carriage_return_in_text_replaced(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "SessionNote",
+            "timestamp": 1.0,
+            "trial_number": 0,
+            "text": "line1\r\nline2",
+        }
+        result = DataLoggerProcess._format_note(msg)
+        assert result is not None
+        assert "\r" not in result
+        assert result.count("\n") == 1
+
+    def test_missing_field_returns_none(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "SessionNote",
+            "timestamp": 1.0,
+            # trial_number missing
+        }
+        result = DataLoggerProcess._format_note(msg)
+        assert result is None
+
+    def test_note_columns_order(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "SessionNote",
+            "timestamp": 9.99,
+            "trial_number": 47,
+            "text": "monkey drowsy",
+        }
+        result = DataLoggerProcess._format_note(msg)
+        assert result is not None
+        parts = result.rstrip("\n").split("\t")
+        assert parts == ["9.99", "47", "monkey drowsy"]
+
+
+# ---------------------------------------------------------------------------
+# TestOpenNotesFile
+# ---------------------------------------------------------------------------
+
+
+class TestOpenNotesFile:
+    def test_header_written(self, tmp_path: Path) -> None:
+        notes_path = tmp_path / "test_notes.tsv"
+        f = DataLoggerProcess._open_notes_file(notes_path)
+        f.close()
+        content = notes_path.read_text()
+        assert content == "timestamp_s\ttrial_number\ttext\n"
+
+    def test_file_is_writable(self, tmp_path: Path) -> None:
+        notes_path = tmp_path / "test_notes.tsv"
+        f = DataLoggerProcess._open_notes_file(notes_path)
+        f.write("1.0\t5\ttest note\n")
+        f.close()
+        lines = notes_path.read_text().strip().split("\n")
+        assert len(lines) == 2  # header + 1 note
+        assert lines[1] == "1.0\t5\ttest note"

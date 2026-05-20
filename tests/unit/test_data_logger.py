@@ -579,6 +579,18 @@ class TestFormatNote:
         assert result is not None
         assert result.count("\n") == 1  # only the trailing newline
 
+    def test_carriage_return_in_text_replaced(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "SessionNote",
+            "timestamp": 1.0,
+            "trial_number": 0,
+            "text": "line1\r\nline2",
+        }
+        result = DataLoggerProcess._format_note(msg)
+        assert result is not None
+        assert "\r" not in result
+        assert result.count("\n") == 1
+
     def test_missing_field_returns_none(self) -> None:
         msg: dict[str, Any] = {
             "__msg_type__": "SessionNote",

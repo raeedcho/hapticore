@@ -244,7 +244,12 @@ class DataLoggerProcess(multiprocessing.Process):
         spaces to preserve TSV structure.
         """
         try:
-            text = str(msg["text"]).replace("\t", " ").replace("\n", " ")
+            text = (
+                str(msg["text"])
+                .replace("\t", " ")
+                .replace("\r", " ")
+                .replace("\n", " ")
+            )
             return f"{msg['timestamp']}\t{msg['trial_number']}\t{text}\n"
         except KeyError:
             return None

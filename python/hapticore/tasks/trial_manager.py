@@ -7,10 +7,8 @@ and provides the current condition to the task at each trial start.
 
 from __future__ import annotations
 
-import json
 import logging
 import random
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -281,41 +279,6 @@ class TrialManager:
     def get_trial_log(self) -> list[dict[str, Any]]:
         """Return the complete trial log as a list of dicts."""
         return list(self._trial_log)
-
-    def write_trial_log(self, path: Path) -> None:
-        """Write the trial log to a TSV file.
-
-        Columns:
-        - trial_number: 0-based trial index
-        - block_number: 0-based block index
-        - outcome: trial outcome string (e.g. "success", "timeout")
-        - condition: JSON-encoded condition dict for the trial
-        - Any additional keys from extra_data passed to log_trial()
-          appear as extra columns.
-
-        If no trials have been logged, writes only the header line.
-        """
-        extra_columns: list[str] = list(dict.fromkeys(
-            key
-            for entry in self._trial_log
-            for key in entry
-            if key not in _FIXED_COLUMNS
-        ))
-
-        all_columns = list(_FIXED_COLUMNS) + extra_columns
-
-        with path.open("w", newline="", encoding="utf-8") as f:
-            f.write("\t".join(all_columns) + "\n")
-
-            for entry in self._trial_log:
-                row: list[str] = []
-                for col in all_columns:
-                    if col == "condition":
-                        row.append(json.dumps(entry.get("condition", {})))
-                    else:
-                        val = entry.get(col, "")
-                        row.append(str(val))
-                f.write("\t".join(row) + "\n")
 
     def get_summary(self) -> dict[str, Any]:
         """Return a summary of trial outcomes.

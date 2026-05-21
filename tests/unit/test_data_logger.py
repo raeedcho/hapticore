@@ -745,6 +745,24 @@ class TestFormatTrialResult:
         parts = result.rstrip("\n").split("\t")
         assert parts == ["9.99", "47", "5", "success", '{"id":1}', "{}"]
 
+    def test_nested_condition_json_encoded(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "TrialResult",
+            "timestamp": 1.0,
+            "trial_number": 0,
+            "block_number": 0,
+            "outcome": "success",
+            "condition": {"target_angle": 90, "position": [0.08, 0.0]},
+            "extra_data": {"trajectory": [[0.0, 0.0], [0.08, 0.0]]},
+        }
+        result = DataLoggerProcess._format_trial_result(msg)
+        assert result is not None
+        parts = result.rstrip("\n").split("\t")
+        parsed_condition = json.loads(parts[4])
+        assert parsed_condition == {"target_angle": 90, "position": [0.08, 0.0]}
+        parsed_extra = json.loads(parts[5])
+        assert parsed_extra == {"trajectory": [[0.0, 0.0], [0.08, 0.0]]}
+
 
 # ---------------------------------------------------------------------------
 # TestOpenTrialsFile

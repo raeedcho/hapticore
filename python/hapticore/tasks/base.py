@@ -120,9 +120,11 @@ class BaseTask(ABC):
 
         self.trial_manager.log_trial(outcome, **extra_data)
 
+        now = time.monotonic()
+
         # Publish TrialEvent for the event stream (existing behavior)
         event = TrialEvent(
-            timestamp=time.monotonic(),
+            timestamp=now,
             event_name="trial_complete",
             event_code=0,
             trial_number=self.trial_number,
@@ -136,7 +138,7 @@ class BaseTask(ABC):
 
         # Publish TrialResult for the incremental trial log
         result = TrialResult(
-            timestamp=time.monotonic(),
+            timestamp=now,
             trial_number=self.trial_number,
             block_number=self.trial_manager.current_block,
             outcome=outcome,

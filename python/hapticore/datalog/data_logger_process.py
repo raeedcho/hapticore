@@ -24,6 +24,8 @@ from hapticore.core.messages import TOPIC_EVENT, TOPIC_SESSION, TOPIC_STATE
 
 logger = logging.getLogger(__name__)
 
+_JSON_COMPACT_SEPARATORS = (",", ":")
+
 
 class DataLoggerProcess(multiprocessing.Process):
     """Subprocess writing behavioral events, haptic state, session
@@ -294,9 +296,9 @@ class DataLoggerProcess(multiprocessing.Process):
         condition (JSON), extra_data (JSON)
         """
         try:
-            condition = json.dumps(msg["condition"], separators=(",", ":"))
+            condition = json.dumps(msg["condition"], separators=_JSON_COMPACT_SEPARATORS)
             extra_data = json.dumps(
-                msg.get("extra_data", {}), separators=(",", ":"),
+                msg.get("extra_data", {}), separators=_JSON_COMPACT_SEPARATORS,
             )
             return (
                 f"{msg['timestamp']}\t{msg['trial_number']}\t"

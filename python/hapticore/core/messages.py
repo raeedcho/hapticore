@@ -142,6 +142,26 @@ class SessionNote:
     text: str
 
 
+@dataclasses.dataclass(slots=True)
+class TrialResult:
+    """Structured trial log entry, published on TOPIC_EVENT.
+
+    Published by BaseTask.log_trial() after each completed trial.
+    DataLoggerProcess routes these to a ``{session_id}_trials.tsv``
+    file, providing incremental crash-safe trial logging.
+
+    The ``condition`` and ``extra_data`` fields are JSON-encoded
+    when written to TSV.
+    """
+
+    timestamp: float
+    trial_number: int
+    block_number: int
+    outcome: str
+    condition: dict[str, Any]
+    extra_data: dict[str, Any]
+
+
 # Type alias for all message types
 MessageType = (
     HapticState
@@ -152,6 +172,7 @@ MessageType = (
     | SessionControl
     | ParamUpdate
     | SessionNote
+    | TrialResult
 )
 
 # Map class names to classes for deserialization
@@ -175,7 +196,8 @@ def deserialize(
     | type[CommandResponse]
     | type[SessionControl]
     | type[ParamUpdate]
-    | type[SessionNote],
+    | type[SessionNote]
+    | type[TrialResult],
 ) -> MessageType:
     """Deserialize msgpack bytes to a message dataclass."""
     unpacked = msgpack.unpackb(data, raw=False)

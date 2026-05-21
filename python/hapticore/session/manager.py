@@ -288,16 +288,6 @@ class SessionManager:
                 self._exit_stack.close()
                 self._exit_stack = None
 
-            if self._trial_manager is not None and self._session_dir is not None:
-                try:
-                    trials_path = (
-                        self._session_dir / "behavior"
-                        / f"{self._session_id}_trials.tsv"
-                    )
-                    self._trial_manager.write_trial_log(trials_path)
-                except Exception:
-                    logger.exception("Failed to write trial log")
-
             if self._session_dir is not None:
                 self._write_session_receipt()
         finally:

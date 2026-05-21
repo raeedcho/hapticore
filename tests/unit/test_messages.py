@@ -14,6 +14,7 @@ from hapticore.core.messages import (
     SessionNote,
     StateTransition,
     TrialEvent,
+    TrialResult,
     deserialize,
     serialize,
 )
@@ -304,3 +305,33 @@ class TestSessionNote:
         data = serialize(msg)
         restored = deserialize(data, SessionNote)
         assert restored.trial_number == -1
+
+
+class TestTrialResult:
+    def test_round_trip(self) -> None:
+        msg = TrialResult(
+            timestamp=10.5,
+            trial_number=3,
+            block_number=1,
+            outcome="success",
+            condition={"target_angle": 90},
+            extra_data={"reaction_time": 0.45},
+        )
+        data = serialize(msg)
+        restored = deserialize(data, TrialResult)
+        assert isinstance(restored, TrialResult)
+        assert restored.timestamp == msg.timestamp
+        assert restored.trial_number == msg.trial_number
+        assert restored.block_number == msg.block_number
+        assert restored.outcome == msg.outcome
+        assert restored.condition == msg.condition
+        assert restored.extra_data == msg.extra_data
+
+    def test_empty_extra_data(self) -> None:
+        msg = TrialResult(
+            timestamp=1.0, trial_number=0, block_number=0,
+            outcome="timeout", condition={}, extra_data={},
+        )
+        data = serialize(msg)
+        restored = deserialize(data, TrialResult)
+        assert restored.extra_data == {}

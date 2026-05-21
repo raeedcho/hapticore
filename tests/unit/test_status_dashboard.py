@@ -108,6 +108,7 @@ class TestLogTrialConditionInclusion:
         task.event_bus = mock_bus
 
         mock_tm = MagicMock()
+        mock_tm.current_block = 0
         task.trial_manager = mock_tm
 
         return task, captured
@@ -118,7 +119,7 @@ class TestLogTrialConditionInclusion:
         task, captured = self._make_task()
         task.log_trial("success")
 
-        assert len(captured) == 1
+        assert len(captured) == 2
         msg = msgpack.unpackb(captured[0], raw=False)
         assert "condition" in msg["data"]
 

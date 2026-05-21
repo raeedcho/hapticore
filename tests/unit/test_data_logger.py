@@ -677,3 +677,95 @@ class TestOpenNotesFile:
         lines = notes_path.read_text().strip().split("\n")
         assert len(lines) == 2  # header + 1 note
         assert lines[1] == "1.0\t5\ttest note"
+
+
+# ---------------------------------------------------------------------------
+# TestFormatTrialResult
+# ---------------------------------------------------------------------------
+
+
+class TestFormatTrialResult:
+    def test_basic_format(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "TrialResult",
+            "timestamp": 5.5,
+            "trial_number": 3,
+            "block_number": 1,
+            "outcome": "success",
+            "condition": {"target_angle": 90},
+            "extra_data": {"reaction_time": 0.45},
+        }
+        result = DataLoggerProcess._format_trial_result(msg)
+        assert result is not None
+        parts = result.rstrip("\n").split("\t")
+        assert len(parts) == 6
+        assert parts[0] == "5.5"
+        assert parts[1] == "3"
+        assert parts[2] == "1"
+        assert parts[3] == "success"
+        assert json.loads(parts[4]) == {"target_angle": 90}
+        assert json.loads(parts[5]) == {"reaction_time": 0.45}
+
+    def test_empty_extra_data(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "TrialResult",
+            "timestamp": 1.0,
+            "trial_number": 0,
+            "block_number": 0,
+            "outcome": "timeout",
+            "condition": {},
+            "extra_data": {},
+        }
+        result = DataLoggerProcess._format_trial_result(msg)
+        assert result is not None
+        parts = result.rstrip("\n").split("\t")
+        assert parts[5] == "{}"
+
+    def test_missing_field_returns_none(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "TrialResult",
+            "timestamp": 1.0,
+            # trial_number missing
+        }
+        result = DataLoggerProcess._format_trial_result(msg)
+        assert result is None
+
+    def test_columns_order(self) -> None:
+        msg: dict[str, Any] = {
+            "__msg_type__": "TrialResult",
+            "timestamp": 9.99,
+            "trial_number": 47,
+            "block_number": 5,
+            "outcome": "success",
+            "condition": {"id": 1},
+            "extra_data": {},
+        }
+        result = DataLoggerProcess._format_trial_result(msg)
+        assert result is not None
+        parts = result.rstrip("\n").split("\t")
+        assert parts == ["9.99", "47", "5", "success", '{"id":1}', "{}"]
+
+
+# ---------------------------------------------------------------------------
+# TestOpenTrialsFile
+# ---------------------------------------------------------------------------
+
+
+class TestOpenTrialsFile:
+    def test_header_written(self, tmp_path: Path) -> None:
+        trials_path = tmp_path / "test_trials.tsv"
+        f = DataLoggerProcess._open_trials_file(trials_path)
+        f.close()
+        content = trials_path.read_text()
+        expected = (
+            "timestamp_s\ttrial_number\tblock_number\toutcome\tcondition\textra_data\n"
+        )
+        assert content == expected
+
+    def test_file_is_writable(self, tmp_path: Path) -> None:
+        trials_path = tmp_path / "test_trials.tsv"
+        f = DataLoggerProcess._open_trials_file(trials_path)
+        f.write('1.0\t0\t0\tsuccess\t{"a":1}\t{}\n')
+        f.close()
+        lines = trials_path.read_text().strip().split("\n")
+        assert len(lines) == 2  # header + 1 trial

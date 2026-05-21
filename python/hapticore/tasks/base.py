@@ -110,10 +110,17 @@ class BaseTask(ABC):
         """
 
     def log_trial(self, outcome: str, **extra_data: Any) -> None:
-        """Log a completed trial via the TrialManager and publish a TrialEvent."""
-        from hapticore.core.messages import TOPIC_EVENT, TrialEvent, serialize
+        """Log a completed trial via the TrialManager and publish events."""
+        from hapticore.core.messages import (
+            TOPIC_EVENT,
+            TrialEvent,
+            TrialResult,
+            serialize,
+        )
 
         self.trial_manager.log_trial(outcome, **extra_data)
+
+        # Publish TrialEvent for the event stream (existing behavior)
         event = TrialEvent(
             timestamp=time.monotonic(),
             event_name="trial_complete",
@@ -126,6 +133,17 @@ class BaseTask(ABC):
             },
         )
         self.event_bus.publish(TOPIC_EVENT, serialize(event))
+
+        # Publish TrialResult for the incremental trial log
+        result = TrialResult(
+            timestamp=time.monotonic(),
+            trial_number=self.trial_number,
+            block_number=self.trial_manager.current_block,
+            outcome=outcome,
+            condition=dict(self.current_condition),
+            extra_data=dict(extra_data) if extra_data else {},
+        )
+        self.event_bus.publish(TOPIC_EVENT, serialize(result))
 
     def new_command_id(self) -> str:
         """Generate a unique command ID."""

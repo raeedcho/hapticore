@@ -26,14 +26,16 @@ logger = logging.getLogger(__name__)
 
 
 class DataLoggerProcess(multiprocessing.Process):
-    """Subprocess writing behavioral events, haptic state, and session
-    notes to disk.
+    """Subprocess writing behavioral events, haptic state, session
+    notes, and trial results to disk.
 
     Subscribes to two ZMQ streams:
     - event_pub_address / TOPIC_EVENT: StateTransition, TrialEvent,
-      ParamUpdate, and SessionNote messages. StateTransition, TrialEvent,
-      and ParamUpdate are appended to a TSV events file. SessionNote
-      messages are routed to a separate notes TSV file.
+      ParamUpdate, TrialResult, and SessionNote messages.
+      StateTransition, TrialEvent, and ParamUpdate are appended to a
+      TSV events file. SessionNote messages are routed to a separate
+      notes TSV file. TrialResult messages are routed to a separate
+      trials TSV file.
     - haptic_state_address / TOPIC_STATE: HapticState messages →
       appended as float64 binary to a .bin file.
 
@@ -48,6 +50,7 @@ class DataLoggerProcess(multiprocessing.Process):
     File layout (under session_dir/behavior/):
     - {session_id}_events.tsv: tab-separated behavioral events
     - {session_id}_notes.tsv: tab-separated experimenter notes
+    - {session_id}_trials.tsv: tab-separated trial log
     - {session_id}_haptic.bin: flat little-endian float64 binary
     - {session_id}_haptic.json: sidecar describing columns, dtype,
       sample count
@@ -84,6 +87,7 @@ class DataLoggerProcess(multiprocessing.Process):
         haptic_bin_path = behavior_dir / f"{self._session_id}_haptic.bin"
         haptic_sidecar_path = behavior_dir / f"{self._session_id}_haptic.json"
         notes_path = behavior_dir / f"{self._session_id}_notes.tsv"
+        trials_path = behavior_dir / f"{self._session_id}_trials.tsv"
 
         # ZMQ setup: two SUB sockets
         ctx = zmq.Context()
@@ -114,6 +118,7 @@ class DataLoggerProcess(multiprocessing.Process):
         events_file: TextIO | None = None
         haptic_file: BinaryIO | None = None
         notes_file: TextIO | None = None
+        trials_file: TextIO | None = None
         haptic_sample_count = 0
         last_error_log_time = 0.0
 
@@ -134,6 +139,7 @@ class DataLoggerProcess(multiprocessing.Process):
                                 events_path, haptic_bin_path,
                             )
                             notes_file = self._open_notes_file(notes_path)
+                            trials_file = self._open_trials_file(trials_path)
                             recording = True
                             haptic_sample_count = 0
                             logger.info("DataLogger: recording started")
@@ -142,9 +148,13 @@ class DataLoggerProcess(multiprocessing.Process):
                             if notes_file is not None:
                                 notes_file.flush()
                                 notes_file.close()
+                            if trials_file is not None:
+                                trials_file.flush()
+                                trials_file.close()
                             events_file = None
                             haptic_file = None
                             notes_file = None
+                            trials_file = None
                             self._write_haptic_sidecar(
                                 haptic_sidecar_path, haptic_sample_count,
                             )
@@ -160,6 +170,10 @@ class DataLoggerProcess(multiprocessing.Process):
                                 line = self._format_note(msg)
                                 if line is not None:
                                     notes_file.write(line)
+                            elif msg_type == "TrialResult" and trials_file is not None:
+                                line = self._format_trial_result(msg)
+                                if line is not None:
+                                    trials_file.write(line)
                             else:
                                 line = self._format_event(msg)
                                 if line is not None:
@@ -189,6 +203,9 @@ class DataLoggerProcess(multiprocessing.Process):
                 if notes_file is not None:
                     notes_file.flush()
                     notes_file.close()
+                if trials_file is not None:
+                    trials_file.flush()
+                    trials_file.close()
                 self._write_haptic_sidecar(
                     haptic_sidecar_path, haptic_sample_count,
                 )
@@ -252,6 +269,41 @@ class DataLoggerProcess(multiprocessing.Process):
             )
             return f"{msg['timestamp']}\t{msg['trial_number']}\t{text}\n"
         except KeyError:
+            return None
+
+    @staticmethod
+    def _open_trials_file(trials_path: Path) -> TextIO:
+        """Open the trials TSV file for writing.
+
+        Writes the TSV header line on open.
+        """
+        trials_file: TextIO = trials_path.open("w", newline="")
+        trials_file.write(
+            "timestamp_s\ttrial_number\tblock_number\t"
+            "outcome\tcondition\textra_data\n"
+        )
+        return trials_file
+
+    @staticmethod
+    def _format_trial_result(msg: dict[str, Any]) -> str | None:
+        """Format a TrialResult message dict as a TSV line.
+
+        Returns None if required fields are missing.
+
+        Columns: timestamp_s, trial_number, block_number, outcome,
+        condition (JSON), extra_data (JSON)
+        """
+        try:
+            condition = json.dumps(msg["condition"], separators=(",", ":"))
+            extra_data = json.dumps(
+                msg.get("extra_data", {}), separators=(",", ":"),
+            )
+            return (
+                f"{msg['timestamp']}\t{msg['trial_number']}\t"
+                f"{msg['block_number']}\t{msg['outcome']}\t"
+                f"{condition}\t{extra_data}\n"
+            )
+        except (KeyError, TypeError):
             return None
 
     @staticmethod

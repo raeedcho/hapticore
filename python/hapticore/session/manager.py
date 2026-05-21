@@ -135,6 +135,13 @@ class SessionManager:
         self._is_recording: bool = False
         self._trellis_file_name_base: str | None = None
 
+        self._segments: list[dict[str, Any]] = []
+        self._segment_counter: int = 0
+        self._current_segment_label: str | None = None
+        self._current_segment_dir: Path | None = None
+        self._segment_start_utc: datetime.datetime | None = None
+        self._segment_start_trial: int = -1
+
         self._ripple_proc: RippleProcess | None = None
         self._ripple_proc_started: bool = False
 
@@ -241,9 +248,6 @@ class SessionManager:
             if self._config.recording.ripple is not None:
                 self._start_ripple_process()
 
-            if self._config.recording.data_logging_enabled:
-                self._start_data_logger()
-
         except Exception:
             try:
                 if self._exit_stack is not None:
@@ -255,7 +259,6 @@ class SessionManager:
                 self._sync = None
                 self._stop_workspace_mirror()
                 self._stop_status_dashboard()
-                self._stop_data_logger()
                 self._cleanup_zmq()
             raise
 
@@ -305,21 +308,34 @@ class SessionManager:
 
     # -- Recording lifecycle ------------------------------------------------
 
-    def start_recording(self) -> None:
-        """Begin recording and sync.
+    def start_recording(self, segment_label: str | None = None) -> None:
+        """Begin a recording segment.
 
-        Publishes SessionControl messages in order:
-        1. start_sync
-        2. start_camera_trigger
-        3. start_recording (with file_name_base in params)
+        Creates a segment directory with behavior/, sync/, and (if Ripple
+        is configured) neural/ripple/ subdirectories. Starts
+        DataLoggerProcess with segment-specific paths, then publishes
+        session control messages to start sync, camera trigger, and
+        recording.
+
+        Args:
+            segment_label: Label for this segment directory (e.g.,
+                "seg-001", "baseline"). If None, auto-generates
+                "seg-001", "seg-002", etc.
 
         Raises:
-            RuntimeError: If start() has not been called.
+            RuntimeError: If start() has not been called, or if
+                recording is already active.
+            ValueError: If a segment with this label already exists
+                in this session (overwrite protection).
             NotImplementedError: If granularity is 'block' or 'trial'.
         """
-        if self._session_id is None:
+        if self._session_id is None or self._session_dir is None:
             raise RuntimeError(
                 "SessionManager.start() must be called before start_recording()"
+            )
+        if self._is_recording:
+            raise RuntimeError(
+                "Recording is already active. Call stop_recording() first."
             )
         granularity = self._config.recording.granularity
         if granularity != "session":
@@ -328,7 +344,37 @@ class SessionManager:
                 "Only 'session' granularity is currently implemented."
             )
 
-        self._trellis_file_name_base = self._build_trellis_file_name_base()
+        # Auto-generate segment label
+        if segment_label is None:
+            self._segment_counter += 1
+            segment_label = f"seg-{self._segment_counter:03d}"
+
+        # Overwrite protection
+        segment_dir = self._session_dir / segment_label
+        if segment_dir.exists():
+            raise ValueError(
+                f"Segment directory already exists: {segment_dir}. "
+                "Choose a different segment label."
+            )
+
+        # Create segment directory tree
+        (segment_dir / "behavior").mkdir(parents=True)
+        (segment_dir / "sync").mkdir(parents=True)
+        if self._config.recording.ripple is not None:
+            (segment_dir / "neural" / "ripple").mkdir(parents=True)
+
+        self._current_segment_label = segment_label
+        self._current_segment_dir = segment_dir
+
+        # Start DataLoggerProcess for this segment
+        segment_file_prefix = f"{self._session_id}_{segment_label}"
+        if self._config.recording.data_logging_enabled:
+            self._start_data_logger_for_segment(segment_dir, segment_file_prefix)
+
+        # Build Trellis file name pointing into segment's neural/ripple/
+        self._trellis_file_name_base = self._build_trellis_file_name_base(
+            segment_label=segment_label,
+        )
 
         self._publish_session("start_sync")
         self._publish_session("start_camera_trigger")
@@ -336,26 +382,65 @@ class SessionManager:
             "start_recording",
             {"file_name_base": self._trellis_file_name_base},
         )
+
         self._is_recording = True
-        logger.info("Recording started: file_name_base=%s", self._trellis_file_name_base)
+        self._segment_start_utc = datetime.datetime.now(datetime.UTC)
+        self._segment_start_trial = (
+            self._trial_manager.current_trial if self._trial_manager else -1
+        )
+        logger.info(
+            "Recording started: segment=%s, file_name_base=%s",
+            segment_label, self._trellis_file_name_base,
+        )
 
     def stop_recording(self) -> None:
-        """Stop recording and sync.
+        """Stop the current recording segment.
 
-        Publishes SessionControl messages in reverse order:
-        1. stop_recording
-        2. stop_camera_trigger
-        3. stop_sync
+        Publishes session control stop messages, records segment
+        metadata, and stops DataLoggerProcess so files are flushed
+        and closed.
 
         No-op if recording is not active (idempotent).
         """
         if not self._is_recording:
             return
+
         self._publish_session("stop_recording")
         self._publish_session("stop_camera_trigger")
         self._publish_session("stop_sync")
+
+        # Record segment metadata for the session receipt
+        end_utc = datetime.datetime.now(datetime.UTC)
+        end_trial = (
+            self._trial_manager.current_trial if self._trial_manager else -1
+        )
+        segment_info: dict[str, Any] = {
+            "label": self._current_segment_label,
+            "path": str(self._current_segment_dir),
+            "timing": {
+                "start_utc": (
+                    self._segment_start_utc.isoformat()
+                    if self._segment_start_utc else None
+                ),
+                "end_utc": end_utc.isoformat(),
+                "duration_s": (
+                    (end_utc - self._segment_start_utc).total_seconds()
+                    if self._segment_start_utc else None
+                ),
+            },
+            "trial_range": [self._segment_start_trial, end_trial],
+        }
+        self._segments.append(segment_info)
+
+        # Stop DataLoggerProcess so files are flushed and closed
+        self._stop_data_logger()
+
         self._is_recording = False
-        logger.info("Recording stopped")
+        logger.info("Recording stopped: segment=%s", self._current_segment_label)
+        self._current_segment_label = None
+        self._current_segment_dir = None
+        self._segment_start_utc = None
+        self._segment_start_trial = -1
 
     # -- Properties ---------------------------------------------------------
 
@@ -373,6 +458,21 @@ class SessionManager:
     def is_recording(self) -> bool:
         """Whether recording is currently active."""
         return self._is_recording
+
+    @property
+    def segments(self) -> list[dict[str, Any]]:
+        """List of completed segment metadata dicts."""
+        return list(self._segments)
+
+    @property
+    def current_segment_label(self) -> str | None:
+        """Label of the active recording segment, or None."""
+        return self._current_segment_label
+
+    @property
+    def current_segment_dir(self) -> Path | None:
+        """Directory of the active recording segment, or None."""
+        return self._current_segment_dir
 
     @property
     def haptic(self) -> HapticInterface:
@@ -465,7 +565,11 @@ class SessionManager:
             self._ctx = None
 
     def _create_session_dirs(self) -> Path:
-        """Create the session directory tree. Returns the session_dir."""
+        """Create the session directory. Returns the session_dir.
+
+        Subdirectories (behavior/, sync/, neural/) are created per-segment
+        in start_recording(), not at session level.
+        """
         if self._session_id is None:
             raise RuntimeError("_create_session_dirs called before _build_session_id")
         session_dir = (
@@ -473,37 +577,36 @@ class SessionManager:
             / f"sub-{self._config.subject.subject_id}"
             / self._session_id
         )
-        # Always create these subdirectories.
-        for subdir in ("behavior", "sync"):
-            (session_dir / subdir).mkdir(parents=True, exist_ok=True)
-
-        # Only create neural/ripple when ripple is configured.
-        if self._config.recording.ripple is not None:
-            (session_dir / "neural" / "ripple").mkdir(parents=True, exist_ok=True)
-
+        session_dir.mkdir(parents=True, exist_ok=True)
         return session_dir
 
-    def _build_trellis_file_name_base(self) -> str:
+    def _build_trellis_file_name_base(
+        self, *, segment_label: str | None = None,
+    ) -> str:
         """Construct the file_name_base for xipppy.trial().
 
-        Combines config.recording.ripple.trellis_data_dir with the
-        session-relative path. For co-located Trellis (trellis_data_dir
-        == save_dir), this produces a path on the local filesystem.
-        For remote Trellis, this produces a path on the Trellis machine.
+        Routes through the segment's neural/ripple/ directory so
+        Trellis files are colocated with behavioral data in the
+        atomic segment folder.
         """
         if self._session_id is None:
             raise RuntimeError("Cannot build Trellis path before start()")
         subject_id = self._config.subject.subject_id
+
+        file_name = self._session_id
+        segment_path = ""
+        if segment_label is not None:
+            file_name = f"{self._session_id}_{segment_label}"
+            segment_path = f"{segment_label}/"
+
         session_relative = (
-            f"sub-{subject_id}/{self._session_id}/neural/ripple/{self._session_id}"
+            f"sub-{subject_id}/{self._session_id}/"
+            f"{segment_path}neural/ripple/{file_name}"
         )
         if self._config.recording.ripple is not None:
             trellis_data_dir = self._config.recording.ripple.trellis_data_dir
         else:
             trellis_data_dir = str(self._config.recording.save_dir)
-        # Always join with forward slash — preserves trellis_data_dir exactly
-        # (which may be a remote Windows path) and uses forward slashes for
-        # the session-relative suffix.
         return f"{trellis_data_dir}/{session_relative}"
 
     def _start_ripple_process(self) -> None:
@@ -565,15 +668,29 @@ class SessionManager:
                     proc.pid,
                 )
 
-    def _start_data_logger(self) -> None:
-        """Start DataLoggerProcess with readiness polling loop."""
+    def _start_data_logger_for_segment(
+        self, segment_dir: Path, file_prefix: str,
+    ) -> None:
+        """Start a DataLoggerProcess for a specific recording segment.
+
+        Passes segment_dir as session_dir and file_prefix as session_id,
+        so files land in segment_dir/behavior/{file_prefix}_events.tsv,
+        etc.
+
+        This method generalizes to any recording unit directory — manual
+        segments, future automatic block/trial sub-units, etc.
+
+        Stops any existing DataLoggerProcess from a previous segment first.
+        """
         assert self._zmq_config is not None
-        assert self._session_dir is not None
-        assert self._session_id is not None
+
+        # Stop any leftover DataLoggerProcess from a previous segment
+        self._stop_data_logger()
+
         ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
         proc = DataLoggerProcess(
-            session_dir=self._session_dir,
-            session_id=self._session_id,
+            session_dir=segment_dir,
+            session_id=file_prefix,
             zmq_config=self._zmq_config,
             ready_event=ready_event,
         )
@@ -604,9 +721,10 @@ class SessionManager:
             self._stop_data_logger()
             raise
 
-        # Brief grace period for ZMQ subscription propagation.
         time.sleep(_DATA_LOGGER_SUBSCRIPTION_GRACE_S)
-        logger.info("DataLoggerProcess ready (pid=%d)", proc.pid)
+        logger.info(
+            "DataLoggerProcess ready for segment (pid=%d)", proc.pid,
+        )
 
     def _stop_data_logger(self) -> None:
         """Shut down DataLoggerProcess with the standard shutdown sequence."""
@@ -624,6 +742,7 @@ class SessionManager:
                     "terminate(); may leak.",
                     proc.pid,
                 )
+        self._data_logger_started = False
 
     def _start_workspace_mirror(self) -> None:
         """Start WorkspaceMirrorProcess with readiness polling loop."""

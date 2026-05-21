@@ -416,6 +416,7 @@ class TestSessionManagerDataLoggerIntegration:
             mgr = SessionManager(config)
             mgr.start()
             try:
+                mgr.start_recording()
                 mock_cls.assert_called_once()
                 fake_proc.start.assert_called_once()
             finally:
@@ -449,6 +450,7 @@ class TestSessionManagerDataLoggerIntegration:
         ):
             mgr = SessionManager(config)
             mgr.start()
+            mgr.start_recording()
             mgr.stop()
 
         fake_proc.request_shutdown.assert_called_once()
@@ -480,8 +482,12 @@ class TestSessionManagerDataLoggerIntegration:
             mgr = SessionManager(config)
             mgr.start()
             try:
+                mgr.start_recording()
+                # DataLoggerProcess receives the segment directory, not session dir
+                seg_dir = mgr.current_segment_dir
+                assert captured_kwargs.get("session_dir") == seg_dir
                 assert mgr.session_dir is not None
-                assert captured_kwargs.get("session_dir") == mgr.session_dir
+                assert captured_kwargs["session_dir"].parent == mgr.session_dir
             finally:
                 mgr.stop()
 
@@ -511,8 +517,11 @@ class TestSessionManagerDataLoggerIntegration:
             mgr = SessionManager(config)
             mgr.start()
             try:
+                mgr.start_recording()
+                # DataLoggerProcess receives {session_id}_{segment_label} as session_id
                 assert mgr.session_id is not None
-                assert captured_kwargs.get("session_id") == mgr.session_id
+                expected = f"{mgr.session_id}_seg-001"
+                assert captured_kwargs.get("session_id") == expected
             finally:
                 mgr.stop()
 

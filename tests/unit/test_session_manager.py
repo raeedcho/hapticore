@@ -92,6 +92,26 @@ def ripple_config(tmp_path: Path) -> ExperimentConfig:
     )
 
 
+@pytest.fixture
+def minimal_config_with_logging(tmp_path: Path) -> ExperimentConfig:
+    """ExperimentConfig with mock backends and data_logging_enabled=True."""
+    return ExperimentConfig(
+        experiment_name="test_experiment",
+        subject=SubjectConfig(subject_id="test-monkey"),
+        haptic=HapticConfig(backend="mock"),
+        display=DisplayConfig(backend="mock"),
+        recording=RecordingConfig(
+            save_dir=tmp_path, granularity="session", data_logging_enabled=True,
+        ),
+        task=TaskConfig(
+            task_class="hapticore.tasks.center_out.CenterOutTask",
+            conditions=[{"target_angle": 0}],
+            block_size=1,
+            num_blocks=1,
+        ),
+        sync=SyncConfig(backend="mock"),
+    )
+
 
 # ---------------------------------------------------------------------------
 # TestSessionDirectory
@@ -107,10 +127,9 @@ class TestSessionDirectory:
         try:
             assert mgr.session_dir is not None
             assert mgr.session_dir.is_dir()
-            # Standard subdirectories (no ripple → no neural/ripple)
-            assert (mgr.session_dir / "behavior").is_dir()
-            assert (mgr.session_dir / "sync").is_dir()
-            assert not (mgr.session_dir / "lsl").exists()
+            # Subdirectories are created per-segment, not at session level
+            assert not (mgr.session_dir / "behavior").exists()
+            assert not (mgr.session_dir / "sync").exists()
             assert not (mgr.session_dir / "neural" / "ripple").exists()
         finally:
             mgr.stop()
@@ -134,8 +153,13 @@ class TestSessionDirectory:
             mgr = SessionManager(ripple_config)
             mgr.start()
             try:
-                assert mgr.session_dir is not None
-                assert (mgr.session_dir / "neural" / "ripple").is_dir()
+                # start() no longer creates neural/ripple — verify absent
+                assert not (mgr.session_dir / "neural" / "ripple").exists()
+                # start_recording() creates it in the segment directory
+                mgr.start_recording()
+                seg_dir = mgr.current_segment_dir
+                assert seg_dir is not None
+                assert (seg_dir / "neural" / "ripple").is_dir()
             finally:
                 mgr.stop()
 
@@ -792,3 +816,146 @@ class TestInfrastructureLifecycle:
         assert session._display is None
         assert session._sync is None
 
+
+# ---------------------------------------------------------------------------
+# TestMultiSegmentRecording
+# ---------------------------------------------------------------------------
+
+
+class TestMultiSegmentRecording:
+    def test_start_recording_creates_standalone_segment_directory(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        """start_recording() creates a segment dir with behavior/ and sync/."""
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording()
+            assert mgr.current_segment_label == "seg-001"
+            seg_dir = mgr.current_segment_dir
+            assert seg_dir is not None
+            assert (seg_dir / "behavior").is_dir()
+            assert (seg_dir / "sync").is_dir()
+            assert not (seg_dir / "neural" / "ripple").exists()
+        finally:
+            mgr.stop()
+
+    def test_two_segments_create_separate_directories(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording()
+            seg1_dir = mgr.current_segment_dir
+            mgr.stop_recording()
+
+            mgr.start_recording()
+            seg2_dir = mgr.current_segment_dir
+            mgr.stop_recording()
+
+            assert seg1_dir != seg2_dir
+            assert seg1_dir is not None and seg1_dir.is_dir()
+            assert seg2_dir is not None and seg2_dir.is_dir()
+            assert len(mgr.segments) == 2
+            assert mgr.segments[0]["label"] == "seg-001"
+            assert mgr.segments[1]["label"] == "seg-002"
+        finally:
+            mgr.stop()
+
+    def test_custom_segment_label(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording(segment_label="baseline")
+            assert mgr.current_segment_label == "baseline"
+            assert mgr.current_segment_dir is not None
+            assert mgr.current_segment_dir.name == "baseline"
+        finally:
+            mgr.stop()
+
+    def test_overwrite_protection(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording(segment_label="seg-001")
+            mgr.stop_recording()
+            with pytest.raises(ValueError, match="already exists"):
+                mgr.start_recording(segment_label="seg-001")
+        finally:
+            mgr.stop()
+
+    def test_start_recording_while_recording_raises(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording()
+            with pytest.raises(RuntimeError, match="already active"):
+                mgr.start_recording()
+        finally:
+            mgr.stop()
+
+    def test_segment_metadata_recorded(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording()
+            time.sleep(0.05)
+            mgr.stop_recording()
+            assert len(mgr.segments) == 1
+            seg = mgr.segments[0]
+            assert seg["label"] == "seg-001"
+            assert seg["timing"]["start_utc"] is not None
+            assert seg["timing"]["end_utc"] is not None
+            assert seg["timing"]["duration_s"] >= 0
+            assert seg["trial_range"] == [-1, -1]
+        finally:
+            mgr.stop()
+
+    def test_stop_recording_without_start_is_noop(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.stop_recording()  # should not raise
+            assert len(mgr.segments) == 0
+        finally:
+            mgr.stop()
+
+    def test_trellis_path_routes_through_segment(
+        self, ripple_config: ExperimentConfig,
+    ) -> None:
+        """Trellis file_name_base includes the segment directory."""
+        fake_proc = MagicMock()
+        fake_proc.is_alive.return_value = True
+
+        def make_and_set_ready(*args: Any, **kwargs: Any) -> MagicMock:
+            ready = kwargs.get("ready_event")
+            if ready is not None:
+                ready.set()
+            return fake_proc
+
+        with patch(
+            "hapticore.session.manager.RippleProcess",
+            side_effect=make_and_set_ready,
+        ):
+            mgr = SessionManager(ripple_config)
+            mgr.start()
+            try:
+                mgr.start_recording(segment_label="seg-001")
+                trellis_base = mgr._trellis_file_name_base
+                assert trellis_base is not None
+                assert "seg-001/neural/ripple/" in trellis_base
+                assert mgr.session_id is not None
+                assert trellis_base.endswith(f"{mgr.session_id}_seg-001")
+            finally:
+                mgr.stop()

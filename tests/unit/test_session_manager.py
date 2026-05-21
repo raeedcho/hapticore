@@ -823,7 +823,7 @@ class TestInfrastructureLifecycle:
 
 
 class TestMultiSegmentRecording:
-    def test_start_recording_creates_atomic_segment_directory(
+    def test_start_recording_creates_standalone_segment_directory(
         self, minimal_config_with_logging: ExperimentConfig,
     ) -> None:
         """start_recording() creates a segment dir with behavior/ and sync/."""

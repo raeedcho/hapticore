@@ -326,7 +326,8 @@ class SessionManager:
             RuntimeError: If start() has not been called, or if
                 recording is already active.
             ValueError: If a segment with this label already exists
-                in this session (overwrite protection).
+                in this session (overwrite protection) or if the label is
+                invalid (must be a simple directory name with no path)
             NotImplementedError: If granularity is 'block' or 'trial'.
         """
         if self._session_id is None or self._session_dir is None:
@@ -344,10 +345,24 @@ class SessionManager:
                 "Only 'session' granularity is currently implemented."
             )
 
-        # Auto-generate segment label
-        if segment_label is None:
-            self._segment_counter += 1
-            segment_label = f"seg-{self._segment_counter:03d}"
+        if segment_label is not None:
+            if (
+                "/" in segment_label
+                or "\\" in segment_label
+                or segment_label in (".", "..")
+                or segment_label.startswith(".")
+            ):
+                raise ValueError(
+                    f"Invalid segment label {segment_label!r}: must be a simple "
+                    "directory name with no path separators or leading dots."
+                )
+        else:
+            # Auto-generate segment label
+            while True:
+                self._segment_counter += 1
+                segment_label = f"seg-{self._segment_counter:03d}"
+                if not (self._session_dir / segment_label).exists():
+                    break
 
         # Overwrite protection
         segment_dir = self._session_dir / segment_label
@@ -587,7 +602,7 @@ class SessionManager:
 
         Routes through the segment's neural/ripple/ directory so
         Trellis files are colocated with behavioral data in the
-        atomic segment folder.
+        standalone segment folder.
         """
         if self._session_id is None:
             raise RuntimeError("Cannot build Trellis path before start()")
@@ -921,6 +936,7 @@ class SessionManager:
                 dict(self._config.task.params) if self._config.task.params else {}
             ),
             "param_changes": [],
+            "segments": self._segments,
             "recording": {
                 "session_dir": str(self._session_dir),
                 "granularity": self._config.recording.granularity,

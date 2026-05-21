@@ -959,3 +959,105 @@ class TestMultiSegmentRecording:
                 assert trellis_base.endswith(f"{mgr.session_id}_seg-001")
             finally:
                 mgr.stop()
+
+    def test_segment_receipt_written(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        """stop_recording writes segment_receipt.json."""
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording(active_params={"hold_time": 0.5})
+            mgr.stop_recording()
+
+            seg_dir = Path(mgr.segments[0]["path"])
+            receipt_path = seg_dir / "segment_receipt.json"
+            assert receipt_path.exists()
+            with receipt_path.open() as f:
+                receipt = json.load(f)
+            for key in ("session_id", "segment_label", "subject_id",
+                        "experiment_name", "timing", "config_snapshot",
+                        "active_params", "recording", "hardware"):
+                assert key in receipt, f"Missing key: {key}"
+            assert receipt["session_id"] == mgr.session_id
+            assert receipt["segment_label"] == "seg-001"
+            assert receipt["subject_id"] == "test-monkey"
+        finally:
+            mgr.stop()
+
+    def test_segment_receipt_captures_active_params(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        """active_params passed to start_recording appears in segment receipt."""
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            params = {"hold_time": 0.3, "timeout": 2.0}
+            mgr.start_recording(active_params=params)
+            mgr.stop_recording()
+
+            seg_dir = Path(mgr.segments[0]["path"])
+            with (seg_dir / "segment_receipt.json").open() as f:
+                receipt = json.load(f)
+            assert receipt["active_params"] == {"hold_time": 0.3, "timeout": 2.0}
+        finally:
+            mgr.stop()
+
+    def test_segment_receipt_empty_params_when_none(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        """active_params defaults to empty dict when not provided."""
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording()  # no active_params
+            mgr.stop_recording()
+
+            seg_dir = Path(mgr.segments[0]["path"])
+            with (seg_dir / "segment_receipt.json").open() as f:
+                receipt = json.load(f)
+            assert receipt["active_params"] == {}
+        finally:
+            mgr.stop()
+
+    def test_two_segments_each_have_receipt(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        """Each segment gets its own receipt with correct active_params."""
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording(active_params={"hold_time": 0.5})
+            mgr.stop_recording()
+
+            mgr.start_recording(active_params={"hold_time": 0.3})
+            mgr.stop_recording()
+
+            seg1_dir = Path(mgr.segments[0]["path"])
+            seg2_dir = Path(mgr.segments[1]["path"])
+
+            with (seg1_dir / "segment_receipt.json").open() as f:
+                receipt1 = json.load(f)
+            with (seg2_dir / "segment_receipt.json").open() as f:
+                receipt2 = json.load(f)
+
+            assert receipt1["segment_label"] == "seg-001"
+            assert receipt1["active_params"]["hold_time"] == 0.5
+            assert receipt2["segment_label"] == "seg-002"
+            assert receipt2["active_params"]["hold_time"] == 0.3
+        finally:
+            mgr.stop()
+
+    def test_segment_metadata_includes_active_params(
+        self, minimal_config_with_logging: ExperimentConfig,
+    ) -> None:
+        """self._segments metadata includes active_params for session receipt."""
+        mgr = SessionManager(minimal_config_with_logging)
+        mgr.start()
+        try:
+            mgr.start_recording(active_params={"hold_time": 0.3})
+            mgr.stop_recording()
+
+            assert mgr.segments[0]["active_params"] == {"hold_time": 0.3}
+        finally:
+            mgr.stop()

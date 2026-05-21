@@ -81,7 +81,7 @@ def _run(args: argparse.Namespace) -> None:
             )
             try:
                 controller.setup()
-                session.start_recording()
+                session.start_recording(active_params=dict(task.params))
                 controller.run()
             finally:
                 session.stop_recording()

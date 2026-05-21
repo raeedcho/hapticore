@@ -141,6 +141,7 @@ class SessionManager:
         self._current_segment_dir: Path | None = None
         self._segment_start_utc: datetime.datetime | None = None
         self._segment_start_trial: int = -1
+        self._current_segment_active_params: dict[str, Any] | None = None
 
         self._ripple_proc: RippleProcess | None = None
         self._ripple_proc_started: bool = False
@@ -308,7 +309,12 @@ class SessionManager:
 
     # -- Recording lifecycle ------------------------------------------------
 
-    def start_recording(self, segment_label: str | None = None) -> None:
+    def start_recording(
+        self,
+        segment_label: str | None = None,
+        *,
+        active_params: dict[str, Any] | None = None,
+    ) -> None:
         """Begin a recording segment.
 
         Creates a segment directory with behavior/, sync/, and (if Ripple
@@ -321,6 +327,10 @@ class SessionManager:
             segment_label: Label for this segment directory (e.g.,
                 "seg-001", "baseline"). If None, auto-generates
                 "seg-001", "seg-002", etc.
+            active_params: Task parameter values at segment start. Used
+                to populate the segment receipt so the segment can be
+                analyzed in isolation even when params were changed in a
+                prior segment. Defaults to None (written as {} in receipt).
 
         Raises:
             RuntimeError: If start() has not been called, or if
@@ -380,6 +390,9 @@ class SessionManager:
 
         self._current_segment_label = segment_label
         self._current_segment_dir = segment_dir
+        self._current_segment_active_params = (
+            dict(active_params) if active_params is not None else {}
+        )
 
         # Start DataLoggerProcess for this segment
         segment_file_prefix = f"{self._session_id}_{segment_label}"
@@ -424,6 +437,13 @@ class SessionManager:
         self._publish_session("stop_camera_trigger")
         self._publish_session("stop_sync")
 
+        # Write segment receipt before stopping DataLoggerProcess
+        # (segment state is still available)
+        try:
+            self._write_segment_receipt()
+        except Exception:
+            logger.exception("Failed to write segment receipt")
+
         # Record segment metadata for the session receipt
         end_utc = datetime.datetime.now(datetime.UTC)
         end_trial = (
@@ -444,6 +464,7 @@ class SessionManager:
                 ),
             },
             "trial_range": [self._segment_start_trial, end_trial],
+            "active_params": self._current_segment_active_params,
         }
         self._segments.append(segment_info)
 
@@ -456,6 +477,7 @@ class SessionManager:
         self._current_segment_dir = None
         self._segment_start_utc = None
         self._segment_start_trial = -1
+        self._current_segment_active_params = None
 
     # -- Properties ---------------------------------------------------------
 
@@ -897,6 +919,80 @@ class SessionManager:
         # start() — though in practice start_recording/stop_recording both
         # guard this themselves.
         self.publisher.publish(TOPIC_SESSION, serialize(msg))
+
+    def _write_segment_receipt(self) -> None:
+        """Write segment_receipt.json to the current segment directory.
+
+        The segment receipt captures everything needed to understand this
+        segment in isolation:
+        - Config snapshot (full resolved config at session start)
+        - active_params (task parameter values at segment start — critical
+          for standalone analysis when params were changed in a prior segment)
+        - Trial summary (session-wide count and outcomes)
+        - Recording systems and hardware info
+        - Segment timing and trial range
+
+        Param changes during the segment are in the events TSV
+        (msg_type="param" rows) and are not duplicated here. To
+        reconstruct the full parameter history: start with active_params,
+        then apply param events chronologically.
+        """
+        if (
+            self._current_segment_dir is None
+            or self._current_segment_label is None
+            or self._session_id is None
+        ):
+            raise RuntimeError("Cannot write segment receipt outside a recording")
+
+        end_utc = datetime.datetime.now(datetime.UTC)
+        end_trial = (
+            self._trial_manager.current_trial if self._trial_manager else -1
+        )
+
+        recording_systems: list[str] = []
+        if self._config.recording.ripple is not None:
+            recording_systems.append("ripple")
+        if self._config.recording.data_logging_enabled:
+            recording_systems.append("data_logger")
+
+        receipt: dict[str, Any] = {
+            "session_id": self._session_id,
+            "segment_label": self._current_segment_label,
+            "subject_id": self._config.subject.subject_id,
+            "experiment_name": self._config.experiment_name,
+            "timing": {
+                "start_utc": (
+                    self._segment_start_utc.isoformat()
+                    if self._segment_start_utc else None
+                ),
+                "end_utc": end_utc.isoformat(),
+                "duration_s": (
+                    (end_utc - self._segment_start_utc).total_seconds()
+                    if self._segment_start_utc else None
+                ),
+            },
+            "trial_range": [self._segment_start_trial, end_trial],
+            "config_snapshot": self._config.model_dump(mode="json"),
+            "active_params": self._current_segment_active_params,
+            "trial_summary": (
+                self._trial_manager.get_summary() if self._trial_manager else None
+            ),
+            "recording": {
+                "data_logging_enabled": self._config.recording.data_logging_enabled,
+                "trellis_file_name_base": self._trellis_file_name_base,
+            },
+            "hardware": {
+                "haptic_backend": self._config.haptic.backend,
+                "display_backend": self._config.display.backend,
+                "sync_backend": self._config.sync.backend,
+                "recording_systems": recording_systems,
+            },
+        }
+
+        receipt_path = self._current_segment_dir / "segment_receipt.json"
+        with receipt_path.open("w") as f:
+            json.dump(receipt, f, indent=2)
+        logger.info("Segment receipt written: %s", receipt_path)
 
     def _write_session_receipt(self) -> None:
         """Write session_receipt.json to session_dir."""

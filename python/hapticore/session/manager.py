@@ -920,6 +920,23 @@ class SessionManager:
         # guard this themselves.
         self.publisher.publish(TOPIC_SESSION, serialize(msg))
 
+    def _build_hardware_info(self) -> dict[str, Any]:
+        """Build hardware and recording systems dict for receipts.
+
+        Shared by _write_session_receipt() and _write_segment_receipt().
+        """
+        recording_systems: list[str] = []
+        if self._config.recording.ripple is not None:
+            recording_systems.append("ripple")
+        if self._config.recording.data_logging_enabled:
+            recording_systems.append("data_logger")
+        return {
+            "haptic_backend": self._config.haptic.backend,
+            "display_backend": self._config.display.backend,
+            "sync_backend": self._config.sync.backend,
+            "recording_systems": recording_systems,
+        }
+
     def _write_segment_receipt(self) -> None:
         """Write segment_receipt.json to the current segment directory.
 
@@ -981,12 +998,7 @@ class SessionManager:
                 "data_logging_enabled": self._config.recording.data_logging_enabled,
                 "trellis_file_name_base": self._trellis_file_name_base,
             },
-            "hardware": {
-                "haptic_backend": self._config.haptic.backend,
-                "display_backend": self._config.display.backend,
-                "sync_backend": self._config.sync.backend,
-                "recording_systems": recording_systems,
-            },
+            "hardware": self._build_hardware_info(),
         }
 
         receipt_path = self._current_segment_dir / "segment_receipt.json"
@@ -1042,12 +1054,7 @@ class SessionManager:
             "trial_summary": (
                 self._trial_manager.get_summary() if self._trial_manager else None
             ),
-            "hardware": {
-                "haptic_backend": self._config.haptic.backend,
-                "display_backend": self._config.display.backend,
-                "sync_backend": self._config.sync.backend,
-                "recording_systems": recording_systems,
-            },
+            "hardware": self._build_hardware_info(),
         }
 
         receipt_path = self._session_dir / "session_receipt.json"

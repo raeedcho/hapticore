@@ -142,12 +142,15 @@ class SessionManager:
         self._config = config
         self._xipppy_module = xipppy_module
 
-        self._trial_manager = TrialManager(
-            conditions=config.task.conditions,
-            block_size=config.task.block_size,
-            num_blocks=config.task.num_blocks,
-            randomization=config.task.randomization,
-        )
+        try:
+            self._trial_manager = TrialManager(
+                conditions=config.task.conditions,
+                block_size=config.task.block_size,
+                num_blocks=config.task.num_blocks,
+                randomization=config.task.randomization,
+            )
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid task config for TrialManager: {exc}") from exc
 
         # Infrastructure — created in start()
         self._zmq_config: ZMQConfig | None = None

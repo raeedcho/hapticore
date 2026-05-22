@@ -13,7 +13,6 @@ def _run(args: argparse.Namespace) -> None:
     from hapticore.core.config import load_session_config
     from hapticore.session import SessionManager
     from hapticore.tasks.controller import TaskController
-    from hapticore.tasks.trial_manager import TrialManager
 
     # --rig, --subject, --task are effectively required for `run`. Keep the
     # manual check so we can give a helpful error, rather than relying on
@@ -54,14 +53,6 @@ def _run(args: argparse.Namespace) -> None:
 
     try:
         with SessionManager(config) as session:
-            trial_manager = TrialManager(
-                conditions=config.task.conditions,
-                block_size=config.task.block_size,
-                num_blocks=config.task.num_blocks,
-                randomization=config.task.randomization,
-            )
-            session.set_trial_manager(trial_manager)
-
             # --fast: override timing parameters to 1ms for smoke testing.
             param_overrides = dict(config.task.params) if config.task.params else {}
             if args.fast:
@@ -75,7 +66,7 @@ def _run(args: argparse.Namespace) -> None:
                 display=session.display,
                 sync=session.sync,
                 event_publisher=session.publisher,
-                trial_manager=trial_manager,
+                trial_manager=session.trial_manager,
                 params=param_overrides or None,
                 poll_rate_hz=1000.0,
             )

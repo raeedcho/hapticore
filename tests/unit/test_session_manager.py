@@ -411,15 +411,7 @@ class TestSessionReceipt:
     def test_receipt_includes_trial_summary(
         self, minimal_config: ExperimentConfig,
     ) -> None:
-        from hapticore.tasks.trial_manager import TrialManager
-
         mgr = SessionManager(minimal_config)
-        trial_manager = TrialManager(
-            conditions=[{"target_angle": 0}],
-            block_size=1,
-            num_blocks=1,
-        )
-        mgr.set_trial_manager(trial_manager)
         mgr.start()
         mgr.stop()
 
@@ -429,19 +421,6 @@ class TestSessionReceipt:
             receipt = json.load(f)
         assert receipt["trial_summary"] is not None
         assert "total_trials" in receipt["trial_summary"]
-
-    def test_receipt_without_trial_manager_has_null_summary(
-        self, minimal_config: ExperimentConfig,
-    ) -> None:
-        mgr = SessionManager(minimal_config)
-        mgr.start()
-        mgr.stop()
-
-        assert mgr.session_dir is not None
-        receipt_path = mgr.session_dir / "session_receipt.json"
-        with receipt_path.open() as f:
-            receipt = json.load(f)
-        assert receipt["trial_summary"] is None
 
     def test_receipt_hardware_section(
         self, minimal_config: ExperimentConfig,
@@ -615,10 +594,11 @@ class TestTrellisFileNameBase:
             mgr.start()
             try:
                 mgr.start_recording()
-                assert mgr._trellis_file_name_base is not None
-                assert str(tmp_path) in mgr._trellis_file_name_base
+                assert mgr._current_segment is not None
+                assert mgr._current_segment.trellis_file_name_base is not None
+                assert str(tmp_path) in mgr._current_segment.trellis_file_name_base
                 assert mgr.session_id is not None
-                assert mgr.session_id in mgr._trellis_file_name_base
+                assert mgr.session_id in mgr._current_segment.trellis_file_name_base
             finally:
                 mgr.stop()
 
@@ -662,10 +642,11 @@ class TestTrellisFileNameBase:
             mgr.start()
             try:
                 mgr.start_recording()
-                assert mgr._trellis_file_name_base is not None
-                assert mgr._trellis_file_name_base.startswith(remote_dir)
+                assert mgr._current_segment is not None
+                assert mgr._current_segment.trellis_file_name_base is not None
+                assert mgr._current_segment.trellis_file_name_base.startswith(remote_dir)
                 # Session-relative portion uses forward slashes
-                session_relative_part = mgr._trellis_file_name_base[len(remote_dir):]
+                session_relative_part = mgr._current_segment.trellis_file_name_base[len(remote_dir):]
                 assert "\\" not in session_relative_part
             finally:
                 mgr.stop()
@@ -952,7 +933,8 @@ class TestMultiSegmentRecording:
             mgr.start()
             try:
                 mgr.start_recording(segment_label="seg-001")
-                trellis_base = mgr._trellis_file_name_base
+                assert mgr._current_segment is not None
+                trellis_base = mgr._current_segment.trellis_file_name_base
                 assert trellis_base is not None
                 assert "seg-001/neural/ripple/" in trellis_base
                 assert mgr.session_id is not None
@@ -977,7 +959,7 @@ class TestMultiSegmentRecording:
                 receipt = json.load(f)
             for key in (
                 "session_id",
-                "segment_label",
+                "label",
                 "subject_id",
                 "experiment_name",
                 "timing",
@@ -990,7 +972,7 @@ class TestMultiSegmentRecording:
             ):
                 assert key in receipt, f"Missing key: {key}"
             assert receipt["session_id"] == mgr.session_id
-            assert receipt["segment_label"] == "seg-001"
+            assert receipt["label"] == "seg-001"
             assert receipt["subject_id"] == "test-monkey"
         finally:
             mgr.stop()
@@ -1051,9 +1033,9 @@ class TestMultiSegmentRecording:
             with (seg2_dir / "segment_receipt.json").open() as f:
                 receipt2 = json.load(f)
 
-            assert receipt1["segment_label"] == "seg-001"
+            assert receipt1["label"] == "seg-001"
             assert receipt1["active_params"]["hold_time"] == 0.5
-            assert receipt2["segment_label"] == "seg-002"
+            assert receipt2["label"] == "seg-002"
             assert receipt2["active_params"]["hold_time"] == 0.3
         finally:
             mgr.stop()

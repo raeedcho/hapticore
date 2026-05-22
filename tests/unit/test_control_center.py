@@ -29,6 +29,10 @@ from hapticore.control.config_panel import ConfigPanel, _populate_tree  # noqa: 
 @pytest.fixture(scope="session")
 def qapp() -> QApplication:
     """Provide a single QApplication for all tests (required by Qt widgets)."""
+    import os
+
+    if "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
@@ -103,7 +107,7 @@ class TestConfigPanelValidation:
         return ConfigPanel(configs_root=_CONFIGS_ROOT)
 
     def _select_valid_configs(self, panel: ConfigPanel) -> None:
-        """Programmatically select ci.yaml, example_subject.yaml, center_out.yaml."""
+        """Programmatically select ci.yaml, example_subject.yaml, center_out.yaml + experiment."""
         rig_idx = _find_combo_index(panel._rig_combo, "ci.yaml")
         subject_idx = _find_combo_index(panel._subject_combo, "example_subject.yaml")
         task_idx = _find_combo_index(panel._task_combo, "center_out.yaml")
@@ -113,6 +117,10 @@ class TestConfigPanelValidation:
         panel._rig_combo.setCurrentIndex(rig_idx)
         panel._subject_combo.setCurrentIndex(subject_idx)
         panel._task_combo.setCurrentIndex(task_idx)
+        # experiment_name is required and not provided by rig/subject/task configs
+        extra_path = _CONFIGS_ROOT / "example_experiment.yaml"
+        panel._extra_combo.addItem(extra_path.name, extra_path)
+        panel._extra_combo.setCurrentIndex(panel._extra_combo.count() - 1)
 
     def test_validate_succeeds_with_valid_configs(self, qapp: QApplication) -> None:
         """Programmatically select valid YAML files, call _on_validate(), assert config is set."""

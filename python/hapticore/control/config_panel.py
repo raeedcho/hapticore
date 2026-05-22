@@ -147,7 +147,7 @@ class ConfigPanel(QWidget):
                 p for p in scan_dir.iterdir() if p.suffix in (".yaml", ".yml")
             )
             for path in yaml_files:
-                combo.addItem(path.name, path)
+                combo.addItem(path.name, path.resolve())
         return combo
 
     def _browse(self, subdir: str, combo: QComboBox) -> None:
@@ -160,7 +160,7 @@ class ConfigPanel(QWidget):
         )
         if not path_str:
             return
-        path = Path(path_str)
+        path = Path(path_str).resolve()
         for i in range(combo.count()):
             if combo.itemData(i, Qt.ItemDataRole.UserRole) == path:
                 combo.setCurrentIndex(i)
@@ -178,7 +178,7 @@ class ConfigPanel(QWidget):
         )
         if not path_str:
             return
-        path = Path(path_str)
+        path = Path(path_str).resolve()
         for i in range(self._extra_combo.count()):
             if self._extra_combo.itemData(i, Qt.ItemDataRole.UserRole) == path:
                 self._extra_combo.setCurrentIndex(i)

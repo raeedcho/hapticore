@@ -975,9 +975,19 @@ class TestMultiSegmentRecording:
             assert receipt_path.exists()
             with receipt_path.open() as f:
                 receipt = json.load(f)
-            for key in ("session_id", "segment_label", "subject_id",
-                        "experiment_name", "timing", "config_snapshot",
-                        "active_params", "recording", "hardware"):
+            for key in (
+                "session_id",
+                "segment_label",
+                "subject_id",
+                "experiment_name",
+                "timing",
+                "config_snapshot",
+                "active_params",
+                "trial_range",
+                "trial_summary",
+                "recording",
+                "hardware",
+            ):
                 assert key in receipt, f"Missing key: {key}"
             assert receipt["session_id"] == mgr.session_id
             assert receipt["segment_label"] == "seg-001"

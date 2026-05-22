@@ -10,6 +10,7 @@ Does NOT test Qt rendering or simulate mouse/key events.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -29,8 +30,6 @@ from hapticore.control.config_panel import ConfigPanel, _populate_tree  # noqa: 
 @pytest.fixture(scope="session")
 def qapp() -> QApplication:
     """Provide a single QApplication for all tests (required by Qt widgets)."""
-    import os
-
     if "QT_QPA_PLATFORM" not in os.environ:
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
     app = QApplication.instance()

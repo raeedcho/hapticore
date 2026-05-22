@@ -9,6 +9,7 @@ directory, and session receipt.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import datetime
 import json
 import logging
@@ -18,7 +19,7 @@ import re
 import time
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import zmq
 
@@ -33,9 +34,7 @@ from hapticore.display import make_display_interface
 from hapticore.haptic import make_haptic_interface
 from hapticore.recording.ripple_process import RippleProcess
 from hapticore.sync import make_sync_interface
-
-if TYPE_CHECKING:
-    from hapticore.tasks.trial_manager import TrialManager
+from hapticore.tasks.trial_manager import TrialManager
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +74,37 @@ _STATUS_DASHBOARD_SHUTDOWN_TIMEOUT_S = 5.0
 _STATUS_DASHBOARD_TERMINATE_JOIN_TIMEOUT_S = 2.0
 
 
+@dataclasses.dataclass
+class RecordingSegment:
+    """State for an active recording segment.
+
+    Created by ``SessionManager.start_recording()``, read by
+    ``stop_recording()`` and ``_write_segment_receipt()``, then
+    discarded (set to None).
+    """
+
+    label: str
+    directory: Path
+    active_params: dict[str, Any]
+    start_utc: datetime.datetime
+    start_trial: int
+    trellis_file_name_base: str | None = None
+
+    def to_metadata(self, end_utc: datetime.datetime, end_trial: int) -> dict[str, Any]:
+        """Build metadata dict for the session receipt's segments list."""
+        return {
+            "label": self.label,
+            "path": str(self.directory),
+            "timing": {
+                "start_utc": self.start_utc.isoformat(),
+                "end_utc": end_utc.isoformat(),
+                "duration_s": (end_utc - self.start_utc).total_seconds(),
+            },
+            "trial_range": [self.start_trial, end_trial],
+            "active_params": self.active_params,
+        }
+
+
 class SessionManager:
     """Orchestrates all session infrastructure and lifecycle.
 
@@ -100,9 +130,6 @@ class SessionManager:
     Args:
         config: The full ExperimentConfig (needed for subject info,
             recording config, and config snapshot in the receipt).
-        trial_manager: Reference to the TrialManager for the session
-            summary in the receipt. Optional — may be None if the
-            SessionManager is started before the TrialManager exists.
         xipppy_module: Optional fake xipppy module for testing.
     """
 
@@ -110,12 +137,17 @@ class SessionManager:
         self,
         config: ExperimentConfig,
         *,
-        trial_manager: TrialManager | None = None,
         xipppy_module: ModuleType | None = None,
     ) -> None:
         self._config = config
-        self._trial_manager = trial_manager
         self._xipppy_module = xipppy_module
+
+        self._trial_manager = TrialManager(
+            conditions=config.task.conditions,
+            block_size=config.task.block_size,
+            num_blocks=config.task.num_blocks,
+            randomization=config.task.randomization,
+        )
 
         # Infrastructure — created in start()
         self._zmq_config: ZMQConfig | None = None
@@ -132,16 +164,10 @@ class SessionManager:
         self._session_id: str | None = None
         self._session_dir: Path | None = None
         self._start_utc: datetime.datetime | None = None
-        self._is_recording: bool = False
-        self._trellis_file_name_base: str | None = None
 
         self._segments: list[dict[str, Any]] = []
         self._segment_counter: int = 0
-        self._current_segment_label: str | None = None
-        self._current_segment_dir: Path | None = None
-        self._segment_start_utc: datetime.datetime | None = None
-        self._segment_start_trial: int = -1
-        self._current_segment_active_params: dict[str, Any] | None = None
+        self._current_segment: RecordingSegment | None = None
 
         self._ripple_proc: RippleProcess | None = None
         self._ripple_proc_started: bool = False
@@ -280,7 +306,7 @@ class SessionManager:
         always cleared even if ExitStack.close() or receipt writing raises.
         """
         try:
-            if self._is_recording:
+            if self._current_segment is not None:
                 self.stop_recording()
 
             self._stop_workspace_mirror()
@@ -344,7 +370,7 @@ class SessionManager:
             raise RuntimeError(
                 "SessionManager.start() must be called before start_recording()"
             )
-        if self._is_recording:
+        if self._current_segment is not None:
             raise RuntimeError(
                 "Recording is already active. Call stop_recording() first."
             )
@@ -388,37 +414,35 @@ class SessionManager:
         if self._config.recording.ripple is not None:
             (segment_dir / "neural" / "ripple").mkdir(parents=True)
 
-        self._current_segment_label = segment_label
-        self._current_segment_dir = segment_dir
-        self._current_segment_active_params = (
-            dict(active_params) if active_params is not None else {}
-        )
-
         # Start DataLoggerProcess for this segment
         segment_file_prefix = f"{self._session_id}_{segment_label}"
         if self._config.recording.data_logging_enabled:
             self._start_data_logger_for_segment(segment_dir, segment_file_prefix)
 
         # Build Trellis file name pointing into segment's neural/ripple/
-        self._trellis_file_name_base = self._build_trellis_file_name_base(
+        trellis_file_name_base = self._build_trellis_file_name_base(
             segment_label=segment_label,
+        )
+
+        self._current_segment = RecordingSegment(
+            label=segment_label,
+            directory=segment_dir,
+            active_params=dict(active_params) if active_params is not None else {},
+            start_utc=datetime.datetime.now(datetime.UTC),
+            start_trial=self._trial_manager.current_trial,
+            trellis_file_name_base=trellis_file_name_base,
         )
 
         self._publish_session("start_sync")
         self._publish_session("start_camera_trigger")
         self._publish_session(
             "start_recording",
-            {"file_name_base": self._trellis_file_name_base},
+            {"file_name_base": trellis_file_name_base},
         )
 
-        self._is_recording = True
-        self._segment_start_utc = datetime.datetime.now(datetime.UTC)
-        self._segment_start_trial = (
-            self._trial_manager.current_trial if self._trial_manager else -1
-        )
         logger.info(
             "Recording started: segment=%s, file_name_base=%s",
-            segment_label, self._trellis_file_name_base,
+            segment_label, trellis_file_name_base,
         )
 
     def stop_recording(self) -> None:
@@ -430,54 +454,33 @@ class SessionManager:
 
         No-op if recording is not active (idempotent).
         """
-        if not self._is_recording:
+        if self._current_segment is None:
             return
+
+        seg = self._current_segment
 
         self._publish_session("stop_recording")
         self._publish_session("stop_camera_trigger")
         self._publish_session("stop_sync")
 
+        # Capture end state once — shared by receipt and metadata
+        end_utc = datetime.datetime.now(datetime.UTC)
+        end_trial = self._trial_manager.current_trial
+
         # Write segment receipt before stopping DataLoggerProcess
-        # (segment state is still available)
         try:
-            self._write_segment_receipt()
+            self._write_segment_receipt(end_utc, end_trial)
         except Exception:
             logger.exception("Failed to write segment receipt")
 
         # Record segment metadata for the session receipt
-        end_utc = datetime.datetime.now(datetime.UTC)
-        end_trial = (
-            self._trial_manager.current_trial if self._trial_manager else -1
-        )
-        segment_info: dict[str, Any] = {
-            "label": self._current_segment_label,
-            "path": str(self._current_segment_dir),
-            "timing": {
-                "start_utc": (
-                    self._segment_start_utc.isoformat()
-                    if self._segment_start_utc else None
-                ),
-                "end_utc": end_utc.isoformat(),
-                "duration_s": (
-                    (end_utc - self._segment_start_utc).total_seconds()
-                    if self._segment_start_utc else None
-                ),
-            },
-            "trial_range": [self._segment_start_trial, end_trial],
-            "active_params": self._current_segment_active_params,
-        }
-        self._segments.append(segment_info)
+        self._segments.append(seg.to_metadata(end_utc, end_trial))
 
         # Stop DataLoggerProcess so files are flushed and closed
         self._stop_data_logger()
 
-        self._is_recording = False
-        logger.info("Recording stopped: segment=%s", self._current_segment_label)
-        self._current_segment_label = None
-        self._current_segment_dir = None
-        self._segment_start_utc = None
-        self._segment_start_trial = -1
-        self._current_segment_active_params = None
+        logger.info("Recording stopped: segment=%s", seg.label)
+        self._current_segment = None
 
     # -- Properties ---------------------------------------------------------
 
@@ -494,7 +497,7 @@ class SessionManager:
     @property
     def is_recording(self) -> bool:
         """Whether recording is currently active."""
-        return self._is_recording
+        return self._current_segment is not None
 
     @property
     def segments(self) -> list[dict[str, Any]]:
@@ -504,12 +507,17 @@ class SessionManager:
     @property
     def current_segment_label(self) -> str | None:
         """Label of the active recording segment, or None."""
-        return self._current_segment_label
+        return self._current_segment.label if self._current_segment else None
 
     @property
     def current_segment_dir(self) -> Path | None:
         """Directory of the active recording segment, or None."""
-        return self._current_segment_dir
+        return self._current_segment.directory if self._current_segment else None
+
+    @property
+    def trial_manager(self) -> TrialManager:
+        """The session's TrialManager."""
+        return self._trial_manager
 
     @property
     def haptic(self) -> HapticInterface:
@@ -937,7 +945,9 @@ class SessionManager:
             "recording_systems": recording_systems,
         }
 
-    def _write_segment_receipt(self) -> None:
+    def _write_segment_receipt(
+        self, end_utc: datetime.datetime, end_trial: int,
+    ) -> None:
         """Write segment_receipt.json to the current segment directory.
 
         The segment receipt captures everything needed to understand this
@@ -954,54 +964,28 @@ class SessionManager:
         reconstruct the full parameter history: start with active_params,
         then apply param events chronologically.
         """
-        if (
-            self._current_segment_dir is None
-            or self._current_segment_label is None
-            or self._session_id is None
-        ):
+        seg = self._current_segment
+        if seg is None or self._session_id is None:
             raise RuntimeError("Cannot write segment receipt outside a recording")
 
-        end_utc = datetime.datetime.now(datetime.UTC)
-        end_trial = (
-            self._trial_manager.current_trial if self._trial_manager else -1
-        )
+        # Start with the segment's own metadata (timing, trial_range, etc.)
+        receipt = seg.to_metadata(end_utc, end_trial)
 
-        recording_systems: list[str] = []
-        if self._config.recording.ripple is not None:
-            recording_systems.append("ripple")
-        if self._config.recording.data_logging_enabled:
-            recording_systems.append("data_logger")
-
-        receipt: dict[str, Any] = {
+        # Extend with session-level context
+        receipt.update({
             "session_id": self._session_id,
-            "segment_label": self._current_segment_label,
             "subject_id": self._config.subject.subject_id,
             "experiment_name": self._config.experiment_name,
-            "timing": {
-                "start_utc": (
-                    self._segment_start_utc.isoformat()
-                    if self._segment_start_utc else None
-                ),
-                "end_utc": end_utc.isoformat(),
-                "duration_s": (
-                    (end_utc - self._segment_start_utc).total_seconds()
-                    if self._segment_start_utc else None
-                ),
-            },
-            "trial_range": [self._segment_start_trial, end_trial],
             "config_snapshot": self._config.model_dump(mode="json"),
-            "active_params": self._current_segment_active_params,
-            "trial_summary": (
-                self._trial_manager.get_summary() if self._trial_manager else None
-            ),
+            "trial_summary": self._trial_manager.get_summary(),
             "recording": {
                 "data_logging_enabled": self._config.recording.data_logging_enabled,
-                "trellis_file_name_base": self._trellis_file_name_base,
+                "trellis_file_name_base": seg.trellis_file_name_base,
             },
             "hardware": self._build_hardware_info(),
-        }
+        })
 
-        receipt_path = self._current_segment_dir / "segment_receipt.json"
+        receipt_path = seg.directory / "segment_receipt.json"
         with receipt_path.open("w") as f:
             json.dump(receipt, f, indent=2)
         logger.info("Segment receipt written: %s", receipt_path)
@@ -1013,17 +997,11 @@ class SessionManager:
 
         end_utc = datetime.datetime.now(datetime.UTC)
 
-        recording_systems: list[str] = []
-        if self._config.recording.ripple is not None:
-            recording_systems.append("ripple")
-        if self._config.recording.data_logging_enabled:
-            recording_systems.append("data_logger")
-
         ripple_info: dict[str, Any] | None = None
         if self._config.recording.ripple is not None:
             rc = self._config.recording.ripple
             ripple_info = {
-                "file_name_base": self._trellis_file_name_base,
+                "file_name_base": None,
                 "use_tcp": rc.use_tcp,
                 "operator_id": rc.operator_id,
                 "auto_stop_time_s": rc.auto_stop_time_s,
@@ -1051,9 +1029,7 @@ class SessionManager:
                 "ripple": ripple_info,
                 "data_logging_enabled": self._config.recording.data_logging_enabled,
             },
-            "trial_summary": (
-                self._trial_manager.get_summary() if self._trial_manager else None
-            ),
+            "trial_summary": self._trial_manager.get_summary(),
             "hardware": self._build_hardware_info(),
         }
 
@@ -1061,13 +1037,3 @@ class SessionManager:
         with receipt_path.open("w") as f:
             json.dump(receipt, f, indent=2)
         logger.info("Session receipt written: %s", receipt_path)
-
-    def set_trial_manager(self, trial_manager: TrialManager) -> None:
-        """Attach the TrialManager after construction.
-
-        The CLI creates SessionManager before TrialManager (SessionManager
-        creates the session directory, then TrialManager is created with
-        task config). This method wires the TrialManager in so the session
-        receipt can include the trial summary.
-        """
-        self._trial_manager = trial_manager

@@ -199,8 +199,7 @@ class TestLayeredMerge:
         config = load_config(
             CONFIGS_DIR / "rig" / "rig2.yaml",
             CONFIGS_DIR / "subject" / "example_subject.yaml",
-            CONFIGS_DIR / "task" / "center_out.yaml",
-            CONFIGS_DIR / "example_experiment.yaml",
+            CONFIGS_DIR / "experiments" / "center_out.yaml",
         )
         assert config.experiment_name == "center_out_reaching"
         assert config.subject.subject_id == "monkey_M"
@@ -303,8 +302,7 @@ class TestLoadSessionConfig:
         config = load_session_config(
             rig=CONFIGS_DIR / "rig" / "rig2.yaml",
             subject=CONFIGS_DIR / "subject" / "example_subject.yaml",
-            task=CONFIGS_DIR / "task" / "center_out.yaml",
-            extra=[CONFIGS_DIR / "example_experiment.yaml"],
+            experiment=CONFIGS_DIR / "experiments" / "center_out.yaml",
         )
         assert config.experiment_name == "center_out_reaching"
         assert config.subject.subject_id == "monkey_M"
@@ -315,7 +313,7 @@ class TestLoadSessionConfig:
         with pytest.raises(TypeError):
             load_session_config(  # type: ignore[call-arg]
                 subject=CONFIGS_DIR / "subject" / "example_subject.yaml",
-                task=CONFIGS_DIR / "task" / "center_out.yaml",
+                experiment=CONFIGS_DIR / "experiments" / "center_out.yaml",
             )
 
     def test_session_config_missing_subject_raises(self) -> None:
@@ -323,11 +321,11 @@ class TestLoadSessionConfig:
         with pytest.raises(TypeError):
             load_session_config(  # type: ignore[call-arg]
                 rig=CONFIGS_DIR / "rig" / "rig2.yaml",
-                task=CONFIGS_DIR / "task" / "center_out.yaml",
+                experiment=CONFIGS_DIR / "experiments" / "center_out.yaml",
             )
 
-    def test_session_config_missing_task_raises(self) -> None:
-        """Omitting the task argument raises TypeError at call time."""
+    def test_session_config_missing_experiment_raises(self) -> None:
+        """Omitting the experiment argument raises TypeError at call time."""
         with pytest.raises(TypeError):
             load_session_config(  # type: ignore[call-arg]
                 rig=CONFIGS_DIR / "rig" / "rig2.yaml",

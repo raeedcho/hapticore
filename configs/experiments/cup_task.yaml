@@ -6,6 +6,8 @@
 # All force fields are wrapped in a composite with a horizontal channel
 # (Y/Z constraint), so this task is always 1D transport along X.
 
+experiment_name: "cup_transport"
+
 task:
   task_class: "hapticore.tasks.cup_task.CupTask"
   params:

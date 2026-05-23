@@ -97,17 +97,17 @@ class ConfigPanel(QWidget):
         subject_row.addWidget(self._subject_browse_btn)
         layout.addLayout(subject_row)
 
-        # Task row
-        task_row = QHBoxLayout()
-        task_row.addWidget(QLabel("Task:"))
-        self._task_combo = self._make_combo("task")
-        task_row.addWidget(self._task_combo)
-        self._task_browse_btn = QPushButton("…")
-        self._task_browse_btn.clicked.connect(
-            lambda: self._browse("task", self._task_combo)
+        # Experiment row
+        experiment_row = QHBoxLayout()
+        experiment_row.addWidget(QLabel("Experiment:"))
+        self._experiment_combo = self._make_combo("experiments")
+        experiment_row.addWidget(self._experiment_combo)
+        self._experiment_browse_btn = QPushButton("…")
+        self._experiment_browse_btn.clicked.connect(
+            lambda: self._browse("experiments", self._experiment_combo)
         )
-        task_row.addWidget(self._task_browse_btn)
-        layout.addLayout(task_row)
+        experiment_row.addWidget(self._experiment_browse_btn)
+        layout.addLayout(experiment_row)
 
         # Extra row
         extra_row = QHBoxLayout()
@@ -194,14 +194,14 @@ class ConfigPanel(QWidget):
         subject_path: Path | None = self._subject_combo.currentData(
             Qt.ItemDataRole.UserRole
         )
-        task_path: Path | None = self._task_combo.currentData(Qt.ItemDataRole.UserRole)
+        experiment_path: Path | None = self._experiment_combo.currentData(Qt.ItemDataRole.UserRole)
         extra_path: Path | None = self._extra_combo.currentData(
             Qt.ItemDataRole.UserRole
         )
 
-        if rig_path is None or subject_path is None or task_path is None:
+        if rig_path is None or subject_path is None or experiment_path is None:
             error_item = QTreeWidgetItem(
-                ["Error", "Please select rig, subject, and task config files."]
+                ["Error", "Please select rig, subject, and experiment config files."]
             )
             self._config_tree.addTopLevelItem(error_item)
             self._validated_config = None
@@ -211,7 +211,7 @@ class ConfigPanel(QWidget):
             config = load_session_config(
                 rig=rig_path,
                 subject=subject_path,
-                task=task_path,
+                experiment=experiment_path,
                 extra=[extra_path] if extra_path is not None else [],
             )
         except Exception as exc:  # noqa: BLE001
@@ -234,14 +234,14 @@ class ConfigPanel(QWidget):
         for combo in (
             self._rig_combo,
             self._subject_combo,
-            self._task_combo,
+            self._experiment_combo,
             self._extra_combo,
         ):
             combo.setEnabled(editable)
         for btn in (
             self._rig_browse_btn,
             self._subject_browse_btn,
-            self._task_browse_btn,
+            self._experiment_browse_btn,
             self._extra_browse_btn,
             self._validate_btn,
         ):

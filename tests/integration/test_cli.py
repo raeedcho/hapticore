@@ -66,8 +66,8 @@ class TestCLIRun:
         args = Namespace(
             rig=str(configs / "rig" / "ci.yaml"),
             subject=str(configs / "subject" / "example_subject.yaml"),
-            task=str(configs / "task" / "center_out.yaml"),
-            extra_config=[str(configs / "example_experiment.yaml")],
+            experiment=str(configs / "experiments" / "center_out.yaml"),
+            extra_config=[],
             experiment_name=None, fast=True,
         )
 
@@ -96,8 +96,8 @@ class TestCLIRun:
         args = Namespace(
             rig=str(configs / "rig" / "ci.yaml"),
             subject=str(configs / "subject" / "example_subject.yaml"),
-            task=str(configs / "task" / "center_out.yaml"),
-            extra_config=[str(override), str(configs / "example_experiment.yaml")],
+            experiment=str(configs / "experiments" / "center_out.yaml"),
+            extra_config=[str(override)],
             experiment_name=None, fast=False,
         )
         with pytest.raises(SystemExit) as exc_info:
@@ -108,11 +108,11 @@ class TestCLIRun:
     def test_run_without_rig_layers_fails(
         self, capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Running without --rig/--subject/--task must exit(1) with a helpful message."""
+        """Running without --rig/--subject/--experiment must exit(1) with a helpful message."""
         from hapticore.cli import _run
 
         args = Namespace(
-            rig=None, subject=None, task=None, extra_config=[],
+            rig=None, subject=None, experiment=None, extra_config=[],
             experiment_name=None, fast=False,
         )
         with pytest.raises(SystemExit) as exc_info:

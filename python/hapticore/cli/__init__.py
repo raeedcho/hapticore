@@ -14,12 +14,12 @@ def _run(args: argparse.Namespace) -> None:
     from hapticore.session import SessionManager
     from hapticore.tasks.controller import TaskController
 
-    # --rig, --subject, --task are effectively required for `run`. Keep the
+    # --rig, --subject, --experiment are effectively required for `run`. Keep the
     # manual check so we can give a helpful error, rather than relying on
     # argparse's `required=True` which produces a less friendly message.
-    if not (args.rig and args.subject and args.task):
+    if not (args.rig and args.subject and args.experiment):
         print(
-            "Error: hapticore run requires --rig, --subject, and --task. "
+            "Error: hapticore run requires --rig, --subject, and --experiment. "
             "For single-file configs, call load_config() directly in Python "
             "scripts (not supported on the CLI).",
             file=sys.stderr,
@@ -31,7 +31,7 @@ def _run(args: argparse.Namespace) -> None:
         session_overrides["experiment_name"] = args.experiment_name
 
     config = load_session_config(
-        rig=args.rig, subject=args.subject, task=args.task,
+        rig=args.rig, subject=args.subject, experiment=args.experiment,
         extra=args.extra_config or [],
         overrides=session_overrides or None,
     )
@@ -166,8 +166,8 @@ def main() -> None:
         help="Path to subject config YAML (subject_id, species, implant_info)",
     )
     run_parser.add_argument(
-        "--task",
-        help="Path to task config YAML (task_class, params, conditions)",
+        "--experiment",
+        help="Path to experiment config YAML (experiment_name + task)",
     )
     run_parser.add_argument(
         "--extra-config", nargs="*", default=[],

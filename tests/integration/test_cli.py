@@ -108,7 +108,7 @@ class TestCLIRun:
     def test_run_without_rig_layers_fails(
         self, capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Running without --rig/--subject/--task must exit(1) with a helpful message."""
+        """Running without --rig/--subject/--experiment must exit(1) with a helpful message."""
         from hapticore.cli import _run
 
         args = Namespace(

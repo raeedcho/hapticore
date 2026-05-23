@@ -445,7 +445,6 @@ hapticore run \
     --rig configs/rig/ci.yaml \
     --subject configs/subject/example_subject.yaml \
     --experiment configs/experiments/my_task.yaml \
-    --experiment-name "my_task_test"
 ```
 
 This launches all processes with mock hardware:

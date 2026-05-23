@@ -106,20 +106,16 @@ class TestConfigPanelValidation:
         return ConfigPanel(configs_root=_CONFIGS_ROOT)
 
     def _select_valid_configs(self, panel: ConfigPanel) -> None:
-        """Programmatically select ci.yaml, example_subject.yaml, center_out.yaml + experiment."""
+        """Programmatically select ci.yaml, example_subject.yaml, center_out.yaml."""
         rig_idx = _find_combo_index(panel._rig_combo, "ci.yaml")
         subject_idx = _find_combo_index(panel._subject_combo, "example_subject.yaml")
-        task_idx = _find_combo_index(panel._task_combo, "center_out.yaml")
+        experiment_idx = _find_combo_index(panel._experiment_combo, "center_out.yaml")
         assert rig_idx != -1, "ci.yaml not found in rig combo"
         assert subject_idx != -1, "example_subject.yaml not found in subject combo"
-        assert task_idx != -1, "center_out.yaml not found in task combo"
+        assert experiment_idx != -1, "center_out.yaml not found in experiment combo"
         panel._rig_combo.setCurrentIndex(rig_idx)
         panel._subject_combo.setCurrentIndex(subject_idx)
-        panel._task_combo.setCurrentIndex(task_idx)
-        # experiment_name is required and not provided by rig/subject/task configs
-        extra_path = _CONFIGS_ROOT / "example_experiment.yaml"
-        panel._extra_combo.addItem(extra_path.name, extra_path)
-        panel._extra_combo.setCurrentIndex(panel._extra_combo.count() - 1)
+        panel._experiment_combo.setCurrentIndex(experiment_idx)
 
     def test_validate_succeeds_with_valid_configs(self, qapp: QApplication) -> None:
         """Programmatically select valid YAML files, call _on_validate(), assert config is set."""
@@ -135,9 +131,9 @@ class TestConfigPanelValidation:
         panel = self._make_panel()
         # Leave rig on placeholder (index 0)
         subject_idx = _find_combo_index(panel._subject_combo, "example_subject.yaml")
-        task_idx = _find_combo_index(panel._task_combo, "center_out.yaml")
+        experiment_idx = _find_combo_index(panel._experiment_combo, "center_out.yaml")
         panel._subject_combo.setCurrentIndex(subject_idx)
-        panel._task_combo.setCurrentIndex(task_idx)
+        panel._experiment_combo.setCurrentIndex(experiment_idx)
         panel._on_validate()
         assert panel.validated_config is None
         # Tree should show an error item
@@ -161,11 +157,11 @@ class TestConfigPanelValidation:
         panel.set_editable(False)
         assert not panel._rig_combo.isEnabled()
         assert not panel._subject_combo.isEnabled()
-        assert not panel._task_combo.isEnabled()
+        assert not panel._experiment_combo.isEnabled()
         assert not panel._extra_combo.isEnabled()
         assert not panel._rig_browse_btn.isEnabled()
         assert not panel._subject_browse_btn.isEnabled()
-        assert not panel._task_browse_btn.isEnabled()
+        assert not panel._experiment_browse_btn.isEnabled()
         assert not panel._extra_browse_btn.isEnabled()
         assert not panel._validate_btn.isEnabled()
         # start_session_btn is NOT affected by set_editable
@@ -178,7 +174,7 @@ class TestConfigPanelValidation:
         panel.set_editable(True)
         assert panel._rig_combo.isEnabled()
         assert panel._subject_combo.isEnabled()
-        assert panel._task_combo.isEnabled()
+        assert panel._experiment_combo.isEnabled()
         assert panel._extra_combo.isEnabled()
         assert panel._validate_btn.isEnabled()
 

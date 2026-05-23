@@ -191,7 +191,7 @@ Load configs with `load_config(*yaml_paths)` which deep-merges multiple YAML fil
 config = load_config(
     "configs/rig/default.yaml",
     "configs/subject/monkey_a.yaml",
-    "configs/task/center_out.yaml",
+    "configs/experiments/center_out.yaml",
 )
 ```
 

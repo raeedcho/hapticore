@@ -1,6 +1,8 @@
 # Center-out reaching task configuration
 # Contains task-specific settings: task class, parameters, conditions, trial structure
 
+experiment_name: "center_out_reaching"
+
 task:
   task_class: "hapticore.tasks.center_out.CenterOutTask"
   params:

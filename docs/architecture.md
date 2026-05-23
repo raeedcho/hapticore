@@ -253,9 +253,9 @@ configs/
 │   └── dev-mouse.yaml     # mouse-driven haptic for laptop development
 ├── subject/
 │   └── example_subject.yaml  # subject_id, species, implant_info
-├── task/
-│   └── center_out.yaml       # task_class, params, conditions, block structure
-└── example_experiment.yaml   # experiment_name + any overrides
+└── experiments/
+    ├── center_out.yaml       # experiment_name, task_class, params, conditions
+    └── cup_task.yaml         # experiment_name, task_class, params, conditions
 ```
 
 Each layer file contains only the keys it owns. Deep merge combines them.
@@ -266,12 +266,11 @@ Each layer file contains only the keys it owns. Deep merge combines them.
 config = load_session_config(
     rig="configs/rig/rig2.yaml",
     subject="configs/subject/example_subject.yaml",
-    task="configs/task/center_out.yaml",
-    overrides={"experiment_name": "center_out_2026_03_25"},
+    experiment="configs/experiments/center_out.yaml",
 )
 ```
 
-`load_session_config()` requires rig, subject, and task paths as **keyword-only** arguments — omitting one raises `TypeError` before any config loading happens. This prevents silently running with default rig values when a layer file is forgotten. Additional YAML files can be passed as `extra=[...]`. The required `experiment_name` field can be provided via an extra YAML or `overrides={"experiment_name": ...}`.
+`load_session_config()` requires rig, subject, and experiment paths as **keyword-only** arguments — omitting one raises `TypeError` before any config loading happens. This prevents silently running with default rig values when a layer file is forgotten. Additional YAML files can be passed as `extra=[...]`. The experiment config provides `experiment_name` alongside the task definition.
 
 **Flexible loading** (for tests and scripting):
 
@@ -279,8 +278,7 @@ config = load_session_config(
 config = load_config(
     "configs/rig/rig2.yaml",
     "configs/subject/example_subject.yaml",
-    "configs/task/center_out.yaml",
-    "configs/example_experiment.yaml",
+    "configs/experiments/center_out.yaml",
 )
 ```
 
@@ -292,8 +290,7 @@ A single flat YAML still works for simple setups: `load_config("configs/my_exper
 hapticore run \
     --rig configs/rig/rig2.yaml \
     --subject configs/subject/example_subject.yaml \
-    --task configs/task/center_out.yaml \
-    --experiment-name "my_session_2026_03_25"
+    --experiment configs/experiments/center_out.yaml
 ```
 
 See ADR-009 for the rationale behind this design.

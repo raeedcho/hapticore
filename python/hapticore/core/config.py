@@ -415,8 +415,7 @@ def load_config(
         config = load_config(
             "configs/rig/default.yaml",
             "configs/subject/example_subject.yaml",
-            "configs/task/center_out.yaml",
-            "configs/example_experiment.yaml",
+            "configs/experiments/center_out.yaml",
         )
 
     A single flat YAML file also works::
@@ -478,7 +477,7 @@ def load_session_config(
     *,
     rig: str | Path,
     subject: str | Path,
-    task: str | Path,
+    experiment: str | Path,
     extra: Sequence[str | Path] = (),
     overrides: dict[str, Any] | None = None,
     cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
@@ -494,13 +493,14 @@ def load_session_config(
     Args:
         rig: Path to rig config YAML (haptic, display, sync, ZMQ settings).
         subject: Path to subject config YAML (subject_id, species, implant_info).
-        task: Path to task config YAML (task_class, params, conditions).
+        experiment: Path to experiment config YAML
+            (experiment_name, task_class, params, conditions).
         extra: Additional YAML files merged on top (later files win). Pass as a
-            list or tuple, e.g. ``extra=["configs/example_experiment.yaml"]``.
+            list or tuple, e.g. ``extra=["configs/overrides.yaml"]``.
         overrides: Dict of keyword overrides (highest priority after CLI).
         cli_parse_args: If truthy, parse CLI arguments via pydantic-settings.
     """
     return load_config(
-        rig, subject, task, *extra,
+        rig, subject, experiment, *extra,
         overrides=overrides, cli_parse_args=cli_parse_args,
     )

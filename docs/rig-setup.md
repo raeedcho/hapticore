@@ -203,7 +203,7 @@ By default, hapticore manages the C++ haptic server's lifecycle for you. When yo
 - **If a server is already running on those addresses,** hapticore attaches to it as a client and leaves it running on exit.
 - **If no server is detected,** hapticore spawns one from the binary path in `haptic.dhd.server_binary`, waits up to `startup_timeout_s` (default 20 s) for it to come up, attaches, and on exit cleanly terminates the server it spawned.
 
-This means most workflows are one command: `hapticore run --rig configs/rig/rig2.yaml --subject ... --task ...`. The factory only kills what it spawned, so launching the server manually in a separate terminal is the supported way to keep it alive across multiple `hapticore run` invocations (see "Long-lived server" below).
+This means most workflows are one command: `hapticore run --rig configs/rig/rig2.yaml --subject ... --experiment ...`. The factory only kills what it spawned, so launching the server manually in a separate terminal is the supported way to keep it alive across multiple `hapticore run` invocations (see "Long-lived server" below).
 
 The factory passes `force_limit_n` from the rig config through as `--force-limit` and `publish_rate_hz` as `--pub-rate`, so spawned-server parameters can never drift from the YAML. (For manually-launched servers, you're responsible for matching them yourself.)
 

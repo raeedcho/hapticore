@@ -166,8 +166,9 @@ def main() -> None:
         help="Path to subject config YAML (subject_id, species, implant_info)",
     )
     run_parser.add_argument(
+    run_parser.add_argument(
         "--experiment",
-        help="Path to experiment config YAML (experiment_name, task_class, params, conditions)",
+        help="Path to experiment config YAML (experiment_name + task: {task_class, params, conditions})",
     )
     run_parser.add_argument(
         "--extra-config", nargs="*", default=[],

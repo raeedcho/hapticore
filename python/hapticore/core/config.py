@@ -494,7 +494,7 @@ def load_session_config(
         rig: Path to rig config YAML (haptic, display, sync, ZMQ settings).
         subject: Path to subject config YAML (subject_id, species, implant_info).
         experiment: Path to experiment config YAML
-            (experiment_name, task_class, params, conditions).
+            (experiment_name + task: {task_class, params, conditions}).
         extra: Additional YAML files merged on top (later files win). Pass as a
             list or tuple, e.g. ``extra=["configs/overrides.yaml"]``.
         overrides: Dict of keyword overrides (highest priority after CLI).

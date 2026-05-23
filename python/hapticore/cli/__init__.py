@@ -134,6 +134,12 @@ def _graph_task(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _gui(args: argparse.Namespace) -> None:
+    """Launch the Hapticore Control Center GUI."""
+    from hapticore.control.app import run_control_center
+    sys.exit(run_control_center())
+
+
 def main() -> None:
     """Hapticore CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -187,6 +193,13 @@ def main() -> None:
         help="Output file path (default: <ClassName>.png)",
     )
     graph_parser.set_defaults(func=_graph_task)
+
+    # gui subcommand
+    gui_parser = subparsers.add_parser(
+        "gui",
+        help="Launch the Hapticore Control Center GUI",
+    )
+    gui_parser.set_defaults(func=_gui)
 
     args = parser.parse_args()
     if hasattr(args, "func"):

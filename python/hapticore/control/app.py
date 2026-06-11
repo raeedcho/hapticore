@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
 )
 
 from hapticore.control.config_panel import ConfigPanel
+from hapticore.control.session_panel import SessionPanel
+from hapticore.core.config import ExperimentConfig
 
 
 class ControlCenterWindow(QMainWindow):
@@ -40,11 +42,11 @@ class ControlCenterWindow(QMainWindow):
         config_box_layout.addWidget(self.config_panel)
         layout.addWidget(config_box)
 
-        # Session Controls placeholder
+        # Session Controls panel
         self.session_group = QGroupBox("Session Controls")
-        self.session_group.setEnabled(False)
         session_layout = QVBoxLayout(self.session_group)
-        session_layout.addWidget(QLabel("Start a session to enable controls."))
+        self.session_panel = SessionPanel()
+        session_layout.addWidget(self.session_panel)
         layout.addWidget(self.session_group)
 
         # Recording placeholder
@@ -77,6 +79,44 @@ class ControlCenterWindow(QMainWindow):
 
         layout.addStretch()
         scroll.setWidget(container)
+
+        # Wire config panel signals
+        self.config_panel.start_session_btn.clicked.connect(self._on_start_session)
+        self.config_panel.config_validated.connect(self._on_config_validated)
+
+        # Wire session panel signals
+        self.session_panel.session_started.connect(self._on_session_started)
+        self.session_panel.session_stopped.connect(self._on_session_stopped)
+
+    def _on_config_validated(self, config: ExperimentConfig) -> None:
+        """Enable the Start Session button when a config is validated."""
+        self.config_panel.start_session_btn.setEnabled(True)
+
+    def _on_start_session(self) -> None:
+        """Kick off a new session using the currently validated config."""
+        config = self.config_panel.validated_config
+        if config is None:
+            return
+        self.config_panel.start_session_btn.setEnabled(False)
+        self.session_panel.start_session(config)
+        # Re-enable if start failed (session_started was not emitted)
+        if self.session_panel.session is None:
+            self.config_panel.start_session_btn.setEnabled(True)
+
+    def _on_session_started(self) -> None:
+        """Lock the config panel and enable the other control groups."""
+        self.config_panel.set_editable(False)
+        self.recording_group.setEnabled(True)
+        self.params_group.setEnabled(True)
+        self.notes_group.setEnabled(True)
+
+    def _on_session_stopped(self) -> None:
+        """Unlock the config panel and disable the other control groups."""
+        self.config_panel.set_editable(True)
+        self.config_panel.start_session_btn.setEnabled(True)
+        self.recording_group.setEnabled(False)
+        self.params_group.setEnabled(False)
+        self.notes_group.setEnabled(False)
 
 
 def run_control_center(configs_root: Path | None = None) -> int:

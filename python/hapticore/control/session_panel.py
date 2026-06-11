@@ -91,6 +91,10 @@ class SessionPanel(QWidget):
 
         Replicates the setup portion of ``_run()`` in ``cli/__init__.py``.
         """
+        if self._session is not None:
+            logger.warning("start_session() called while session already active — ignoring")
+            return
+
         # Import the task class
         task_class_path = config.task.task_class
         if "." not in task_class_path:
@@ -123,7 +127,7 @@ class SessionPanel(QWidget):
                 event_publisher=session.publisher,
                 trial_manager=session.trial_manager,
                 params=dict(config.task.params) if config.task.params else None,
-                poll_rate_hz=100.0,
+                poll_rate_hz=1000.0,
                 zmq_context=session.zmq_context,
                 event_address=session.event_pub_address,
             )
@@ -182,7 +186,7 @@ class SessionPanel(QWidget):
         self._tick_timer = QTimer(self)
         self._tick_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._tick_timer.timeout.connect(self._on_tick)
-        self._tick_timer.start(int(1000 / self._controller.poll_rate_hz))
+        self._tick_timer.start(max(1, round(1000 / self._controller.poll_rate_hz)))
         self._start_trials_btn.setEnabled(False)
         self._stop_block_btn.setEnabled(True)
         self._stop_trial_btn.setEnabled(True)
@@ -194,7 +198,13 @@ class SessionPanel(QWidget):
         """Called by QTimer at poll_rate_hz."""
         if self._controller is None:
             return
-        still_running = self._controller.tick()
+        try:
+            still_running = self._controller.tick()
+        except Exception:  # noqa: BLE001
+            logger.exception("Error during tick — stopping session")
+            self._on_stop_session()
+            self._status_label.setText("Error: tick failed (see log)")
+            return
         if not still_running:
             self._stop_trials("Complete")
 
@@ -227,6 +237,7 @@ class SessionPanel(QWidget):
     def _on_stop_session(self) -> None:
         """Tear down everything: stop trials if running, then end the session."""
         # Stop tick timer if trials are running
+        trials_were_running = self._tick_timer is not None
         if self._tick_timer is not None:
             self._tick_timer.stop()
             self._tick_timer = None
@@ -264,4 +275,6 @@ class SessionPanel(QWidget):
         self._stop_session_btn.setEnabled(False)
         self._session_id_label.setText("")
         self._status_label.setText("Stopped")
+        if trials_were_running:
+            self.trials_stopped.emit()
         self.session_stopped.emit()

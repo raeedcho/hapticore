@@ -236,6 +236,16 @@ class TrialManager:
         else:
             raise ValueError(f"after must be 'block' or 'trial', got {after!r}")
 
+    def clear_stop_request(self) -> None:
+        """Clear any pending stop request so trials can resume.
+
+        Call before ``start_first_trial()`` when restarting trials
+        within the same session (e.g. after a test run in the GUI).
+        """
+        self._stop_after_trial = False
+        self._stop_after_block = False
+        logger.info("Stop request cleared — trials can resume")
+
     def advance(self) -> dict[str, Any] | None:
         """Advance to the next trial.
 

@@ -550,6 +550,20 @@ class SessionManager:
             raise RuntimeError("SessionManager.start() must be called first")
         return self._publisher
 
+    @property
+    def zmq_context(self) -> zmq.Context[Any]:
+        """The ZMQ context. Available after start()."""
+        if self._ctx is None:
+            raise RuntimeError("SessionManager.start() must be called first")
+        return self._ctx
+
+    @property
+    def event_pub_address(self) -> str:
+        """The ZMQ event publisher address. Available after start()."""
+        if self._zmq_config is None:
+            raise RuntimeError("SessionManager.start() must be called first")
+        return self._zmq_config.event_pub_address
+
     # -- Internal -----------------------------------------------------------
 
     def _build_session_id(self) -> str:
@@ -611,6 +625,7 @@ class SessionManager:
         if self._ctx is not None:
             self._ctx.term()
             self._ctx = None
+        self._zmq_config = None
 
     def _create_session_dirs(self) -> Path:
         """Create the session directory. Returns the session_dir.

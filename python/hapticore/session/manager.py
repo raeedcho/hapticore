@@ -625,6 +625,7 @@ class SessionManager:
         if self._ctx is not None:
             self._ctx.term()
             self._ctx = None
+        self._zmq_config = None
 
     def _create_session_dirs(self) -> Path:
         """Create the session directory. Returns the session_dir.

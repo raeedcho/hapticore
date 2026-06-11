@@ -128,7 +128,7 @@ class SessionPanel(QWidget):
             session = SessionManager(config)
             session.start()
 
-            self._session_id_label.setText(session.session_id)
+            self._session_id_label.setText(session.session_id or "")
 
             params: dict[str, Any] | None = config.task.params or None
             controller = TaskController(
@@ -236,6 +236,8 @@ class SessionPanel(QWidget):
                 self._session.stop()
             except Exception:
                 logger.exception("Error during session stop")
+        self._session = None
+        self._task = None
 
         self._set_stops_enabled(False)
         self._status_label.setText(reason)

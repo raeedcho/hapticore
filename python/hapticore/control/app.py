@@ -99,6 +99,9 @@ class ControlCenterWindow(QMainWindow):
             return
         self.config_panel.start_session_btn.setEnabled(False)
         self.session_panel.start_session(config)
+        # Re-enable if start failed (session_started was not emitted)
+        if self.session_panel.session is None:
+            self.config_panel.start_session_btn.setEnabled(True)
 
     def _on_session_started(self) -> None:
         """Lock the config panel and enable the other control groups."""

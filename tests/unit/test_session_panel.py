@@ -151,6 +151,18 @@ class TestSessionPanel:
         panel._finish_session("Complete")
         assert panel._status_label.text() == "Complete"
 
+    def test_finish_session_clears_session_and_task(
+        self, qapp: QApplication, minimal_config: ExperimentConfig,
+    ) -> None:
+        """After _finish_session(), session and task properties are None."""
+        panel = SessionPanel()
+        panel.start_session(minimal_config)
+        assert panel.session is not None
+        assert panel.task is not None
+        panel._finish_session("Complete")
+        assert panel.session is None
+        assert panel.task is None
+
     def test_stop_after_block_disables_buttons(
         self, qapp: QApplication, minimal_config: ExperimentConfig,
     ) -> None:
@@ -231,6 +243,34 @@ class TestSessionPanel:
         assert panel._status_label.text().startswith("Error:")
         assert panel.session is None
 
+    def test_start_button_reenabled_on_failure(
+        self, qapp: QApplication, tmp_path: Path,
+    ) -> None:
+        """Start Session button is re-enabled if start_session() fails."""
+        from hapticore.control.app import ControlCenterWindow
+
+        window = ControlCenterWindow()
+        bad_config = ExperimentConfig(
+            experiment_name="bad",
+            subject=SubjectConfig(subject_id="test"),
+            haptic=HapticConfig(backend="mock"),
+            display=DisplayConfig(backend="mock"),
+            recording=RecordingConfig(
+                save_dir=tmp_path, granularity="session", data_logging_enabled=False,
+            ),
+            task=TaskConfig(
+                task_class="hapticore.tasks.nonexistent.NoSuchTask",
+                conditions=[{"target_angle": 0}],
+                block_size=1,
+                num_blocks=1,
+            ),
+            sync=SyncConfig(backend="mock"),
+        )
+        window.config_panel._validated_config = bad_config
+        window.config_panel.start_session_btn.setEnabled(True)
+        window._on_start_session()
+        assert window.config_panel.start_session_btn.isEnabled()
+
     def test_session_id_label_updated(
         self, qapp: QApplication, minimal_config: ExperimentConfig,
     ) -> None:
@@ -291,3 +331,13 @@ class TestSessionManagerProperties:
             assert len(addr) > 0
         finally:
             mgr.stop()
+
+    def test_event_pub_address_after_stop_raises(
+        self, minimal_config: ExperimentConfig,
+    ) -> None:
+        """event_pub_address raises RuntimeError after stop(), like zmq_context."""
+        mgr = SessionManager(minimal_config)
+        mgr.start()
+        mgr.stop()
+        with pytest.raises(RuntimeError, match="start\\(\\)"):
+            _ = mgr.event_pub_address

@@ -64,7 +64,7 @@ class TestRecordingPanel:
         assert not panel._label_input.isEnabled()
         assert panel._status_label.text() == "Not recording"
         assert panel._segment_list.count() == 0
-        assert not panel._warning_label.isVisible()
+        assert panel._warning_label.isHidden()
 
     def test_set_session_enables_start(
         self, qapp: QApplication, mock_session: MagicMock, mock_task: MagicMock
@@ -74,7 +74,7 @@ class TestRecordingPanel:
         assert panel._start_btn.isEnabled()
         assert not panel._stop_btn.isEnabled()
         assert panel._label_input.isEnabled()
-        assert not panel._warning_label.isVisible()
+        assert panel._warning_label.isHidden()
 
     def test_set_session_none_disables_all(
         self, qapp: QApplication, mock_session: MagicMock, mock_task: MagicMock
@@ -85,7 +85,7 @@ class TestRecordingPanel:
         assert not panel._start_btn.isEnabled()
         assert not panel._stop_btn.isEnabled()
         assert not panel._label_input.isEnabled()
-        assert not panel._warning_label.isVisible()
+        assert panel._warning_label.isHidden()
 
     def test_start_recording_calls_session(
         self, qapp: QApplication, mock_session: MagicMock, mock_task: MagicMock
@@ -179,7 +179,7 @@ class TestRecordingPanel:
 class TestWarningBanner:
     def test_warning_hidden_by_default(self, qapp: QApplication) -> None:
         panel = RecordingPanel()
-        assert not panel._warning_label.isVisible()
+        assert panel._warning_label.isHidden()
 
     def test_warning_shown_when_trials_running_without_recording(
         self, qapp: QApplication, mock_session: MagicMock, mock_task: MagicMock
@@ -188,7 +188,7 @@ class TestWarningBanner:
         panel.set_session(mock_session, mock_task)
         mock_session.is_recording = False
         panel.set_trials_running(True)
-        assert panel._warning_label.isVisible()
+        assert not panel._warning_label.isHidden()
 
     def test_warning_hidden_when_recording_active(
         self, qapp: QApplication, mock_session: MagicMock, mock_task: MagicMock
@@ -197,7 +197,7 @@ class TestWarningBanner:
         panel.set_session(mock_session, mock_task)
         mock_session.is_recording = True
         panel.set_trials_running(True)
-        assert not panel._warning_label.isVisible()
+        assert panel._warning_label.isHidden()
 
     def test_warning_hidden_when_recording_starts(
         self, qapp: QApplication, mock_session: MagicMock, mock_task: MagicMock
@@ -205,11 +205,11 @@ class TestWarningBanner:
         panel = RecordingPanel()
         panel.set_session(mock_session, mock_task)
         panel.set_trials_running(True)
-        assert panel._warning_label.isVisible()
+        assert not panel._warning_label.isHidden()
         mock_session.is_recording = True
         mock_session.current_segment_label = "seg-001"
         panel._on_start_recording()
-        assert not panel._warning_label.isVisible()
+        assert panel._warning_label.isHidden()
 
     def test_warning_reappears_when_recording_stops_with_trials_running(
         self, qapp: QApplication, mock_session: MagicMock, mock_task: MagicMock
@@ -219,7 +219,7 @@ class TestWarningBanner:
         panel.set_trials_running(True)
         mock_session.is_recording = False
         panel._on_stop_recording()
-        assert panel._warning_label.isVisible()
+        assert not panel._warning_label.isHidden()
 
     def test_warning_hidden_when_trials_stop(
         self, qapp: QApplication, mock_session: MagicMock, mock_task: MagicMock
@@ -227,9 +227,9 @@ class TestWarningBanner:
         panel = RecordingPanel()
         panel.set_session(mock_session, mock_task)
         panel.set_trials_running(True)
-        assert panel._warning_label.isVisible()
+        assert not panel._warning_label.isHidden()
         panel.set_trials_running(False)
-        assert not panel._warning_label.isVisible()
+        assert panel._warning_label.isHidden()
 
     def test_warning_hidden_when_session_cleared(
         self, qapp: QApplication, mock_session: MagicMock, mock_task: MagicMock
@@ -237,6 +237,6 @@ class TestWarningBanner:
         panel = RecordingPanel()
         panel.set_session(mock_session, mock_task)
         panel.set_trials_running(True)
-        assert panel._warning_label.isVisible()
+        assert not panel._warning_label.isHidden()
         panel.set_session(None, None)
-        assert not panel._warning_label.isVisible()
+        assert panel._warning_label.isHidden()

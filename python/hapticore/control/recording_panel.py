@@ -90,6 +90,8 @@ class RecordingPanel(QWidget):
         self._session = session
         self._task = task
         self._trials_running = False
+        self._segment_list.clear()
+        self._label_input.clear()
         if session is not None:
             self._start_btn.setEnabled(True)
             self._stop_btn.setEnabled(False)
@@ -149,6 +151,8 @@ class RecordingPanel(QWidget):
             self._session.stop_recording()
         except Exception:
             logger.exception("Error stopping recording")
+            self._status_label.setText("Error: failed to stop recording (see log)")
+            return
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._label_input.setEnabled(True)

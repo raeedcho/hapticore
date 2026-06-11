@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import importlib
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -23,9 +23,6 @@ from hapticore.core.config import ExperimentConfig
 from hapticore.session import SessionManager
 from hapticore.tasks.base import BaseTask
 from hapticore.tasks.controller import TaskController
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -133,9 +130,7 @@ class SessionPanel(QWidget):
 
             self._session_id_label.setText(session.session_id)
 
-            params: dict[str, Any] | None = (
-                dict(config.task.params) if config.task.params else None
-            )
+            params: dict[str, Any] | None = config.task.params or None
             controller = TaskController(
                 task=task,
                 haptic=session.haptic,
@@ -150,7 +145,7 @@ class SessionPanel(QWidget):
             )
             controller.setup()
             if not controller.start_first_trial():
-                raise RuntimeError("No trials to run — session aborted")
+                raise RuntimeError("No trials to run - session aborted")
         except Exception as exc:
             logger.exception("Error starting session")
             if controller is not None:
@@ -197,19 +192,19 @@ class SessionPanel(QWidget):
         if self._controller is not None:
             self._controller.trial_manager.request_stop(after="block")
             self._set_stops_enabled(False)
-            self._status_label.setText("Stopping (after block)…")
+            self._status_label.setText("Stopping (after block)...")
 
     def _on_stop_after_trial(self) -> None:
         if self._controller is not None:
             self._controller.trial_manager.request_stop(after="trial")
             self._set_stops_enabled(False)
-            self._status_label.setText("Stopping (after trial)…")
+            self._status_label.setText("Stopping (after trial)...")
 
     def _on_stop_now(self) -> None:
         if self._controller is not None:
             self._controller.stop()
             self._set_stops_enabled(False)
-            self._status_label.setText("Stopping…")
+            self._status_label.setText("Stopping...")
 
     # -- Internal helpers ---------------------------------------------------
 

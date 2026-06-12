@@ -92,6 +92,7 @@ class RecordingPanel(QWidget):
         self._trials_running = False
         self._segment_list.clear()
         self._label_input.clear()
+        self._status_label.setText("Not recording")
         if session is not None:
             self._start_btn.setEnabled(True)
             self._stop_btn.setEnabled(False)
@@ -100,7 +101,6 @@ class RecordingPanel(QWidget):
             self._start_btn.setEnabled(False)
             self._stop_btn.setEnabled(False)
             self._label_input.setEnabled(False)
-            self._status_label.setText("Not recording")
         self._warning_label.setVisible(False)
 
     def set_trials_running(self, running: bool) -> None:

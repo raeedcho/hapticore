@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from hapticore.control.config_panel import ConfigPanel
+from hapticore.control.recording_panel import RecordingPanel
 from hapticore.control.session_panel import SessionPanel
 from hapticore.core.config import ExperimentConfig
 
@@ -49,11 +50,12 @@ class ControlCenterWindow(QMainWindow):
         session_layout.addWidget(self.session_panel)
         layout.addWidget(self.session_group)
 
-        # Recording placeholder
+        # Recording panel
         self.recording_group = QGroupBox("Recording")
         self.recording_group.setEnabled(False)
         recording_layout = QVBoxLayout(self.recording_group)
-        recording_layout.addWidget(QLabel("Start a session to enable recording."))
+        self.recording_panel = RecordingPanel()
+        recording_layout.addWidget(self.recording_panel)
         layout.addWidget(self.recording_group)
 
         # Parameters placeholder
@@ -87,6 +89,12 @@ class ControlCenterWindow(QMainWindow):
         # Wire session panel signals
         self.session_panel.session_started.connect(self._on_session_started)
         self.session_panel.session_stopped.connect(self._on_session_stopped)
+        self.session_panel.trials_started.connect(
+            lambda: self.recording_panel.set_trials_running(True)
+        )
+        self.session_panel.trials_stopped.connect(
+            lambda: self.recording_panel.set_trials_running(False)
+        )
 
     def _on_config_validated(self, config: ExperimentConfig) -> None:
         """Enable the Start Session button when a config is validated."""
@@ -107,6 +115,9 @@ class ControlCenterWindow(QMainWindow):
         """Lock the config panel and enable the other control groups."""
         self.config_panel.set_editable(False)
         self.recording_group.setEnabled(True)
+        self.recording_panel.set_session(
+            self.session_panel.session, self.session_panel.task,
+        )
         self.params_group.setEnabled(True)
         self.notes_group.setEnabled(True)
 
@@ -115,6 +126,7 @@ class ControlCenterWindow(QMainWindow):
         self.config_panel.set_editable(True)
         self.config_panel.start_session_btn.setEnabled(True)
         self.recording_group.setEnabled(False)
+        self.recording_panel.set_session(None, None)
         self.params_group.setEnabled(False)
         self.notes_group.setEnabled(False)
 

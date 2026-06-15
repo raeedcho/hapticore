@@ -10,6 +10,7 @@ import zmq
 
 from hapticore.core.messaging import EventPublisher, make_ipc_address
 from hapticore.display.mock import MockDisplay
+from hapticore.audio.mock import MockAudio
 from hapticore.haptic.mock import MockHapticInterface
 from hapticore.sync.mock import MockSync
 from hapticore.tasks.controller import TaskController
@@ -35,6 +36,7 @@ def _setup_cup_task(
     haptic = MockHapticInterface(initial_position=[0.1, 0.0, 0.0])
     display = MockDisplay()
     sync = MockSync()
+    audio = MockAudio()
 
     ctx = zmq.Context()
     address = make_ipc_address("cup")
@@ -55,6 +57,7 @@ def _setup_cup_task(
         haptic=haptic,
         display=display,
         sync=sync,
+        audio=audio,
         event_publisher=publisher,
         trial_manager=trial_manager,
         params={

@@ -17,6 +17,7 @@ from hapticore.core.messages import (
 )
 from hapticore.core.messaging import EventPublisher, EventSubscriber, make_ipc_address
 from hapticore.display.mock import MockDisplay
+from hapticore.audio.mock import MockAudio
 from hapticore.haptic.mock import MockHapticInterface
 from hapticore.sync.mock import MockSync
 from hapticore.tasks.base import BaseTask, ParamSpec
@@ -102,6 +103,7 @@ class TestFullSession:
             haptic=haptic,
             display=display,
             sync=sync,
+            audio=MockAudio(),
             event_publisher=publisher,
             trial_manager=tm,
             poll_rate_hz=5000.0,
@@ -145,6 +147,7 @@ class TestFullSession:
             haptic=haptic,
             display=display,
             sync=sync,
+            audio=MockAudio(),
             event_publisher=publisher,
             trial_manager=tm,
             poll_rate_hz=5000.0,
@@ -190,6 +193,7 @@ class TestFullSession:
             haptic=haptic,
             display=display,
             sync=sync,
+            audio=MockAudio(),
             event_publisher=publisher,
             trial_manager=tm,
             poll_rate_hz=5000.0,
@@ -288,6 +292,7 @@ class TestCenterOutIntegration:
             haptic=haptic,
             display=display,
             sync=sync,
+            audio=MockAudio(),
             event_publisher=publisher,
             trial_manager=tm,
             params={

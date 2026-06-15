@@ -16,7 +16,12 @@ from typing import Any
 import zmq
 from transitions import Machine
 
-from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
+from hapticore.core.interfaces import (
+    AudioInterface,
+    DisplayInterface,
+    HapticInterface,
+    SyncInterface,
+)
 from hapticore.core.messages import (
     TOPIC_EVENT,
     TOPIC_PARAM,
@@ -57,6 +62,7 @@ class TaskController:
         haptic: HapticInterface,
         display: DisplayInterface,
         sync: SyncInterface,
+        audio: AudioInterface,
         event_publisher: EventPublisher,
         trial_manager: TrialManager,
         params: dict[str, Any] | None = None,
@@ -75,6 +81,7 @@ class TaskController:
         self.haptic = haptic
         self.display = display
         self.sync = sync
+        self.audio = audio
         self.event_publisher = event_publisher
         self.trial_manager = trial_manager
         self._param_overrides = params or {}
@@ -119,6 +126,7 @@ class TaskController:
             "haptic": self.haptic,
             "display": self.display,
             "sync": self.sync,
+            "audio": self.audio,
         }
         self.task.setup(
             hardware=hardware,

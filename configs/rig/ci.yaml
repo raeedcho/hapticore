@@ -24,6 +24,9 @@ sync:
     state_codes: {}
     event_codes: {}
 
+audio:
+  backend: mock
+
 zmq:
   event_pub_address: "ipc:///tmp/hapticore_ci_events"
   haptic_state_address: "ipc:///tmp/hapticore_ci_haptic_state"

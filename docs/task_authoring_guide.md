@@ -212,6 +212,59 @@ config = load_config(
 
 The `TrialManager` automatically shuffles conditions within each block, presents them sequentially, and exposes `self.current_condition` to the task at each trial start.
 
+## Step 3b: Audio cues (optional)
+
+Tasks can play named audio cues via `self.audio.play_cue("name")`. Cues are pre-configured in the experiment YAML; the task never references file paths directly.
+
+### Configure cue names in the experiment YAML
+
+```yaml
+# configs/experiments/my_task.yaml
+audio:
+  cues:
+    go_cue: "assets/audio/go_cue.wav"
+    click:  "assets/audio/click.wav"
+    error:  "assets/audio/error_buzz.wav"
+```
+
+The `audio.backend` field is set in the rig config (`ci.yaml` uses `mock`, `rig2.yaml` uses `sounddevice`). Experiment YAMLs only need to specify `audio.cues`.
+
+### Call play_cue() in state callbacks
+
+```python
+    def on_enter_reach(self):
+        """Go signal — play go cue, show target."""
+        self.audio.play_cue("go_cue")   # fire-and-forget; returns immediately
+        target_pos = self.current_condition["target_position"]
+        self.display.show_stimulus("target", {
+            "type": "circle",
+            "position": target_pos,
+            "radius": self.params["target_radius"],
+            "color": [0.0, 1.0, 0.0],
+        })
+
+    def on_enter_success(self):
+        """Correct trial — reward and click sound."""
+        self.sync.deliver_reward(self.params["reward_ms"])
+        self.audio.play_cue("click")
+        self.log_trial(outcome="success")
+        self.timer.set("trial_end", self.params["iti_duration"])
+```
+
+**Key behaviors:**
+- `play_cue()` is fire-and-forget. It returns immediately; audio output happens asynchronously via PortAudio.
+- Unknown cue names (e.g., a config typo) log a `WARNING` and return silently. They never raise an exception or interrupt the trial.
+- In CI and unit tests, the mock backend records all calls in `audio._play_log` for assertions:
+
+```python
+from hapticore.audio.mock import MockAudio
+
+audio = MockAudio(known_cues={"click", "go_cue"})
+task.setup(hardware={"audio": audio, ...}, ...)
+# ... run trial ...
+assert audio._play_log == ["go_cue", "click"]
+```
+
 ## Step 4: Choosing the right haptic interaction
 
 Hapticore provides two approaches to haptic feedback, depending on the complexity of the virtual environment.

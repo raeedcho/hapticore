@@ -8,6 +8,7 @@ import zmq
 
 from hapticore.core.messaging import EventPublisher, make_ipc_address
 from hapticore.display.mock import MockDisplay
+from hapticore.audio.mock import MockAudio
 from hapticore.haptic.mock import MockHapticInterface
 from hapticore.sync.mock import MockSync
 from hapticore.tasks.center_out import CenterOutTask
@@ -30,6 +31,7 @@ def _setup_center_out(
     haptic = MockHapticInterface(initial_position=[0.1, 0.0, 0.0])
     display = MockDisplay()
     sync = MockSync()
+    audio = MockAudio()
 
     ctx = zmq.Context()
     address = make_ipc_address("co")
@@ -52,6 +54,7 @@ def _setup_center_out(
         haptic=haptic,
         display=display,
         sync=sync,
+        audio=audio,
         event_publisher=publisher,
         trial_manager=trial_manager,
         params={

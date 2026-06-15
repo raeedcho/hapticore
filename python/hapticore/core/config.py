@@ -363,6 +363,29 @@ class DashboardConfig(BaseModel):
     )
 
 
+class AudioConfig(BaseModel):
+    """Audio cue playback configuration.
+
+    ``backend`` and ``device`` are rig-level settings; ``cues`` maps
+    logical cue names to audio file paths and is typically set in the
+    experiment config.  Paths are resolved relative to the current
+    working directory (the project root when launched via ``hapticore
+    run``).
+    """
+
+    backend: Literal["sounddevice", "mock"] = "mock"
+    device: str | int | None = Field(
+        default=None,
+        description="PortAudio output device name or index. "
+                    "None uses the system default.",
+    )
+    cues: dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of cue names to audio file paths "
+                    "(WAV, FLAC, OGG). Paths relative to project root.",
+    )
+
+
 class ExperimentConfig(BaseSettings):
     """Top-level experiment configuration.
 
@@ -389,6 +412,7 @@ class ExperimentConfig(BaseSettings):
     sync: SyncConfig = Field(default_factory=SyncConfig)
     zmq: ZMQConfig = Field(default_factory=ZMQConfig)
     dashboard: DashboardConfig | None = None
+    audio: AudioConfig = Field(default_factory=AudioConfig)
 
 
 def load_config(

@@ -15,7 +15,7 @@ class MockAudio:
     """
 
     def __init__(self, known_cues: set[str] | None = None) -> None:
-        self._known_cues = known_cues or set()
+        self._known_cues = known_cues if known_cues is not None else set()
         self._play_log: list[str] = []
 
     def play_cue(self, name: str) -> None:

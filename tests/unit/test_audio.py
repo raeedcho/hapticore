@@ -85,3 +85,11 @@ def test_factory_unknown_backend() -> None:
     with pytest.raises(ValueError, match="Unknown audio backend"):
         with make_audio_interface(cfg):
             pass
+
+
+def test_audio_config_rejects_invalid_backend() -> None:
+    """AudioConfig raises a Pydantic ValidationError for an unknown backend."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AudioConfig(backend="bogus")  # type: ignore[arg-type]

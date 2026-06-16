@@ -91,6 +91,9 @@ pixi run test-unit
 ```
 
 ## Teensy 4.1 sync hub
+
+> **For bringup wiring and validation, see [`docs/teensy-bringup.md`](teensy-bringup.md).**
+> The pin tables below are outdated placeholders from before the firmware was implemented.
  
 The Teensy 4.1 serves as the centralized timing hub for the rig, generating camera frame triggers, cross-system sync pulses, behavioral event codes, and reward TTL signals. See ADR-013 for the reasoning behind this choice.
  

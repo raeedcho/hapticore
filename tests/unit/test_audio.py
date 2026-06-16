@@ -40,6 +40,7 @@ def test_mock_audio_known_cue_no_warning(caplog: pytest.LogCaptureFixture) -> No
 def test_mock_audio_no_known_cues_accepts_all(caplog: pytest.LogCaptureFixture) -> None:
     """With no known_cues, all names are accepted without warning."""
     audio = MockAudio()
+    assert audio._known_cues is None
     with caplog.at_level(logging.WARNING, logger="hapticore.audio.mock"):
         audio.play_cue("anything")
     assert audio._play_log == ["anything"]

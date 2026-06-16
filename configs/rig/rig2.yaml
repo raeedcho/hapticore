@@ -55,8 +55,8 @@ sync:
     baud: 115200
 
 audio:
-  backend: sounddevice
-  device: null  # system default
+  backend: mock  # change to sounddevice when real backend lands
+  device: null   # system default (used by sounddevice backend)
 
 zmq:
   event_pub_address: "ipc:///tmp/hapticore_events"

@@ -15,11 +15,11 @@ class MockAudio:
     """
 
     def __init__(self, known_cues: set[str] | None = None) -> None:
-        self._known_cues = known_cues if known_cues is not None else set()
+        self._known_cues = known_cues
         self._play_log: list[str] = []
 
     def play_cue(self, name: str) -> None:
         """Record the cue name. Warn if not in known_cues (when provided)."""
-        if self._known_cues and name not in self._known_cues:
-            logger.warning("Unknown audio cue %r — skipping (mock)", name)
+        if self._known_cues is not None and name not in self._known_cues:
+            logger.warning("Unknown audio cue %r (mock)", name)
         self._play_log.append(name)

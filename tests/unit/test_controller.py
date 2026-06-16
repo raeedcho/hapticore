@@ -18,6 +18,7 @@ from hapticore.core.messages import (
 )
 from hapticore.core.messaging import EventPublisher, EventSubscriber, make_ipc_address
 from hapticore.display.mock import MockDisplay
+from hapticore.audio.mock import MockAudio
 from hapticore.haptic.mock import MockHapticInterface
 from hapticore.sync.mock import MockSync
 from hapticore.tasks.base import BaseTask, ParamSpec
@@ -89,6 +90,7 @@ def _make_controller(
     haptic = MockHapticInterface()
     display = MockDisplay()
     sync = MockSync()
+    audio = MockAudio()
 
     ctx = zmq.Context()
     address = make_ipc_address("test")
@@ -107,6 +109,7 @@ def _make_controller(
         haptic=haptic,
         display=display,
         sync=sync,
+        audio=audio,
         event_publisher=publisher,
         trial_manager=trial_manager,
         params=params,
@@ -331,6 +334,7 @@ def _make_infinite_controller(
     haptic = MockHapticInterface()
     display = MockDisplay()
     sync = MockSync()
+    audio = MockAudio()
 
     ctx = zmq.Context()
     address = make_ipc_address("test-inf")
@@ -349,6 +353,7 @@ def _make_infinite_controller(
         haptic=haptic,
         display=display,
         sync=sync,
+        audio=audio,
         event_publisher=publisher,
         trial_manager=trial_manager,
         poll_rate_hz=poll_rate_hz,
@@ -458,6 +463,7 @@ class TestControllerSigint:
         haptic = MockHapticInterface()
         display = MockDisplay()
         sync = MockSync()
+        audio = MockAudio()
 
         ctx = zmq.Context()
         address = make_ipc_address("test-sigint")
@@ -475,6 +481,7 @@ class TestControllerSigint:
             haptic=haptic,
             display=display,
             sync=sync,
+            audio=audio,
             event_publisher=publisher,
             trial_manager=trial_manager,
             poll_rate_hz=1000.0,
@@ -681,6 +688,7 @@ def _make_controller_with_param_sub(
     haptic = MockHapticInterface()
     display = MockDisplay()
     sync = MockSync()
+    audio = MockAudio()
 
     ctx = zmq.Context()
     address = make_ipc_address("test-param")
@@ -699,6 +707,7 @@ def _make_controller_with_param_sub(
         haptic=haptic,
         display=display,
         sync=sync,
+        audio=audio,
         event_publisher=publisher,
         trial_manager=trial_manager,
         params=params,
@@ -885,7 +894,7 @@ class TestControllerParamUpdates:
             with pytest.raises(ValueError, match="zmq_context and event_address"):
                 TaskController(
                     task=task, haptic=haptic, display=display, sync=sync,
-                    event_publisher=publisher, trial_manager=tm,
+                    audio=MockAudio(), event_publisher=publisher, trial_manager=tm,
                     zmq_context=ctx,
                     # event_address intentionally omitted
                 )

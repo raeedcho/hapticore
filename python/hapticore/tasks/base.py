@@ -77,6 +77,7 @@ class BaseTask(ABC):
         self.haptic = hardware.get("haptic")
         self.display = hardware.get("display")
         self.sync = hardware.get("sync")
+        self.audio = hardware.get("audio")
         self.params = dict(params)
         self.event_bus = event_bus
         self.trial_manager = trial_manager

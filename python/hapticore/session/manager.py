@@ -23,8 +23,14 @@ from typing import Any
 
 import zmq
 
+from hapticore.audio import make_audio_interface
 from hapticore.core.config import ExperimentConfig, ZMQConfig
-from hapticore.core.interfaces import DisplayInterface, HapticInterface, SyncInterface
+from hapticore.core.interfaces import (
+    AudioInterface,
+    DisplayInterface,
+    HapticInterface,
+    SyncInterface,
+)
 from hapticore.core.messages import TOPIC_SESSION, SessionControl, serialize
 from hapticore.core.messaging import EventPublisher
 from hapticore.dashboard.status_dashboard import StatusDashboardProcess
@@ -163,6 +169,7 @@ class SessionManager:
         self._haptic: HapticInterface | None = None
         self._display: DisplayInterface | None = None
         self._sync: SyncInterface | None = None
+        self._audio: AudioInterface | None = None
 
         self._session_id: str | None = None
         self._session_dir: Path | None = None
@@ -275,6 +282,10 @@ class SessionManager:
                 )
             )
 
+            self._audio = self._exit_stack.enter_context(
+                make_audio_interface(self._config.audio)
+            )
+
             if self._config.recording.ripple is not None:
                 self._start_ripple_process()
 
@@ -287,6 +298,7 @@ class SessionManager:
                 self._haptic = None
                 self._display = None
                 self._sync = None
+                self._audio = None
                 self._stop_workspace_mirror()
                 self._stop_status_dashboard()
                 self._cleanup_zmq()
@@ -327,6 +339,7 @@ class SessionManager:
             self._haptic = None
             self._display = None
             self._sync = None
+            self._audio = None
             self._cleanup_zmq()
 
     def __enter__(self) -> SessionManager:
@@ -542,6 +555,13 @@ class SessionManager:
         if self._sync is None:
             raise RuntimeError("SessionManager.start() must be called first")
         return self._sync
+
+    @property
+    def audio(self) -> AudioInterface:
+        """The audio interface. Available after start()."""
+        if self._audio is None:
+            raise RuntimeError("SessionManager.start() must be called first")
+        return self._audio
 
     @property
     def publisher(self) -> EventPublisher:

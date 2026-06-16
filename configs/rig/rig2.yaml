@@ -54,6 +54,10 @@ sync:
     port: "/dev/ttyACM0"
     baud: 115200
 
+audio:
+  backend: mock  # change to sounddevice when real backend lands
+  device: null   # system default (used by sounddevice backend)
+
 zmq:
   event_pub_address: "ipc:///tmp/hapticore_events"
   haptic_state_address: "ipc:///tmp/hapticore_haptic_state"

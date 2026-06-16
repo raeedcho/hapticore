@@ -124,6 +124,7 @@ class SessionPanel(QWidget):
                 haptic=session.haptic,
                 display=session.display,
                 sync=session.sync,
+                audio=session.audio,
                 event_publisher=session.publisher,
                 trial_manager=session.trial_manager,
                 params=dict(config.task.params) if config.task.params else None,

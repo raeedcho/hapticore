@@ -40,3 +40,8 @@ task:
   block_size: 5
   num_blocks: 20
   randomization: "pseudorandom"
+
+audio:
+  cues:
+    go_cue: "assets/audio/go_cue.wav"
+    click: "assets/audio/click.wav"

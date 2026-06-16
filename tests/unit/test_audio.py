@@ -130,7 +130,7 @@ def test_audio_player_play_cue_calls_sd_play(tmp_path: Path) -> None:
     wav = tmp_path / "tone.wav"
     tone = np.ones(441, dtype=np.float32) * 0.5
     sf.write(wav, tone, 44100)
-    player = AudioPlayer(cues={"tone": wav}, device=None)
+    player = AudioPlayer(cues={"tone": wav})
 
     with patch("hapticore.audio.player.sd.play") as mock_play:
         player.play_cue("tone")
@@ -153,7 +153,7 @@ def test_audio_player_portaudio_error_logged(tmp_path: Path, caplog: pytest.LogC
     sf.write(wav, np.zeros(100, dtype=np.float32), 44100)
     player = AudioPlayer(cues={"tone": wav})
 
-    with patch("hapticore.audio.player.sd.play", side_effect=sd_module.PortAudioError(-9999)):
+    with patch("hapticore.audio.player.sd.play", side_effect=sd_module.PortAudioError(-9999)):  # arbitrary error code
         with caplog.at_level(logging.WARNING, logger="hapticore.audio.player"):
             player.play_cue("tone")  # must NOT raise
     assert any("PortAudio" in r.message for r in caplog.records)

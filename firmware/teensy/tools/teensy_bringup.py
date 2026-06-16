@@ -103,8 +103,8 @@ def result(passed: bool, label: str) -> bool:
 
 
 def step_serial(port: str) -> bool:
-    """Step 0: Verify USB serial connection."""
-    section_header("Step 0: USB serial connection")
+    """Step 1: Verify USB serial connection."""
+    section_header("Step 1: USB serial connection")
     print("\n  Opening serial port...")
 
     ser = open_serial(port)
@@ -341,8 +341,7 @@ def step_verify_xipppy(port: str) -> bool:
 
     all_passed = True
 
-    with xp.xipppy_open():
-        ser = open_serial(port)
+    with xp.xipppy_open(use_tcp=True):
 
         # --- Sync pulse ---
         print("\n  Testing sync pulse via digin()...")

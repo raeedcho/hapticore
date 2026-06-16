@@ -227,7 +227,7 @@ audio:
     error:  "assets/audio/error_buzz.wav"
 ```
 
-The `audio.backend` field is set in the rig config (currently `mock` everywhere; the `sounddevice` backend will be added in a follow-up). Experiment YAMLs only need to specify `audio.cues`.
+The `audio.backend` field is set in the rig config (`rig2.yaml` and `dev-mouse.yaml` use `sounddevice`; `ci.yaml` uses `mock`). Experiment YAMLs only need to specify `audio.cues`.
 
 ### Call play_cue() in state callbacks
 
@@ -252,7 +252,7 @@ The `audio.backend` field is set in the rig config (currently `mock` everywhere;
 ```
 
 **Key behaviors:**
-- `play_cue()` is fire-and-forget. With the mock backend it records calls for testing. With the future `sounddevice` backend, it will return immediately while PortAudio handles output asynchronously.
+- `play_cue()` is fire-and-forget. It submits the buffer to PortAudio and returns immediately; audio output happens asynchronously on the callback thread. With the mock backend (CI), calls are recorded in `_play_log` for testing.
 - Unknown cue names (e.g., a config typo) log a `WARNING` and return silently. They never raise an exception or interrupt the trial.
 - In CI and unit tests, the mock backend records all calls in `audio._play_log` for assertions:
 

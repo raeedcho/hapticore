@@ -1,5 +1,7 @@
 # Audio cue assets
 
+## Generated assets
+
 Placeholder audio cues for Hapticore experiments.
 Regenerate with: `pixi run generate-audio-assets`
 
@@ -8,3 +10,7 @@ Regenerate with: `pixi run generate-audio-assets`
 
 Replace these with your own files as needed. Experiment configs
 map logical cue names to file paths in `audio.cues`.
+
+## Real assets
+
+- `Monkey_Click.wav` - recorded real clicker sound for use as a reward sound (migrated from MonkeyHost)

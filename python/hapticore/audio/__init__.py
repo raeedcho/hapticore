@@ -13,7 +13,7 @@ from hapticore.audio.mock import MockAudio
 from hapticore.core.config import AudioConfig
 from hapticore.core.interfaces import AudioInterface
 
-__all__ = ["AudioPlayer", "MockAudio", "make_audio_interface"]
+__all__ = ["MockAudio", "make_audio_interface"]
 
 
 @contextmanager

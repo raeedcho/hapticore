@@ -274,6 +274,7 @@ class CupTask(BaseTask):
 
     def on_enter_success(self, event: Any = None) -> None:
         self.sync.deliver_reward(self.params["reward_ms"])
+        self.audio.play_cue("click")
         self.log_trial(outcome="success")
         self._end_trial()
 

@@ -44,4 +44,4 @@ task:
 audio:
   cues:
     go_cue: "assets/audio/go_cue.wav"
-    click: "assets/audio/click.wav"
+    click: "assets/audio/Monkey_Click.wav"

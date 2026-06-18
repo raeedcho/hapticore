@@ -103,6 +103,14 @@ class DhdConfig(BaseModel):
                     "set_mock_position / set_mock_velocity commands. Requires "
                     "display.backend='psychopy'.",
     )
+    effector_mass_kg: float | None = Field(
+        default=None,
+        gt=0.0,
+        description="End-effector mass in kg for gravity compensation. "
+                    "Set this when using a modified end-effector (e.g. with "
+                    "a safety shield). When None, the SDK uses its built-in "
+                    "default for the stock end-effector.",
+    )
 
 
 class HapticConfig(BaseModel):

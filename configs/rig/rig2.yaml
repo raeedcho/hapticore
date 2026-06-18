@@ -22,6 +22,7 @@ haptic:
     # Optional: tune heartbeat/timeout; defaults are fine for local IPC.
     heartbeat_interval_s: 0.2
     command_timeout_ms: 1000
+    effector_mass_kg: 0.4  # stock handle + safety shield — weigh and adjust
 
 display:
   backend: psychopy  # real PsychoPy window for the rig monitor

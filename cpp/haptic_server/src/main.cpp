@@ -49,6 +49,7 @@ void print_usage() {
               << "  --cpu-core N          CPU core for haptic thread (default: 1)\n"
               << "  --no-calibrate        Skip auto-calibration on startup\n"
               << "  --die-with-parent     Exit when parent process dies (Linux only; for auto-spawn use)\n"
+              << "  --effector-mass KG    End-effector mass for gravity compensation (default: SDK stock value)\n"
 #if defined(__linux__) && !defined(HAPTIC_MOCK_HARDWARE)
               << "  --allow-no-rt         Continue even if SCHED_FIFO is unavailable (degraded timing)\n"
 #endif
@@ -72,6 +73,7 @@ int main(int argc, char* argv[]) {
     double pub_rate = 200.0;
     double force_limit = 20.0;
     int cpu_core = 1;
+    double effector_mass = -1.0;  // negative means "don't call set_effector_mass"
     bool auto_calibrate = true;
     bool die_with_parent = false;
 #if defined(__linux__) && !defined(HAPTIC_MOCK_HARDWARE)
@@ -119,6 +121,17 @@ int main(int argc, char* argv[]) {
             }
             if (cpu_core < 0) {
                 std::cerr << "Error: --cpu-core must be non-negative\n";
+                return EXIT_FAILURE;
+            }
+        } else if (arg == "--effector-mass" && i + 1 < argc) {
+            try {
+                effector_mass = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "Error: --effector-mass requires a numeric value\n";
+                return EXIT_FAILURE;
+            }
+            if (effector_mass < 0.0) {
+                std::cerr << "Error: --effector-mass must be non-negative\n";
                 return EXIT_FAILURE;
             }
         } else if (arg == "--no-calibrate") {
@@ -197,7 +210,15 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // 3. Gravity compensation and force enable
+    // 3. Effector mass, gravity compensation, and force enable
+    if (effector_mass >= 0.0) {
+        if (!dhd->set_effector_mass(effector_mass)) {
+            std::cerr << "Error: failed to set effector mass to " << effector_mass << " kg\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "Effector mass set to " << effector_mass << " kg\n";
+    }
+
     if (!dhd->set_gravity_compensation(true)) {
         std::cerr << "Error: failed to enable gravity compensation\n";
         return EXIT_FAILURE;

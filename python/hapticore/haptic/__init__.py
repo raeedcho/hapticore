@@ -107,6 +107,8 @@ def _spawn_haptic_server(
         "--pub-rate", str(cfg.publish_rate_hz),
         "--die-with-parent",
     ]
+    if cfg.effector_mass_kg is not None:
+        args.extend(["--effector-mass", str(cfg.effector_mass_kg)])
 
     logger.info("Spawning haptic_server: %s", " ".join(args))
     return subprocess.Popen(args, start_new_session=True)

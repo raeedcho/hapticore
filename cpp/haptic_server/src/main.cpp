@@ -130,8 +130,8 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Error: --effector-mass requires a numeric value\n";
                 return EXIT_FAILURE;
             }
-            if (effector_mass < 0.0) {
-                std::cerr << "Error: --effector-mass must be non-negative\n";
+            if (effector_mass <= 0.0) {
+                std::cerr << "Error: --effector-mass must be positive\n";
                 return EXIT_FAILURE;
             }
         } else if (arg == "--no-calibrate") {

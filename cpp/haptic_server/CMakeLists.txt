@@ -32,6 +32,16 @@ CPMAddPackage(
   OPTIONS "CPPZMQ_BUILD_TESTS OFF"
 )
 
+# Suppress warnings from cppzmq headers (third-party code we don't control).
+# Without this, Clang's -Wdeprecated-literal-operator fires on zmq.hpp's
+# operator"" _zbuf declarations and -Werror promotes it to a build failure.
+if(TARGET cppzmq)
+  get_target_property(_cppzmq_inc cppzmq INTERFACE_INCLUDE_DIRECTORIES)
+  set_target_properties(cppzmq PROPERTIES
+    INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_cppzmq_inc}"
+  )
+endif()
+
 CPMAddPackage(
   NAME box2d
   GITHUB_REPOSITORY erincatto/box2d

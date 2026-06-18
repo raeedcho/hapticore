@@ -320,3 +320,23 @@ class TestSpawnHapticServer:
         spawned_args: list[str] = mock_popen.call_args.args[0]
         assert "--die-with-parent" in spawned_args
 
+    @patch("hapticore.haptic.subprocess.Popen")
+    def test_spawn_passes_effector_mass(self, mock_popen: MagicMock) -> None:
+        from hapticore.haptic import _spawn_haptic_server
+
+        cfg = DhdConfig(server_binary=Path("/some/existing/path"), effector_mass_kg=0.4)
+        with patch.object(Path, "exists", return_value=True):
+            _spawn_haptic_server(cfg, ZMQConfig())
+        args: list[str] = mock_popen.call_args.args[0]
+        idx = args.index("--effector-mass")
+        assert args[idx + 1] == "0.4"
+
+    @patch("hapticore.haptic.subprocess.Popen")
+    def test_spawn_omits_effector_mass_when_none(self, mock_popen: MagicMock) -> None:
+        from hapticore.haptic import _spawn_haptic_server
+
+        cfg = DhdConfig(server_binary=Path("/some/existing/path"), effector_mass_kg=None)
+        with patch.object(Path, "exists", return_value=True):
+            _spawn_haptic_server(cfg, ZMQConfig())
+        args: list[str] = mock_popen.call_args.args[0]
+        assert "--effector-mass" not in args

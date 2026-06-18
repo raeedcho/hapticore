@@ -98,6 +98,18 @@ class TestValueConstraints:
         with pytest.raises(ValidationError):
             TaskConfig(task_class="hapticore.tasks.example.Task", num_blocks=0)
 
+    def test_effector_mass_negative_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            DhdConfig(effector_mass_kg=-0.1)
+
+    def test_effector_mass_zero_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            DhdConfig(effector_mass_kg=0.0)
+
+    def test_effector_mass_none_allowed(self) -> None:
+        config = DhdConfig(effector_mass_kg=None)
+        assert config.effector_mass_kg is None
+
 
 class TestDefaults:
     """Tests for default value application."""
@@ -106,6 +118,7 @@ class TestDefaults:
         config = DhdConfig()
         assert config.force_limit_n == 20.0
         assert config.publish_rate_hz == 200.0
+        assert config.effector_mass_kg is None
 
     def test_experiment_config_defaults(self) -> None:
         config = ExperimentConfig(

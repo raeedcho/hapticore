@@ -35,7 +35,7 @@ sync:
     event_codes: {}
 
 audio:
-  backend: mock
+  backend: sounddevice
 
 zmq:
   event_pub_address: "ipc:///tmp/hapticore_dev_events"

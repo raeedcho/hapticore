@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
+import numpy as np
 import pytest
 
 from hapticore.audio import MockAudio, make_audio_interface
@@ -70,12 +72,91 @@ def test_factory_mock_with_cues() -> None:
         assert audio._known_cues == {"click", "go"}
 
 
-def test_factory_sounddevice_not_implemented() -> None:
-    """make_audio_interface with backend='sounddevice' raises NotImplementedError."""
-    cfg = AudioConfig(backend="sounddevice")
-    with pytest.raises(NotImplementedError):
-        with make_audio_interface(cfg):
-            pass
+def test_factory_sounddevice_backend(tmp_path: Path) -> None:
+    """make_audio_interface with backend='sounddevice' yields an AudioPlayer."""
+    import soundfile as sf
+    wav_path = tmp_path / "test.wav"
+    sf.write(wav_path, np.zeros(100, dtype=np.float32), 44100)
+
+    cfg = AudioConfig(backend="sounddevice", cues={"test": str(wav_path)})
+    with make_audio_interface(cfg) as audio:
+        from hapticore.audio.player import AudioPlayer
+        assert isinstance(audio, AudioPlayer)
+
+
+def test_audio_player_loads_cues(tmp_path: Path) -> None:
+    """AudioPlayer pre-loads cue files at construction."""
+    import soundfile as sf
+    from hapticore.audio.player import AudioPlayer
+
+    wav = tmp_path / "beep.wav"
+    sf.write(wav, np.zeros(441, dtype=np.float32), 44100)
+
+    player = AudioPlayer(cues={"beep": wav})
+    assert "beep" in player._buffers
+    data, sr = player._buffers["beep"]
+    assert sr == 44100
+    assert len(data) == 441
+
+
+def test_audio_player_missing_file(tmp_path: Path) -> None:
+    """AudioPlayer raises FileNotFoundError for missing cue files."""
+    from hapticore.audio.player import AudioPlayer
+
+    with pytest.raises(FileNotFoundError, match="no_such_file"):
+        AudioPlayer(cues={"bad": tmp_path / "no_such_file.wav"})
+
+
+def test_audio_player_unknown_cue_warns(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """AudioPlayer.play_cue() warns on unknown cue names."""
+    import soundfile as sf
+    from hapticore.audio.player import AudioPlayer
+
+    wav = tmp_path / "beep.wav"
+    sf.write(wav, np.zeros(100, dtype=np.float32), 44100)
+    player = AudioPlayer(cues={"beep": wav})
+
+    with caplog.at_level(logging.WARNING, logger="hapticore.audio.player"):
+        player.play_cue("nonexistent")
+    assert any("nonexistent" in r.message for r in caplog.records)
+
+
+def test_audio_player_play_cue_calls_sd_play(tmp_path: Path) -> None:
+    """AudioPlayer.play_cue() calls sd.play() with correct arguments."""
+    import soundfile as sf
+    from unittest.mock import patch
+    from hapticore.audio.player import AudioPlayer
+
+    wav = tmp_path / "tone.wav"
+    tone = np.ones(441, dtype=np.float32) * 0.5
+    sf.write(wav, tone, 44100)
+    player = AudioPlayer(cues={"tone": wav})
+
+    with patch("hapticore.audio.player.sd.play") as mock_play:
+        player.play_cue("tone")
+        mock_play.assert_called_once()
+        call_args = mock_play.call_args
+        np.testing.assert_array_equal(call_args[0][0], tone)
+        assert call_args[0][1] == 44100
+        assert call_args[1]["device"] is None
+        assert call_args[1]["latency"] == "low"
+
+
+def test_audio_player_portaudio_error_logged(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """PortAudioError during playback is caught and logged, not raised."""
+    import sounddevice as sd_module
+    import soundfile as sf
+    from unittest.mock import patch
+    from hapticore.audio.player import AudioPlayer
+
+    wav = tmp_path / "tone.wav"
+    sf.write(wav, np.zeros(100, dtype=np.float32), 44100)
+    player = AudioPlayer(cues={"tone": wav})
+
+    with patch("hapticore.audio.player.sd.play", side_effect=sd_module.PortAudioError(-9999)):  # arbitrary error code
+        with caplog.at_level(logging.WARNING, logger="hapticore.audio.player"):
+            player.play_cue("tone")  # must NOT raise
+    assert any("PortAudio" in r.message for r in caplog.records)
 
 
 def test_factory_unknown_backend() -> None:

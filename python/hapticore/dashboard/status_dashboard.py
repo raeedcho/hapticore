@@ -18,7 +18,7 @@ import zmq
 from hapticore.core.config import DashboardConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_EVENT
 from hapticore.core.messaging import drain_sub_messages
-from hapticore.dashboard import _spawn_ctx
+from hapticore.dashboard import SpawnProcess, _spawn_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ _COLOR_INPROGRESS = "#FFFFFF"      # white fill for in-progress trial dot
 _COLOR_CURRENT_BLOCK_BORDER = "#00BCD4"  # cyan ring for current block dot
 
 
-class StatusDashboardProcess(_spawn_ctx.Process):  # type: ignore[name-defined,misc]
+class StatusDashboardProcess(SpawnProcess):
     """Qt window showing real-time session status.
 
     Displays:

@@ -21,7 +21,7 @@ import zmq
 from hapticore.core.config import DashboardConfig, DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_STATE
 from hapticore.core.messaging import drain_sub_messages
-from hapticore.dashboard import _spawn_ctx
+from hapticore.dashboard import SpawnProcess, _spawn_ctx
 
 if TYPE_CHECKING:
     from psychopy.visual import Window
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class WorkspaceMirrorProcess(_spawn_ctx.Process):  # type: ignore[name-defined,misc]
+class WorkspaceMirrorProcess(SpawnProcess):
     """PsychoPy window on the control-room screen mirroring the rig display.
 
     Subscribes to TOPIC_DISPLAY and TOPIC_STATE from the same ZMQ addresses

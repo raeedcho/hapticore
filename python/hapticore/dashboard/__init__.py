@@ -6,5 +6,9 @@ have a QApplication when launched via ``hapticore gui``).
 """
 
 import multiprocessing
+import multiprocessing.synchronize
 
 _spawn_ctx = multiprocessing.get_context("spawn")
+
+# Typed aliases so subclasses don't need per-line type: ignore comments.
+SpawnProcess: type[multiprocessing.Process] = _spawn_ctx.Process  # type: ignore[assignment]

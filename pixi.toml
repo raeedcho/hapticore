@@ -54,7 +54,7 @@ types-PyYAML = ">=6.0"
 default = { features = ["dev"], solve-group = "default" }
 
 [tasks]
-install-psychopy = "uv pip install psychopy --no-deps --break-system-packages"
+install-psychopy = "uv pip install psychopy=2026.1.3 --no-deps --break-system-packages"
 check-xipppy = { cmd = "python -c \"import xipppy; print(f'''xipppy {xipppy.get_version()['xipppy']} OK''')\"", description = "Verify xipppy is installed" }
 
 lint = "ruff check python/"

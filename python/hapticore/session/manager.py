@@ -33,6 +33,7 @@ from hapticore.core.interfaces import (
 )
 from hapticore.core.messages import TOPIC_SESSION, SessionControl, serialize
 from hapticore.core.messaging import EventPublisher
+from hapticore.dashboard import _spawn_ctx
 from hapticore.dashboard.status_dashboard import StatusDashboardProcess
 from hapticore.dashboard.workspace_mirror import WorkspaceMirrorProcess
 from hapticore.datalog import DataLoggerProcess
@@ -831,7 +832,7 @@ class SessionManager:
         """Start WorkspaceMirrorProcess with readiness polling loop."""
         assert self._config.dashboard is not None
         assert self._zmq_config is not None
-        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        ready_event = _spawn_ctx.Event()
         proc = WorkspaceMirrorProcess(
             dashboard_config=self._config.dashboard,
             display_config=self._config.display,
@@ -896,7 +897,7 @@ class SessionManager:
         module = importlib.import_module(module_path)
         task_cls = getattr(module, class_name)
 
-        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        ready_event = _spawn_ctx.Event()
         proc = StatusDashboardProcess(
             dashboard_config=self._config.dashboard,
             zmq_config=self._zmq_config,

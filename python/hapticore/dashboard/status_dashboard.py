@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
+import multiprocessing.synchronize
 import signal
 from typing import Any
 
@@ -17,6 +18,7 @@ import zmq
 from hapticore.core.config import DashboardConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_EVENT
 from hapticore.core.messaging import drain_sub_messages
+from hapticore.dashboard import _spawn_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +118,7 @@ _COLOR_INPROGRESS = "#FFFFFF"      # white fill for in-progress trial dot
 _COLOR_CURRENT_BLOCK_BORDER = "#00BCD4"  # cyan ring for current block dot
 
 
-class StatusDashboardProcess(multiprocessing.Process):
+class StatusDashboardProcess(_spawn_ctx.Process):  # type: ignore[name-defined,misc]
     """Qt window showing real-time session status.
 
     Displays:
@@ -151,7 +153,7 @@ class StatusDashboardProcess(multiprocessing.Process):
         self._num_blocks = num_blocks
         self._num_conditions = num_conditions
         self._ready_event = ready_event
-        self._shutdown: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        self._shutdown: multiprocessing.synchronize.Event = _spawn_ctx.Event()
 
     def request_shutdown(self) -> None:
         """Signal the process to exit its event loop and shut down."""

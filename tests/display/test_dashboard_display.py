@@ -6,17 +6,16 @@ marker is selected.
 
 from __future__ import annotations
 
-import pytest
-
-import multiprocessing
 import time
 
 import msgpack
+import pytest
 import zmq
 
 from hapticore.core.config import DashboardConfig, DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_STATE
 from hapticore.core.messaging import make_ipc_address
+from hapticore.dashboard import _spawn_ctx
 
 pytest.importorskip("psychopy")
 
@@ -33,7 +32,7 @@ class TestWorkspaceMirrorLifecycle:
             haptic_state_address=make_ipc_address("wm_state"),
             display_event_address=make_ipc_address("wm_disp"),
         )
-        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        ready_event = _spawn_ctx.Event()
         proc = WorkspaceMirrorProcess(
             dashboard_config=DashboardConfig(screen=0, resolution=(800, 600)),
             display_config=DisplayConfig(),
@@ -62,7 +61,7 @@ class TestWorkspaceMirrorLifecycle:
             haptic_state_address=make_ipc_address("wm_state2"),
             display_event_address=make_ipc_address("wm_disp2"),
         )
-        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        ready_event = _spawn_ctx.Event()
         proc = WorkspaceMirrorProcess(
             dashboard_config=DashboardConfig(screen=0, resolution=(800, 600)),
             display_config=DisplayConfig(),

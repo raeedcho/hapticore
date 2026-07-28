@@ -6,7 +6,6 @@ marker is selected.
 
 from __future__ import annotations
 
-import multiprocessing
 import time
 
 import msgpack
@@ -16,6 +15,7 @@ import zmq
 from hapticore.core.config import DashboardConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_EVENT
 from hapticore.core.messaging import make_ipc_address
+from hapticore.dashboard import _spawn_ctx
 from hapticore.tasks.cup_task import CupTask
 
 pytest.importorskip("PyQt6")
@@ -34,7 +34,7 @@ class TestStatusDashboardLifecycle:
             haptic_state_address=make_ipc_address("sd_state"),
             display_event_address=make_ipc_address("sd_disp"),
         )
-        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        ready_event = _spawn_ctx.Event()
         proc = StatusDashboardProcess(
             dashboard_config=DashboardConfig(screen=0, resolution=(800, 600)),
             zmq_config=zmq_config,
@@ -65,7 +65,7 @@ class TestStatusDashboardLifecycle:
             haptic_state_address=make_ipc_address("sd_state2"),
             display_event_address=make_ipc_address("sd_disp2"),
         )
-        ready_event: multiprocessing.Event = multiprocessing.Event()  # type: ignore[type-arg]
+        ready_event = _spawn_ctx.Event()
         proc = StatusDashboardProcess(
             dashboard_config=DashboardConfig(screen=0, resolution=(800, 600)),
             zmq_config=zmq_config,

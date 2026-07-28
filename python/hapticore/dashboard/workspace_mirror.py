@@ -21,6 +21,7 @@ import zmq
 from hapticore.core.config import DashboardConfig, DisplayConfig, ZMQConfig
 from hapticore.core.messages import TOPIC_DISPLAY, TOPIC_STATE
 from hapticore.core.messaging import drain_sub_messages
+from hapticore.dashboard import SpawnProcess, _spawn_ctx
 
 if TYPE_CHECKING:
     from psychopy.visual import Window
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class WorkspaceMirrorProcess(multiprocessing.Process):
+class WorkspaceMirrorProcess(SpawnProcess):
     """PsychoPy window on the control-room screen mirroring the rig display.
 
     Subscribes to TOPIC_DISPLAY and TOPIC_STATE from the same ZMQ addresses
@@ -59,7 +60,7 @@ class WorkspaceMirrorProcess(multiprocessing.Process):
         self._zmq_config = zmq_config
         self._ready_event = ready_event
         self._headless = headless
-        self._shutdown = multiprocessing.Event()
+        self._shutdown = _spawn_ctx.Event()
 
     def request_shutdown(self) -> None:
         """Signal the process to exit its frame loop and shut down."""

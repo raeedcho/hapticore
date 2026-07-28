@@ -16,6 +16,8 @@ dependencies = [
     "numpy>=1.24",
     "pyserial>=3.5",
     "transitions>=0.9",
+    "sounddevice>=0.5",
+    "soundfile>=0.12",
     "PyQt6>=6.5",
 ]
 
@@ -50,6 +52,14 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 mypy_path = "python"
+
+[[tool.mypy.overrides]]
+module = "sounddevice"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "soundfile"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "serial.*"

@@ -119,6 +119,8 @@ class TestDefaults:
         assert config.force_limit_n == 20.0
         assert config.publish_rate_hz == 200.0
         assert config.effector_mass_kg is None
+        assert config.auto_calibrate is True
+        assert config.gravity_compensation is True
 
     def test_experiment_config_defaults(self) -> None:
         config = ExperimentConfig(
@@ -508,3 +510,33 @@ class TestDisplayConfigBackends:
         restored = DisplayConfig.model_validate(dumped)
         assert restored.backend == "psychopy"
         assert restored.resolution == (1280, 720)
+
+
+class TestFalconConfigs:
+    """Tests for the Novint Falcon desktop-development configs."""
+
+    def test_desktop_falcon_rig_loads(self) -> None:
+        config = load_config(
+            CONFIGS_DIR / "rig" / "desktop-falcon.yaml",
+            overrides={
+                "experiment_name": "test",
+                "subject": {"subject_id": "test_subject"},
+                "task": {"task_class": "hapticore.tasks.example.Task"},
+            },
+        )
+        assert config.haptic.dhd is not None
+        assert config.haptic.dhd.force_limit_n == 8.0
+        assert config.haptic.dhd.auto_calibrate is False
+        assert config.haptic.dhd.gravity_compensation is False
+
+    def test_center_out_falcon_targets_within_workspace(self) -> None:
+        config = load_config(
+            CONFIGS_DIR / "experiments" / "center_out_falcon.yaml",
+            overrides={
+                "subject": {"subject_id": "test_subject"},
+            },
+        )
+        for condition in config.task.conditions:
+            x, y = condition["target_position"]
+            magnitude = (x**2 + y**2) ** 0.5
+            assert magnitude <= 0.05

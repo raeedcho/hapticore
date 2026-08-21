@@ -1,0 +1,66 @@
+# Desktop development — Novint Falcon driving the real (non-mock) haptic
+# server. The Falcon uses the same Force Dimension SDK as the delta.3, so it
+# gives real force feedback during development instead of the mouse-driven
+# mock path in dev-mouse.yaml.
+#
+# Run with: hapticore run --rig configs/rig/desktop-falcon.yaml \
+#                         --subject ... --task ...
+#
+# All device differences from the delta.3 are expressed here in config, not
+# in C++ branches: the Falcon's SDK rejects drdAutoInit() and does not
+# implement dhdSetGravityCompensation(), so both are disabled below.
+
+haptic:
+  backend: dhd
+  dhd:
+    auto_start: true
+    server_binary: cpp/haptic_server/build/dhd/haptic_server
+    # Falcon peak force is ~9 N (2 lbf); the delta.3's 20 N default would
+    # command force the device cannot produce.
+    force_limit_n: 8.0
+    # The Falcon's SDK rejects drdAutoInit() with DHD_ERROR_NOT_AVAILABLE.
+    auto_calibrate: false
+    # The Falcon does not implement dhdSetGravityCompensation().
+    gravity_compensation: false
+    # effector_mass_kg intentionally omitted: dhdSetEffectorMass() is not
+    # supported on the Falcon and calling it would abort startup. Omitting
+    # the field skips the call entirely.
+    mouse_input: false  # this is real hardware, not the mouse-driven mock
+
+display:
+  backend: psychopy
+  resolution: [1440, 900]
+  refresh_rate_hz: 60
+  monitor_distance_cm: 50.0
+  background_color: [0.0, 0.0, 0.0]
+  photodiode_enabled: false
+  mirror_horizontal: false
+  window_gui: true
+
+recording:
+  save_dir: "data"
+  data_logging_enabled: true
+
+sync:
+  backend: "mock"
+  sync_pulse_rate_hz: 1.0
+  code_map:
+    state_codes: {}
+    event_codes: {}
+
+audio:
+  backend: sounddevice
+
+zmq:
+  # Distinct prefix so the factory's liveness probe can't find a stale mock
+  # server on the default hapticore_haptic_* address and attach to it instead
+  # of spawning the real Falcon server.
+  event_pub_address: "ipc:///tmp/hapticore_falcon_events"
+  haptic_state_address: "ipc:///tmp/hapticore_falcon_haptic_state"
+  haptic_command_address: "ipc:///tmp/hapticore_falcon_haptic_cmd"
+  transport: "ipc"
+
+dashboard:
+  screen: 0
+  resolution: [640, 400]
+  window_gui: true

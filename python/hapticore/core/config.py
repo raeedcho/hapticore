@@ -111,6 +111,22 @@ class DhdConfig(BaseModel):
                     "a safety shield). When None, the SDK uses its built-in "
                     "default for the stock end-effector.",
     )
+    auto_calibrate: bool = Field(
+        default=True,
+        description="Run the device's DRD auto-calibration at server startup. "
+                    "True for the delta.3, which requires calibration once per "
+                    "power-on. Set False for devices whose SDK rejects "
+                    "drdAutoInit() (e.g. the Novint Falcon), where the attempt "
+                    "would abort startup. Passed to the server as "
+                    "--no-calibrate when False.",
+    )
+    gravity_compensation: bool = Field(
+        default=True,
+        description="Enable the SDK's host-side gravity compensation. True for "
+                    "the delta.3, whose handle sags without it. Set False for "
+                    "devices that don't implement dhdSetGravityCompensation(). "
+                    "Passed to the server as --no-gravity-comp when False.",
+    )
 
 
 class HapticConfig(BaseModel):

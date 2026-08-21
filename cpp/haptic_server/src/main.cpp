@@ -48,6 +48,7 @@ void print_usage() {
               << "  --force-limit N       Force clamp in Newtons (default: 20)\n"
               << "  --cpu-core N          CPU core for haptic thread (default: 1)\n"
               << "  --no-calibrate        Skip auto-calibration on startup\n"
+              << "  --no-gravity-comp     Skip SDK gravity compensation (for devices that don't support it)\n"
               << "  --die-with-parent     Exit when parent process dies (Linux only; for auto-spawn use)\n"
               << "  --effector-mass KG    End-effector mass for gravity compensation (default: SDK stock value)\n"
 #if defined(__linux__) && !defined(HAPTIC_MOCK_HARDWARE)
@@ -75,6 +76,7 @@ int main(int argc, char* argv[]) {
     int cpu_core = 1;
     double effector_mass = -1.0;  // negative means "don't call set_effector_mass"
     bool auto_calibrate = true;
+    bool no_gravity_comp = false;
     bool die_with_parent = false;
 #if defined(__linux__) && !defined(HAPTIC_MOCK_HARDWARE)
     bool allow_no_rt = false;
@@ -136,6 +138,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "--no-calibrate") {
             auto_calibrate = false;
+        } else if (arg == "--no-gravity-comp") {
+            no_gravity_comp = true;
         } else if (arg == "--die-with-parent") {
             die_with_parent = true;
 #if defined(__linux__) && !defined(HAPTIC_MOCK_HARDWARE)
@@ -219,7 +223,9 @@ int main(int argc, char* argv[]) {
         std::cout << "Effector mass set to " << effector_mass << " kg\n";
     }
 
-    if (!dhd->set_gravity_compensation(true)) {
+    if (no_gravity_comp) {
+        std::cout << "Gravity compensation disabled by --no-gravity-comp\n";
+    } else if (!dhd->set_gravity_compensation(true)) {
         std::cerr << "Error: failed to enable gravity compensation\n";
         return EXIT_FAILURE;
     }

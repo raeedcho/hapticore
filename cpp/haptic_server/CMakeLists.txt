@@ -93,13 +93,25 @@ if(MOCK_HARDWARE)
   target_compile_definitions(haptic_server_lib PUBLIC HAPTIC_MOCK_HARDWARE)
 else()
   # Locate Force Dimension SDK via FD_SDK_DIR environment variable
-  if(NOT DEFINED ENV{FD_SDK_DIR})
+  if(NOT DEFINED ENV{FD_SDK_DIR} OR "$ENV{FD_SDK_DIR}" STREQUAL "")
     message(FATAL_ERROR
-      "FD_SDK_DIR environment variable not set. "
+      "FD_SDK_DIR environment variable not set or empty. "
       "Set it to the Force Dimension SDK root, or build with -DMOCK_HARDWARE=ON."
     )
   endif()
-  set(FD_SDK_DIR $ENV{FD_SDK_DIR})
+  set(FD_SDK_DIR "$ENV{FD_SDK_DIR}")
+
+  # find_library caches absolute paths, but the include directory below is
+  # re-derived from FD_SDK_DIR on every configure. Without this guard, pointing
+  # FD_SDK_DIR at a different SDK version in an existing build directory
+  # silently compiles against new headers and links the old archives.
+  if(DEFINED FD_CACHED_SDK_DIR AND NOT FD_CACHED_SDK_DIR STREQUAL FD_SDK_DIR)
+    unset(FD_DHD_LIBRARY CACHE)
+    unset(FD_DRD_LIBRARY CACHE)
+  endif()
+  set(FD_CACHED_SDK_DIR "${FD_SDK_DIR}" CACHE INTERNAL
+      "FD_SDK_DIR used to resolve the cached SDK library paths")
+
   target_include_directories(haptic_server_lib PUBLIC ${FD_SDK_DIR}/include)
 
   # SDK prebuilt libraries live in a platform/arch/compiler subdirectory of

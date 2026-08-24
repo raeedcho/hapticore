@@ -60,12 +60,11 @@ bool DhdReal::set_gravity_compensation(bool enable) {
 
 bool DhdReal::calibrate() {
     if (!drdIsSupported()) {
-        // Devices without a DRD regulation layer (e.g. the Novint Falcon) have
-        // nothing to auto-initialize. Report success so startup continues
-        // instead of aborting over a capability the device never had.
-        std::cout << "Device does not support DRD regulation; "
-                  << "skipping auto-calibration\n";
-        return true;
+        std::cerr << "Error: device does not report DRD support. If this is a "
+                  << "device without a DRD regulation layer (e.g. the Novint "
+                  << "Falcon), set auto_calibrate: false in the rig config "
+                  << "instead of calling calibrate().\n";
+        return false;
     }
     if (drdIsInitialized()) {
         std::cout << "Device already calibrated\n";

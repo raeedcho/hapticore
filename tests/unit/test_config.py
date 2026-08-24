@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -109,6 +110,15 @@ class TestValueConstraints:
     def test_effector_mass_none_allowed(self) -> None:
         config = DhdConfig(effector_mass_kg=None)
         assert config.effector_mass_kg is None
+
+    def test_effector_mass_requires_gravity_compensation(self) -> None:
+        with pytest.raises(ValidationError):
+            DhdConfig(effector_mass_kg=0.5, gravity_compensation=False)
+
+    def test_effector_mass_with_gravity_compensation_default_allowed(self) -> None:
+        config = DhdConfig(effector_mass_kg=0.5)
+        assert config.effector_mass_kg == 0.5
+        assert config.gravity_compensation is True
 
 
 class TestDefaults:
@@ -515,6 +525,9 @@ class TestDisplayConfigBackends:
 class TestFalconConfigs:
     """Tests for the Novint Falcon desktop-development configs."""
 
+    # Nominal Falcon workspace is ~10 cm per axis, so ~±0.05 m from center.
+    FALCON_WORKSPACE_HALF_EXTENT_M = 0.05
+
     def test_desktop_falcon_rig_loads(self) -> None:
         config = load_config(
             CONFIGS_DIR / "rig" / "desktop-falcon.yaml",
@@ -529,14 +542,28 @@ class TestFalconConfigs:
         assert config.haptic.dhd.auto_calibrate is False
         assert config.haptic.dhd.gravity_compensation is False
 
-    def test_center_out_falcon_targets_within_workspace(self) -> None:
+    def test_falcon_scale_override_replaces_center_out_geometry(self) -> None:
+        """The override layer must REPLACE center_out.yaml's conditions.
+
+        If the deep merge concatenated lists instead, the session would run 16
+        conditions — 8 of them outside the Falcon's reach.
+        """
         config = load_config(
-            CONFIGS_DIR / "experiments" / "center_out_falcon.yaml",
-            overrides={
-                "subject": {"subject_id": "test_subject"},
-            },
+            CONFIGS_DIR / "rig" / "desktop-falcon.yaml",
+            CONFIGS_DIR / "subject" / "example_subject.yaml",
+            CONFIGS_DIR / "experiments" / "center_out.yaml",
+            CONFIGS_DIR / "overrides" / "falcon-scale.yaml",
         )
+        # Survives from center_out.yaml — proves the override didn't clobber
+        # the experiment layer wholesale.
+        assert config.task.task_class == "hapticore.tasks.center_out.CenterOutTask"
+        assert config.experiment_name == "center_out_reaching_falcon"
+
+        assert len(config.task.conditions) == 8
+        distance = config.task.params["target_distance"]
         for condition in config.task.conditions:
             x, y = condition["target_position"]
-            magnitude = (x**2 + y**2) ** 0.5
-            assert magnitude <= 0.05
+            magnitude = math.hypot(x, y)
+            # Conditions must agree with target_distance (diagonals are rounded).
+            assert math.isclose(magnitude, distance, rel_tol=1e-3)
+            assert magnitude <= self.FALCON_WORKSPACE_HALF_EXTENT_M

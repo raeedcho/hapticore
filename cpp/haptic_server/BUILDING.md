@@ -99,5 +99,7 @@ The Falcon uses the same Force Dimension SDK as the delta.3 and can drive the re
   export FD_SDK_DIR=/opt/forcedimension/sdk-3.17.7
   pixi run dhd-cpp-build
   hapticore run --rig configs/rig/desktop-falcon.yaml \
-                --subject ... --experiment configs/experiments/center_out_falcon.yaml
+                --subject ... \
+                --experiment configs/experiments/center_out.yaml \
+                --extra-config configs/overrides/falcon-scale.yaml
   ```

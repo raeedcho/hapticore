@@ -542,11 +542,16 @@ class TestFalconConfigs:
         assert config.haptic.dhd.auto_calibrate is False
         assert config.haptic.dhd.gravity_compensation is False
 
-    def test_falcon_scale_override_replaces_center_out_geometry(self) -> None:
-        """The override layer must REPLACE center_out.yaml's conditions.
+    def test_falcon_scale_override_layers_onto_center_out(self) -> None:
+        """The override must replace conditions, merge into params, and win on
+        keys both layers set.
 
-        If the deep merge concatenated lists instead, the session would run 16
-        conditions — 8 of them outside the Falcon's reach.
+        Three distinct pydantic-settings merge behaviours the Falcon config
+        depends on. If lists concatenated, the session would run 16 conditions,
+        8 outside the Falcon's reach. If task.params were replaced wholesale,
+        params set only by center_out.yaml would silently fall back to
+        ParamSpec defaults — invisible today, since center_out.yaml's timing
+        values happen to equal those defaults.
         """
         config = load_config(
             CONFIGS_DIR / "rig" / "desktop-falcon.yaml",
@@ -567,3 +572,18 @@ class TestFalconConfigs:
             # Conditions must agree with target_distance (diagonals are rounded).
             assert math.isclose(magnitude, distance, rel_tol=1e-3)
             assert magnitude <= self.FALCON_WORKSPACE_HALF_EXTENT_M
+
+        # Override wins on a key both layers set.
+        assert config.task.params["target_radius"] == 0.006
+
+        # hold_time and iti_duration are set by center_out.yaml and not by the
+        # override. If the merge replaced task.params wholesale instead of
+        # merging into it, these keys would be absent.
+        assert "hold_time" in config.task.params, (
+            "task.params was replaced rather than merged — the override layer "
+            "dropped params set only by center_out.yaml"
+        )
+        assert "iti_duration" in config.task.params, (
+            "task.params was replaced rather than merged — the override layer "
+            "dropped params set only by center_out.yaml"
+        )

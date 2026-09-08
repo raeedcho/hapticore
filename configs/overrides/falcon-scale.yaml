@@ -1,0 +1,43 @@
+# Task-geometry override for the Novint Falcon's ~10 cm workspace.
+# Layered on top of a full experiment config via --extra-config, so the real
+# experiment config is still exercised end to end:
+#
+#   hapticore run --rig configs/rig/desktop-falcon.yaml \
+#                 --subject configs/subject/example_subject.yaml \
+#                 --experiment configs/experiments/center_out.yaml \
+#                 --extra-config configs/overrides/falcon-scale.yaml
+#
+# center_out.yaml's 0.08 m reach is outside the Falcon's ~±5 cm range.
+#
+# target_radius is deliberately NOT scaled proportionally (0.006, not the
+# 0.00375 that geometric similarity would give): it is an acceptance
+# tolerance, not a workspace extent, and a 3.75 mm hold radius is
+# impractical. This makes the Falcon variant easier than the rig task by
+# design. Do not "correct" it to be proportional.
+#
+# Geometry is provisional and should be tuned on hardware. A general
+# rig-level workspace scale factor is tracked separately.
+
+experiment_name: "center_out_reaching_falcon"
+
+task:
+  params:
+    target_distance: 0.03
+    target_radius: 0.006
+  conditions:
+    - target_id: 0
+      target_position: [0.03, 0.0]
+    - target_id: 1
+      target_position: [0.0212, 0.0212]
+    - target_id: 2
+      target_position: [0.0, 0.03]
+    - target_id: 3
+      target_position: [-0.0212, 0.0212]
+    - target_id: 4
+      target_position: [-0.03, 0.0]
+    - target_id: 5
+      target_position: [-0.0212, -0.0212]
+    - target_id: 6
+      target_position: [0.0, -0.03]
+    - target_id: 7
+      target_position: [0.0212, -0.0212]

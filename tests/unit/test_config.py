@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -110,6 +111,15 @@ class TestValueConstraints:
         config = DhdConfig(effector_mass_kg=None)
         assert config.effector_mass_kg is None
 
+    def test_effector_mass_requires_gravity_compensation(self) -> None:
+        with pytest.raises(ValidationError):
+            DhdConfig(effector_mass_kg=0.5, gravity_compensation=False)
+
+    def test_effector_mass_with_gravity_compensation_default_allowed(self) -> None:
+        config = DhdConfig(effector_mass_kg=0.5)
+        assert config.effector_mass_kg == 0.5
+        assert config.gravity_compensation is True
+
 
 class TestDefaults:
     """Tests for default value application."""
@@ -119,6 +129,8 @@ class TestDefaults:
         assert config.force_limit_n == 20.0
         assert config.publish_rate_hz == 200.0
         assert config.effector_mass_kg is None
+        assert config.auto_calibrate is True
+        assert config.gravity_compensation is True
 
     def test_experiment_config_defaults(self) -> None:
         config = ExperimentConfig(
@@ -508,3 +520,70 @@ class TestDisplayConfigBackends:
         restored = DisplayConfig.model_validate(dumped)
         assert restored.backend == "psychopy"
         assert restored.resolution == (1280, 720)
+
+
+class TestFalconConfigs:
+    """Tests for the Novint Falcon desktop-development configs."""
+
+    # Nominal Falcon workspace is ~10 cm per axis, so ~±0.05 m from center.
+    FALCON_WORKSPACE_HALF_EXTENT_M = 0.05
+
+    def test_desktop_falcon_rig_loads(self) -> None:
+        config = load_config(
+            CONFIGS_DIR / "rig" / "desktop-falcon.yaml",
+            overrides={
+                "experiment_name": "test",
+                "subject": {"subject_id": "test_subject"},
+                "task": {"task_class": "hapticore.tasks.example.Task"},
+            },
+        )
+        assert config.haptic.dhd is not None
+        assert config.haptic.dhd.force_limit_n == 8.0
+        assert config.haptic.dhd.auto_calibrate is False
+        assert config.haptic.dhd.gravity_compensation is False
+
+    def test_falcon_scale_override_layers_onto_center_out(self) -> None:
+        """The override must replace conditions, merge into params, and win on
+        keys both layers set.
+
+        Three distinct pydantic-settings merge behaviours the Falcon config
+        depends on. If lists concatenated, the session would run 16 conditions,
+        8 outside the Falcon's reach. If task.params were replaced wholesale,
+        params set only by center_out.yaml would silently fall back to
+        ParamSpec defaults — invisible today, since center_out.yaml's timing
+        values happen to equal those defaults.
+        """
+        config = load_config(
+            CONFIGS_DIR / "rig" / "desktop-falcon.yaml",
+            CONFIGS_DIR / "subject" / "example_subject.yaml",
+            CONFIGS_DIR / "experiments" / "center_out.yaml",
+            CONFIGS_DIR / "overrides" / "falcon-scale.yaml",
+        )
+        # Survives from center_out.yaml — proves the override didn't clobber
+        # the experiment layer wholesale.
+        assert config.task.task_class == "hapticore.tasks.center_out.CenterOutTask"
+        assert config.experiment_name == "center_out_reaching_falcon"
+
+        assert len(config.task.conditions) == 8
+        distance = config.task.params["target_distance"]
+        for condition in config.task.conditions:
+            x, y = condition["target_position"]
+            magnitude = math.hypot(x, y)
+            # Conditions must agree with target_distance (diagonals are rounded).
+            assert math.isclose(magnitude, distance, rel_tol=1e-3)
+            assert magnitude <= self.FALCON_WORKSPACE_HALF_EXTENT_M
+
+        # Override wins on a key both layers set.
+        assert config.task.params["target_radius"] == 0.006
+
+        # hold_time and iti_duration are set by center_out.yaml and not by the
+        # override. If the merge replaced task.params wholesale instead of
+        # merging into it, these keys would be absent.
+        assert "hold_time" in config.task.params, (
+            "task.params was replaced rather than merged — the override layer "
+            "dropped params set only by center_out.yaml"
+        )
+        assert "iti_duration" in config.task.params, (
+            "task.params was replaced rather than merged — the override layer "
+            "dropped params set only by center_out.yaml"
+        )

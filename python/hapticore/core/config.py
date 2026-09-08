@@ -111,6 +111,32 @@ class DhdConfig(BaseModel):
                     "a safety shield). When None, the SDK uses its built-in "
                     "default for the stock end-effector.",
     )
+    auto_calibrate: bool = Field(
+        default=True,
+        description="Run the device's DRD auto-calibration at server startup. "
+                    "True for the delta.3, which requires calibration once per "
+                    "power-on. Set False for devices whose SDK rejects "
+                    "drdAutoInit() (e.g. the Novint Falcon), where the attempt "
+                    "would abort startup. Passed to the server as "
+                    "--no-calibrate when False.",
+    )
+    gravity_compensation: bool = Field(
+        default=True,
+        description="Enable the SDK's host-side gravity compensation. True for "
+                    "the delta.3, whose handle sags without it. Set False for "
+                    "devices that don't implement dhdSetGravityCompensation(). "
+                    "Passed to the server as --no-gravity-comp when False.",
+    )
+
+    @model_validator(mode="after")
+    def _check_effector_mass_requires_gravity_comp(self) -> Self:
+        if self.effector_mass_kg is not None and not self.gravity_compensation:
+            raise ValueError(
+                "effector_mass_kg is only used by the SDK's gravity "
+                "compensation, which is disabled by gravity_compensation=False. "
+                "Remove effector_mass_kg or enable gravity_compensation."
+            )
+        return self
 
 
 class HapticConfig(BaseModel):

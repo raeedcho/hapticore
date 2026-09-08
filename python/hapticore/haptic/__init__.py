@@ -109,6 +109,10 @@ def _spawn_haptic_server(
     ]
     if cfg.effector_mass_kg is not None:
         args.extend(["--effector-mass", str(cfg.effector_mass_kg)])
+    if not cfg.auto_calibrate:
+        args.append("--no-calibrate")
+    if not cfg.gravity_compensation:
+        args.append("--no-gravity-comp")
 
     logger.info("Spawning haptic_server: %s", " ".join(args))
     return subprocess.Popen(args, start_new_session=True)

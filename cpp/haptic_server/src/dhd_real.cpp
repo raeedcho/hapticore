@@ -60,8 +60,10 @@ bool DhdReal::set_gravity_compensation(bool enable) {
 
 bool DhdReal::calibrate() {
     if (!drdIsSupported()) {
-        std::cerr << "Warning: device does not report DRD support "
-                  << "(unexpected for delta.3)\n";
+        std::cerr << "Error: device does not report DRD support. If this is a "
+                  << "device without a DRD regulation layer (e.g. the Novint "
+                  << "Falcon), set auto_calibrate: false in the rig config "
+                  << "instead of calling calibrate().\n";
         return false;
     }
     if (drdIsInitialized()) {

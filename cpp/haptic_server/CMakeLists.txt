@@ -93,22 +93,72 @@ if(MOCK_HARDWARE)
   target_compile_definitions(haptic_server_lib PUBLIC HAPTIC_MOCK_HARDWARE)
 else()
   # Locate Force Dimension SDK via FD_SDK_DIR environment variable
-  if(NOT DEFINED ENV{FD_SDK_DIR})
+  if(NOT DEFINED ENV{FD_SDK_DIR} OR "$ENV{FD_SDK_DIR}" STREQUAL "")
     message(FATAL_ERROR
-      "FD_SDK_DIR environment variable not set. "
+      "FD_SDK_DIR environment variable not set or empty. "
       "Set it to the Force Dimension SDK root, or build with -DMOCK_HARDWARE=ON."
     )
   endif()
-  set(FD_SDK_DIR $ENV{FD_SDK_DIR})
+  set(FD_SDK_DIR "$ENV{FD_SDK_DIR}")
+
+  # find_library caches absolute paths, but the include directory below is
+  # re-derived from FD_SDK_DIR on every configure. Without this guard, pointing
+  # FD_SDK_DIR at a different SDK version in an existing build directory
+  # silently compiles against new headers and links the old archives.
+  if(DEFINED FD_CACHED_SDK_DIR AND NOT FD_CACHED_SDK_DIR STREQUAL FD_SDK_DIR)
+    unset(FD_DHD_LIBRARY CACHE)
+    unset(FD_DRD_LIBRARY CACHE)
+  endif()
+  set(FD_CACHED_SDK_DIR "${FD_SDK_DIR}" CACHE INTERNAL
+      "FD_SDK_DIR used to resolve the cached SDK library paths")
+
   target_include_directories(haptic_server_lib PUBLIC ${FD_SDK_DIR}/include)
-  # SDK library subdirectory follows Force Dimension's convention:
-  # lib/release/lin-<arch>-gcc (see SDK's Makefile.common)
-  target_link_directories(haptic_server_lib PUBLIC
-    ${FD_SDK_DIR}/lib/release/lin-${CMAKE_SYSTEM_PROCESSOR}-gcc
-  )
-  # libdhd.a statically links against libusb (dhdComUSB-libusb.cpp),
-  # so we must explicitly link libusb-1.0 as a transitive dependency.
-  target_link_libraries(haptic_server_lib PUBLIC dhd drd usb-1.0)
+
+  # SDK prebuilt libraries live in a platform/arch/compiler subdirectory of
+  # lib/release, following the SDK's own Makefile.common convention:
+  #   Linux: lib/release/lin-<arch>-gcc    macOS: lib/release/mac-<arch>-clang
+  # Verified against SDK 3.17.7: lin-x86_64-gcc on the rig, mac-arm64-clang on
+  # Apple Silicon (CMAKE_SYSTEM_PROCESSOR is "arm64" there, matching the SDK).
+  if(APPLE)
+    set(FD_LIB_SUBDIR lib/release/mac-${CMAKE_SYSTEM_PROCESSOR}-clang)
+  else()
+    set(FD_LIB_SUBDIR lib/release/lin-${CMAKE_SYSTEM_PROCESSOR}-gcc)
+  endif()
+
+  # Prefer the static archives on both platforms. find_library gives absolute
+  # paths, so a missing SDK fails at configure time with a useful message
+  # instead of producing a bogus -L search path and an -ldhd link error.
+  # The suffix override matters on macOS, where the SDK also ships
+  # version-suffixed .dylib files with no unversioned symlink.
+  set(_fd_saved_suffixes ${CMAKE_FIND_LIBRARY_SUFFIXES})
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+  find_library(FD_DHD_LIBRARY NAMES dhd
+    HINTS ${FD_SDK_DIR} PATH_SUFFIXES ${FD_LIB_SUBDIR} NO_DEFAULT_PATH)
+  find_library(FD_DRD_LIBRARY NAMES drd
+    HINTS ${FD_SDK_DIR} PATH_SUFFIXES ${FD_LIB_SUBDIR} NO_DEFAULT_PATH)
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ${_fd_saved_suffixes})
+
+  if(NOT FD_DHD_LIBRARY OR NOT FD_DRD_LIBRARY)
+    message(FATAL_ERROR
+      "Force Dimension libraries not found in ${FD_SDK_DIR}/${FD_LIB_SUBDIR}. "
+      "Run `ls ${FD_SDK_DIR}/lib/release` and confirm the subdirectory name "
+      "matches this platform, or build with -DMOCK_HARDWARE=ON."
+    )
+  endif()
+
+  target_link_libraries(haptic_server_lib PUBLIC ${FD_DHD_LIBRARY} ${FD_DRD_LIBRARY})
+
+  # libdhd.a's USB transport is a transitive dependency a static archive cannot
+  # carry, so it must be linked explicitly. Linux uses libusb-1.0; the macOS
+  # SDK uses Apple's native IOKit USB stack instead and needs no libusb (delta.x
+  # manual section 6.3: "uses Apple's native USB drivers ... No further
+  # installation is required").
+  if(APPLE)
+    target_link_libraries(haptic_server_lib PUBLIC
+      "-framework IOKit" "-framework CoreFoundation")
+  else()
+    target_link_libraries(haptic_server_lib PUBLIC usb-1.0)
+  endif()
 endif()
 
 # Platform libraries

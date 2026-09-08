@@ -340,3 +340,43 @@ class TestSpawnHapticServer:
             _spawn_haptic_server(cfg, ZMQConfig())
         args: list[str] = mock_popen.call_args.args[0]
         assert "--effector-mass" not in args
+
+    @patch("hapticore.haptic.subprocess.Popen")
+    def test_spawn_passes_no_calibrate_when_disabled(self, mock_popen: MagicMock) -> None:
+        from hapticore.haptic import _spawn_haptic_server
+
+        cfg = DhdConfig(server_binary=Path("/some/existing/path"), auto_calibrate=False)
+        with patch.object(Path, "exists", return_value=True):
+            _spawn_haptic_server(cfg, ZMQConfig())
+        args: list[str] = mock_popen.call_args.args[0]
+        assert "--no-calibrate" in args
+
+    @patch("hapticore.haptic.subprocess.Popen")
+    def test_spawn_omits_no_calibrate_by_default(self, mock_popen: MagicMock) -> None:
+        from hapticore.haptic import _spawn_haptic_server
+
+        cfg = DhdConfig(server_binary=Path("/some/existing/path"))
+        with patch.object(Path, "exists", return_value=True):
+            _spawn_haptic_server(cfg, ZMQConfig())
+        args: list[str] = mock_popen.call_args.args[0]
+        assert "--no-calibrate" not in args
+
+    @patch("hapticore.haptic.subprocess.Popen")
+    def test_spawn_passes_no_gravity_comp_when_disabled(self, mock_popen: MagicMock) -> None:
+        from hapticore.haptic import _spawn_haptic_server
+
+        cfg = DhdConfig(server_binary=Path("/some/existing/path"), gravity_compensation=False)
+        with patch.object(Path, "exists", return_value=True):
+            _spawn_haptic_server(cfg, ZMQConfig())
+        args: list[str] = mock_popen.call_args.args[0]
+        assert "--no-gravity-comp" in args
+
+    @patch("hapticore.haptic.subprocess.Popen")
+    def test_spawn_omits_no_gravity_comp_by_default(self, mock_popen: MagicMock) -> None:
+        from hapticore.haptic import _spawn_haptic_server
+
+        cfg = DhdConfig(server_binary=Path("/some/existing/path"))
+        with patch.object(Path, "exists", return_value=True):
+            _spawn_haptic_server(cfg, ZMQConfig())
+        args: list[str] = mock_popen.call_args.args[0]
+        assert "--no-gravity-comp" not in args

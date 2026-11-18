@@ -187,7 +187,7 @@ command of a session being silently dropped. If the rig has no cellular
 hardware, masking the service removes the problem entirely:
 
 ```bash
-sudo systemctl mask ModemManager
+sudo systemctl mask --now ModemManager
 ```
 
 #### Stable device paths
@@ -216,7 +216,7 @@ ls /dev/cu.usbmodem*
 Pass the path explicitly when running the bringup tool:
 
 ```bash
-python tools/teensy_bringup.py --port /dev/cu.usbmodem14101
+pixi run python firmware/teensy/tools/teensy_bringup.py --port /dev/cu.usbmodem14101
 ```
 
 ### Firmware build
@@ -249,8 +249,9 @@ SYNC_PULSE — 1 Hz cross-system sync (50% duty cycle)
     - the SpikeGLX-side digital input (when Neuropixels recording is set up)
 
 EVENT_CODE_BIT0–BIT7 + EVENT_CODE_STROBE — 8-bit event codes (ADR-014)
-  Wire to the Scout's 25-pin D-sub parallel input, through the Ripple
-  Digital BNC Breakout or a custom D-sub cable (bringup guide, Step 5).
+  Wire to the Scout's 25-pin D-sub parallel input with a custom D-sub
+  cable or a confirmed Scout-compatible adapter. Ripple's R01396 breakout
+  uses Micro-D and does not fit this port (ADR-014).
   When Neuropixels recording is set up, run the same 9 lines in parallel
   to the SpikeGLX-side acquisition hardware.
 

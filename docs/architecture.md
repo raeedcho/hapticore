@@ -219,7 +219,7 @@ Offline alignment extracts sync edges from each system (emitted by the Teensy sy
 
 ```
 {recording.save_dir}/sub-{subject}/ses-{YYYYMMDD}_{NNN}/
-├── session_receipt.json      # timing, config snapshot, parameter changes, segment list, trial summary
+├── session_receipt.json      # timing, config snapshot, segment list, trial summary; parameter changes are in *_events.tsv
 └── {segment}/                # seg-001, seg-002, … or a custom label
     ├── segment_receipt.json  # config snapshot, trial summary, and recording settings for this segment
     ├── behavior/

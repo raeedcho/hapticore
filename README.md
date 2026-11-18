@@ -49,7 +49,7 @@ pixi run hapticore run \
 
 Two other commands are available:
 - `pixi run hapticore gui` opens the Control Center.
-- `pixi run hapticore graph hapticore.tasks.center_out.CenterOutTask` draws a task's state machine.
+- `pixi run hapticore graph-task hapticore.tasks.center_out.CenterOutTask` draws a task's state machine.
 
 ## Documentation
 

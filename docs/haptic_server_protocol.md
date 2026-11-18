@@ -333,5 +333,7 @@ These must hold on **every haptic tick** regardless of command state:
 1. **Force clamping:** Per-axis clamp to `[-force_limit, +force_limit]` AND magnitude clamp to `force_limit`. Default `force_limit` = 20 N (from `HapticConfig.force_limit_n`).
 2. **Heartbeat timeout:** If no `heartbeat` command received within 500 ms, atomically swap to NullField with damping (`B = 10 N·s/m`) and log a warning. Resume normal operation when the next heartbeat arrives.
 3. **Stiffness limit:** ForceField `update_params` must reject stiffness values > 3000 N/m.
-4. **Gravity compensation:** Call `dhdSetEffectorMass()` at startup with the configured effector mass so the DHD SDK provides gravity compensation.
+4. **Gravity compensation:** A capability declared per device in the rig config (`gravity_compensation`, default `true`; ADR-017).
+   - **When declared present:** at startup the server enables the SDK's gravity compensation and aborts if that call fails. If `effector_mass_kg` is configured, the server first calls `dhdSetEffectorMass()` with it; otherwise the SDK's stock value applies.
+   - **When declared absent:** the server is started with `--no-gravity-comp` and skips the SDK call entirely.
 5. **Beam break safety field:** (spec pending)

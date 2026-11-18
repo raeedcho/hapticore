@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-03-11  
-**Context:** The system spans three languages (Python, C++17, Arduino/C++) and multiple deployment targets (Linux workstation, Teensy microcontroller). Should these live in one repository or several?
+**Context:** The system spans three languages (Python, C++20, Arduino/C++) and multiple deployment targets (Linux workstation, Teensy microcontroller). Should these live in one repository or several?
 
 ## Decision
 
@@ -22,7 +22,7 @@ hapticore/
 ├── configs/              # YAML experiment configs
 ├── tests/                # Python tests (C++ tests live in cpp/)
 ├── docs/                 # architecture, guides, ADRs
-├── .github/              # CI workflows, copilot-instructions.md
+├── .github/              # CI workflows
 └── pyproject.toml        # Python package metadata
 ```
 

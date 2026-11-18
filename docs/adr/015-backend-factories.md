@@ -2,6 +2,19 @@
 
 **Status:** Accepted
 **Date:** 2026-04-25
+**Updated:** 2026-11-17. The decision stands, but these details have changed since it was accepted:
+
+- **Mouse backend removed (#90).** `HapticConfig.backend` is now `Literal["dhd", "mock"]`. Laptop development uses `backend: dhd` with `dhd.mouse_input: true`, which routes mouse input through the mock C++ server.
+- **Every factory is a context manager.** Each is a `@contextmanager` that yields its interface:
+  - haptic since #83, so the `dhd` backend can own the haptic server subprocess;
+  - sync since it was added in #100;
+  - audio since it was added in #145.
+
+  Nothing is wrapped in `contextlib.nullcontext()` anymore.
+- **Audio follows the pattern.** `AudioConfig.backend: Literal["sounddevice", "mock"]` → `make_audio_interface()` in `hapticore.audio`.
+- **`SessionManager` calls the factories (#104).** It lives in `hapticore.session`; the CLI's `_run` no longer calls them.
+- **LSL was dropped (ADR-016).** The multi-recording rationale for keeping recording out of the factory pattern now rests on Ripple and SpikeGLX.
+
 **Context:** As Hapticore grew to support multiple implementations of each task-facing interface — `MockHapticInterface`, `MouseHapticInterface`, and `HapticClient` for haptic; `MockDisplay` and `DisplayClient`+`DisplayProcess` for display — selection between them was happening through a mix of CLI flags (`--input mouse`, `--display`) and ad-hoc construction inside the CLI's `_simulate` function. The real `HapticClient` had no CLI path at all. There was no consistent place in the resolved session config that recorded "which backend ran this session," and the CLI was the only construction site that knew how to instantiate each backend. Phase 5C will introduce a third interface in the same shape (`SyncInterface` with `MockSync` and `TeensySync`), so the right time to settle the pattern was after the second case (display) and before the third.
 
 ## Decision

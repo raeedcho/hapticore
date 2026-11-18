@@ -1,7 +1,7 @@
+# ADR-017: Optional device capabilities declared in rig config
+
 **Status:** Accepted
 **Date:** 2026-08-26
-
-# ADR-017: Optional device capabilities declared in rig config
 
 ## Context
 

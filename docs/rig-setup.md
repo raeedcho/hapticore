@@ -106,51 +106,160 @@ Teensy 4.1 outputs **3.3V logic** and is **not 5V tolerant** on any pin.
 - **NI-DAQ digital inputs:** TTL-compatible (high threshold 2.0V). Direct 3.3V works.
 - **Solenoid driver circuit:** Check input threshold. If the existing circuit expects 5V TTL, add a 74AHCT125 buffer (~$1, <10 ns propagation delay) between the Teensy output and the driver input.
 
+### USB permissions (Linux)
+
+Out of the box, a Linux machine gives only root access to the Teensy's USB
+interfaces. This blocks both flashing and serial communication, in two
+separate ways:
+
+- **Flashing.** `teensy_loader_cli` (invoked by `pio run -t upload`) talks to
+  the HalfKay bootloader as a raw USB HID device. Without udev rules that node
+  is root-only, so the loader enumerates the board but cannot open it. The
+  symptom is a repeating "Found HalfKay Bootloader … can't open" loop that
+  never completes, no matter how many times you press the reset button.
+- **Serial.** `/dev/ttyACM0` is owned by `root:dialout`, so the user account
+  running Hapticore must be a member of the `dialout` group.
+
+Both must be fixed before the Teensy is usable. This is per-machine setup —
+every new rig or dev box needs it.
+
+#### Install the udev rules
+
+```bash
+sudo curl -fsSL -o /etc/udev/rules.d/00-teensy.rules \
+    https://www.pjrc.com/teensy/00-teensy.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+**Physically unplug and reconnect the Teensy afterwards.** udev applies rules
+when a device is added, so reloading the rules does nothing for a board that
+is already connected.
+
+Notes:
+
+- `00-teensy.rules` is the current filename. Older PJRC documentation and
+  forum posts reference `49-teensy.rules`; that name is superseded.
+- A few distributions need the file in `/lib/udev/rules.d/` instead of
+  `/etc/udev/rules.d/`. The rules file's own header comments cover this.
+- PJRC tests these rules on Ubuntu (x86 and AARCH64). Other distros generally
+  work but are not officially supported.
+
+#### Add the user to `dialout`
+
+```bash
+groups | grep dialout || sudo usermod -aG dialout $USER
+```
+
+Group changes take effect at next login. For the current shell, `newgrp
+dialout` works without logging out.
+
+#### Verify
+
+```bash
+lsusb | grep 16c0           # 0x16c0 is PJRC's vendor ID
+ls -l /dev/ttyACM*          # expect crw-rw---- root dialout
+```
+
+If `lsusb` finds nothing, the board is not enumerating at all — check the
+cable (some USB-C to Micro-B cables are charge-only) and the port. If the
+device enumerates but no `/dev/ttyACM*` node appears, watch the kernel see it:
+
+```bash
+sudo dmesg -w              # then unplug and replug the Teensy
+```
+
+A healthy connection logs a line like
+`cdc_acm 1-2:1.0: ttyACM0: USB ACM device`. A USB device that enumerates with
+no following `cdc_acm` line means the firmware is not exposing a USB serial
+interface — check that the firmware was actually flashed, and that
+`platformio.ini` builds with USB type Serial.
+
+#### ModemManager interference
+
+Ubuntu runs ModemManager as part of NetworkManager. It probes newly attached
+serial devices looking for cellular modems, which on a Teensy can briefly hold
+the port open or swallow the first bytes written after the port is opened. The
+PJRC rules file includes workarounds for this.
+
+Symptoms are intermittent: "device or resource busy" on open, or the first
+command of a session being silently dropped. If the rig has no cellular
+hardware, masking the service removes the problem entirely:
+
+```bash
+sudo systemctl mask ModemManager
+```
+
+#### Stable device paths
+
+`/dev/ttyACM0` is the default in `TeensyConfig` and in
+`tools/teensy_bringup.py`, but the number is assigned in enumeration order. If
+anything else on the rig presents an ACM interface, the Teensy can move to
+`ttyACM1` between boots. For a persistent path:
+
+```bash
+ls -l /dev/serial/by-id/
+```
+
+The resulting `/dev/serial/by-id/usb-Teensyduino_USB_Serial_...` path is stable
+across reboots and can be set as `sync.teensy.port` in the rig config.
+
+#### macOS (development machines only)
+
+macOS needs no udev rules, but uses different device paths. The Teensy appears
+as `/dev/cu.usbmodem*` rather than `/dev/ttyACM*`:
+
+```bash
+ls /dev/cu.usbmodem*
+```
+
+Pass the path explicitly when running the bringup tool:
+
+```bash
+python tools/teensy_bringup.py --port /dev/cu.usbmodem14101
+```
+
 ### Firmware build
  
 Firmware source: `hapticore/firmware/teensy/`
  
-Option 1 — PlatformIO (preferred for CI):
+PlatformIO is installed by pixi, so run it through `pixi run` (or inside `pixi shell`):
+
 ```bash
 cd firmware/teensy
-pio run              # build
-pio run -t upload    # flash
+pixi run -- pio run              # build
+pixi run -- pio run -t upload    # flash (Teensy plugged in)
 ```
- 
-Option 2 — Arduino IDE:
-1. Install Teensyduino addon
-2. Select board: Teensy 4.1
-3. Open `firmware/teensy/teensy_sync.ino`
-4. Upload
+
+See `firmware/teensy/README.md` for host-side parser tests.
 
 ### Wiring
- 
-```
-Teensy 4.1 pin assignments (defined in firmware header):
- 
-Pin A  → Camera frame trigger (30-120 Hz)
-         Wire to all 5 Blackfly S cameras' Line 3 (Pin 1, green wire)
-         on 6-pin Hirose connector. Parallel wire — all cameras share
-         the same physical signal. Share ground via Pin 6 (brown wire).
- 
-Pin B  → 1 Hz cross-system sync (50% duty cycle)
-         Wire to BNC, T-split to:
-           - Ripple Scout SMA digital input 1
-           - SpikeGLX NI-DAQ digital input (for Neuropixels sync)
- 
-Pin C  → Event strobe
-         Wire to BNC, T-split to:
-           - Ripple Scout SMA digital input 2
-           - SpikeGLX NI-DAQ digital input
- 
-Pin D  → Reward TTL
-         Wire to solenoid driver circuit TTL input
- 
-GND    → Common ground shared with all connected devices
-```
- 
-> Pin assignments are placeholders — update with actual pin numbers once firmware is finalized.
 
+Pin numbers are defined only in `firmware/teensy/src/pins.h`. The pin map and step-by-step wiring tests are in `docs/teensy-bringup.md`. The signals below use the `pins.h` names.
+
+```
+CAMERA_TRIGGER — camera frame trigger (30–120 Hz)
+  Wire to all 5 Blackfly S cameras' Line 3 (Pin 1, green wire)
+  on the 6-pin Hirose connector. Parallel wire — all cameras share
+  the same physical signal. Share ground via Pin 6 (brown wire).
+
+SYNC_PULSE — 1 Hz cross-system sync (50% duty cycle)
+  Wire to BNC, T-split to:
+    - a Ripple Scout Digital I/O BNC input
+    - the SpikeGLX-side digital input (when Neuropixels recording is set up)
+
+EVENT_CODE_BIT0–BIT7 + EVENT_CODE_STROBE — 8-bit event codes (ADR-014)
+  Wire to the Scout's 25-pin D-sub parallel input, through the Ripple
+  Digital BNC Breakout or a custom D-sub cable (bringup guide, Step 5).
+  When Neuropixels recording is set up, run the same 9 lines in parallel
+  to the SpikeGLX-side acquisition hardware.
+
+REWARD — reward TTL
+  Wire to the solenoid driver circuit's TTL input.
+
+Common ground shared with all connected devices.
+```
+ 
 ## Multi-monitor and mirror setup
 
 Rig 2 uses two monitors: one that the subject views through a canted mirror, and one in the control room for the experimenter. The display process renders to one monitor at a time. Use the following fields in `configs/rig/rig2.yaml` (under `display:`) to configure which monitor is used and whether the image should be mirrored.

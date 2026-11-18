@@ -115,7 +115,7 @@ The 1 Hz sync uses one Teensy output pin split to both recording systems with a 
 - `C<rate>` — set camera trigger rate (e.g., `C60` for 60 Hz)
 - `T1` / `T0` — start/stop camera trigger generation
 - `E<code>` — emit a behavioral event code (8-bit parallel, per ADR-014)
-- `R<duration_ms>` — pulse reward TTL for specified duration
+- `R<duration_ms>` — pulse reward TTL for specified duration; ignored while a reward is already in progress
 
 #### Firmware location
  

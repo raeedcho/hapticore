@@ -25,8 +25,8 @@ Then from this directory:
 ```
 pixi shell
 pio run                     # compile for Teensy 4.1
-pio run -e native           # compile host-side parser tests (optional)
-pio test -e native          # run host-side parser tests (optional)
+pio run -e native           # compile host-side tests
+pio test -e native          # run host-side tests (parser, reward policy); CI requires these
 ```
 
 ## Flash
@@ -56,6 +56,6 @@ Reference: `docs/architecture.md` § "Serial protocol" and
 | `T1\n` | Start camera trigger. |
 | `T0\n` | Stop camera trigger. |
 | `E<code>\n` | Emit 8-bit event code (0–255) with strobe. |
-| `R<duration_ms>\n` | Pulse reward TTL for `<duration_ms>` (1–10000). |
+| `R<duration_ms>\n` | Pulse reward TTL for `<duration_ms>` (1–10000). Ignored while a reward is already in progress. |
 
 The firmware is one-way (host → firmware). It does not reply over serial.

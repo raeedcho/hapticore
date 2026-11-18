@@ -231,7 +231,7 @@ pixi run -- pio run              # build
 pixi run -- pio run -t upload    # flash (Teensy plugged in)
 ```
 
-See `firmware/teensy/README.md` for host-side parser tests.
+See `firmware/teensy/README.md` for host-side tests.
 
 ### Wiring
 

@@ -17,7 +17,7 @@ The environment is already set up: locally by the human, and in Copilot's cloud 
 | Python tests | `pixi run test` (unit + integration); while iterating, `pixi run pytest tests/unit/test_x.py -q` |
 | C++ (mock) | `pixi run mock-cpp` (build and test the `dev-mock` preset) |
 | Display (Linux) | `QT_QPA_PLATFORM=offscreen xvfb-run -a -s "-screen 0 1920x1080x24" pixi run test-display` |
-| Firmware | from `firmware/teensy/`: `pixi run -- pio run -e teensy41`, then `pixi run -- pio test -e native -f test_parser` |
+| Firmware | from `firmware/teensy/`: `pixi run -- pio run -e teensy41`, then `pixi run -- pio test -e native` |
 | End-to-end on mocks | `pixi run hapticore run --rig configs/rig/ci.yaml --subject configs/subject/example_subject.yaml --experiment configs/experiments/center_out.yaml --fast` |
 
 - After changing C++ code, rebuild with `pixi run mock-cpp` before running the integration tests. `test_cross_language.py` and `test_haptic_server_lifecycle.py` skip, rather than fail, when no binary exists under `cpp/haptic_server/build/dev-mock/` or `build/ci/`.

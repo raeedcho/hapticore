@@ -1,6 +1,6 @@
 # Teensy 4.1 sync hub — bringup guide
 
-This document walks a technician through wiring, flashing, and validating the Teensy 4.1 sync hub for the Hapticore rig. Each section is self-contained and testable independently. Work through them in order; do not skip ahead.
+This document walks a technician through wiring, flashing, and validating the Teensy 4.1 sync hub for the Hapticore rig. Each section is self-contained and testable independently. Work through them in order; do not skip ahead. On a new Linux machine, complete the USB permissions setup in docs/rig-setup.md § Teensy 4.1 sync hub before flashing.
 
 > **This is the authoritative wiring reference.** The Teensy wiring section in `docs/rig-setup.md` has outdated placeholder pin labels. Use this document, which reflects the actual pin assignments in `firmware/teensy/src/pins.h`.
 

@@ -1,7 +1,7 @@
+# ADR-016: ZMQ-based data logging instead of LSL
+
 **Status:** Accepted
 **Date:** 2026-05-08
-
-# ADR-016: ZMQ-based data logging instead of LSL
 
 ## Context
 

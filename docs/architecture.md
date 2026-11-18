@@ -74,6 +74,7 @@ The haptic server is a standalone C++ executable with three threads.
 - `SpringDamperField`: F = −K(pos − center) − B·vel
 - `ConstantField`: F = constant vector
 - `WorkspaceLimitField`: spring forces at boundaries
+- `ChannelField`: spring damper field along one or two dimensions
 - `CartPendulumField`: virtual-coupling simulation of cup-and-ball dynamics. The device connects to a simulated cart through a spring-damper coupler; the cart-pendulum ODE is integrated internally with RK4. Virtual mass lives entirely in the simulation, avoiding the instability of direct F=M·a rendering. Returns coupling force to the device.
 - `PhysicsField`: wraps a Box2D world for rigid-body dynamics and collision (see ADR-007). Supports polygons, circles, revolute/prismatic joints, and static obstacles. Used for tasks involving collisions (e.g., Tetris-like block placement, air hockey) and underactuated dynamics (e.g., pivoted rod navigation). The monkey controls a kinematic body; Box2D computes reaction forces from contacts and constraints.
 - `CompositeField`: sum of multiple fields
@@ -96,14 +97,16 @@ A Teensy 4.1 microcontroller serves as the centralized timing hub for the entire
  
 #### Output signals
  
-| Teensy pin | Signal | Frequency | Destination |
-|---|---|---|---|
-| Pin A | Camera frame trigger | 30–120 Hz | All 5 cameras, Line 3 (parallel wired) |
-| Pin B | Cross-system sync | 1 Hz, 50% duty cycle | BNC T-split → Ripple Scout SMA input + SpikeGLX NI-DAQ digital input |
-| Pin C | Behavioral event strobe | On-demand | BNC T-split → Ripple Scout SMA input + SpikeGLX NI-DAQ digital input |
-| Pin D | Reward TTL | On-demand | Solenoid driver circuit |
- 
-The 1 Hz sync and event strobe each use a single Teensy output pin split to both recording systems via BNC T-connectors. This guarantees both systems see identical edge timing with zero inter-pin skew.
+| Signal (`pins.h` name) | Rate | Destination |
+|---|---|---|
+| Camera frame trigger (`CAMERA_TRIGGER`) | 30–120 Hz | All 5 cameras, Line 3 (parallel wired) |
+| Cross-system sync (`SYNC_PULSE`) | 1 Hz, 50% duty cycle | BNC T-split → Ripple Scout Digital I/O BNC input + SpikeGLX-side digital input (planned) |
+| Behavioral event code (`EVENT_CODE_BIT0`–`BIT7` + `EVENT_CODE_STROBE`) | On demand | 25-pin D-sub → Ripple Scout parallel digital input, plus a parallel 9-conductor run to the SpikeGLX-side acquisition hardware (planned) |
+| Reward TTL (`REWARD`) | On demand | Solenoid driver circuit |
+
+Pin numbers are defined only in `firmware/teensy/src/pins.h`. For the pin map and step-by-step wiring tests, see `docs/teensy-bringup.md`.
+
+The 1 Hz sync uses one Teensy output pin split to both recording systems with a BNC T-connector, so both systems see identical edge timing with zero inter-pin skew. Event codes are 8 data lines plus a strobe, wired to Ripple's parallel input and in parallel to the SpikeGLX side, so both systems record each code at the same strobe edge (ADR-014).
  
 #### Serial protocol
  
@@ -116,7 +119,7 @@ The 1 Hz sync and event strobe each use a single Teensy output pin split to both
 
 #### Firmware location
  
-Teensy firmware lives in `hapticore/firmware/teensy/` and builds via PlatformIO or Arduino IDE + Teensyduino. The firmware, event code definitions, and `SyncProcess` are maintained together in the monorepo because they share message schemas and must evolve atomically (see ADR-006, ADR-013).
+Teensy firmware lives in `hapticore/firmware/teensy/` and builds with PlatformIO, which pixi installs (see `firmware/teensy/README.md`). The firmware, event code definitions, and `SyncProcess` are maintained together in the monorepo because they share message schemas and must evolve atomically (see ADR-006, ADR-013).
  
 #### Hardware notes
  
@@ -208,41 +211,38 @@ See `docs/task_authoring_guide.md` for the full task creation workflow.
 
 ### Timestamp alignment
 
-Offline alignment extracts sync edges from each system (emitted by the Teensy sync hub per ADR-013) and builds pairwise linear time mappings, achieving < 0.1 ms cross-system accuracy. Behavioral event codes (ADR-014) provide additional time anchors.
+Offline alignment extracts sync edges from each system (emitted by the Teensy sync hub per ADR-013) and builds pairwise linear time mappings, achieving < 0.1 ms cross-system accuracy. Behavioral event codes (ADR-014) provide additional time anchors. The edge-extraction step is planned but not yet implemented, so each segment's `sync/` directory stays empty for now.
 
 ### Data directory structure
 
+`SessionManager` creates one session directory per run and one subdirectory per recording segment. Segments are labeled `seg-001`, `seg-002`, and so on unless the experimenter gives a custom label. When `recording.data_logging_enabled` is true, `DataLoggerProcess` writes the behavioral files, named `{session_id}_{segment}_*`.
+
 ```
-data/sub-{subject}/ses-{date}_{num}/
-├── behavior/
-│   ├── *_events.tsv          # all state transitions and events
-│   ├── *_haptic.bin          # high-rate haptic state (float64)
-│   ├── *_haptic.json         # haptic binary sidecar (column names, dtype)
-│   └── *_trials.tsv          # per-trial summary (future: TrialManager)
-├── neural/
-│   ├── ripple/               # NEV/NS* files from Trellis
-│   └── spikeglx/             # binary files from SpikeGLX (future)
-└── sync/
-    └── *_sync_edges.tsv      # extracted sync edges for alignment
+{recording.save_dir}/sub-{subject}/ses-{YYYYMMDD}_{NNN}/
+├── session_receipt.json      # timing, config snapshot, segment list, trial summary; parameter changes are in *_events.tsv
+└── {segment}/                # seg-001, seg-002, … or a custom label
+    ├── segment_receipt.json  # config snapshot, trial summary, and recording settings for this segment
+    ├── behavior/
+    │   ├── *_events.tsv      # all state transitions and events
+    │   ├── *_notes.tsv       # experimenter notes
+    │   ├── *_trials.tsv      # per-trial summary
+    │   ├── *_haptic.bin      # high-rate haptic state (float64)
+    │   └── *_haptic.json     # haptic binary sidecar (columns, dtype, sample count)
+    ├── neural/
+    │   ├── ripple/           # Trellis NEV/NS* files (created when Ripple is configured)
+    │   └── spikeglx/         # SpikeGLX binary files (planned)
+    └── sync/                 # extracted sync edges, *_sync_edges.tsv (planned)
 ```
 
 ## Message schemas
 
-Defined as Python dataclasses in `hapticore/core/messages.py`:
-
-| Message | Topic | Direction | Rate |
-|---------|-------|-----------|------|
-| `HapticState` | `b"state"` | haptic server → subscribers | 200 Hz |
-| `StateTransition` | `b"event"` | task controller → subscribers | on transition |
-| `TrialEvent` | `b"trial"` | task controller → subscribers | on event |
-| `Command` | (DEALER-ROUTER) | task controller → haptic server | on demand |
-| `CommandResponse` | (DEALER-ROUTER) | haptic server → task controller | on demand |
+Defined as Python dataclasses in `hapticore/core/messages.py`--see source code for full list of messages.
 
 The `field_state` dict within `HapticState` carries force-field-specific state. For `PhysicsField`, this includes positions and angles of all dynamic bodies — enough for the display process to render the full scene.
 
 ## Configuration
 
-The configuration system uses `pydantic-settings` for layered composition from multiple sources. The top-level `ExperimentConfig` (a `BaseSettings` subclass) composes: SubjectConfig, HapticConfig, DisplayConfig, RecordingConfig, TaskConfig, SyncConfig, ZMQConfig. All nested models remain plain `BaseModel`. Validated at load time — invalid parameters fail before any hardware initializes. Resolved config saved as JSON alongside every recording session.
+The configuration system uses `pydantic-settings` for layered composition from multiple sources. The top-level `ExperimentConfig` (a `BaseSettings` subclass) composes: SubjectConfig, HapticConfig, DisplayConfig, RecordingConfig, TaskConfig, SyncConfig, ZMQConfig, AudioConfig, and an optional DashboardConfig (present only when the config includes a `dashboard:` block). All nested models remain plain `BaseModel`. Validated at load time — invalid parameters fail before any hardware initializes. The resolved config is saved as `config_snapshot` in every session and segment receipt.
 
 **Source priority** (highest wins):
 

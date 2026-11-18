@@ -15,21 +15,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    timeout-minutes: 15
+    # Copilot uses this as the time limit for the whole agent session, not just setup.
+    # 59 is the maximum allowed.
+    timeout-minutes: 59
 
     steps:
       - uses: actions/checkout@v4
-    
+
+      # Keep in sync with the apt packages installed by ci.yml (libzmq for the C++ build;
+      # the display job's xvfb/GL/EGL packages, which the Qt dashboard tests need).
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libzmq3-dev xvfb libsdl2-2.0-0 libglu1-mesa libgl1-mesa-dri
-    
+        run: sudo apt-get update && sudo apt-get install -y libzmq3-dev xvfb libsdl2-2.0-0 libglu1-mesa libgl1-mesa-dri libegl1
+
       - uses: prefix-dev/setup-pixi@v0.8.8
         with:
           cache: true
 
       - name: Install PsychoPy (no-deps)
         run: pixi run install-psychopy
-        
+
+      # Same preset as `pixi run mock-cpp` in AGENTS.md, so the agent's rebuilds are
+      # incremental instead of configuring a new build directory and re-fetching CPM deps.
       - name: Build C++ haptic server (mock)
-        run: |
-          pixi run -- bash -c 'cd cpp/haptic_server && cmake --preset ci && cmake --build --preset ci'
+        run: pixi run mock-cpp-build

@@ -74,5 +74,5 @@ This conversion applies to:
 - `display_offset` units change from cm to meters. The current default `[0.0, 0.0]` is unaffected. Any non-default values must be divided by 100.
 - New stimulus types that introduce spatial parameters must add the key name to `_convert_spatial_params()`. The function has a clear separation: positions (scale + offset) vs dimensions (scale only) vs non-spatial (pass-through).
 - `update_stimulus()` in `stimulus_factory.py` operates below the conversion boundary — its docstring should note that values are in cm (post-conversion).
-- The coding agent instructions (`.github/copilot-instructions.md`) must include this convention.
+- The coding agent instructions (`AGENTS.md`) must include this convention.
 - If PsychoPy is ever replaced by a different rendering backend with different units, only `_METERS_TO_CM` changes — no user-facing config or task code is affected.

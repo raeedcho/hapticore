@@ -152,11 +152,29 @@ void send_event_code(uint8_t code) {
     write_event_code_data(0);
 }
 
+// Reward housekeeping: consume the ISR's completion flag, then enforce the
+// watchdog. loop() calls this every pass (the watchdog's only periodic
+// caller); start_reward() also calls it first, so a completion flagged earlier
+// in the same poll_serial() pass counts before the accept/drop decision.
+void update_reward() {
+    if (g_reward_done) {
+        g_reward_done = false;
+        g_reward.on_complete();
+    }
+    if (g_reward.watchdog_expired(millis())) {
+        g_reward_timer.end();
+        digitalWriteFast(pins::REWARD, LOW);
+        g_reward_done = false;
+        g_reward.on_complete();
+    }
+}
+
 // Start a single-shot reward pulse of the requested duration. Returns at once:
 // a one-shot timer ends the pulse (reward_isr), so loop() keeps reading serial.
 // A request while a reward is active is dropped, never queued, so the subject
 // never gets more than commanded.
 void start_reward(uint32_t duration_ms) {
+    update_reward();
     if (!g_reward.request(duration_ms, millis())) {
         // TODO(uplink): report g_reward.dropped_count() to the host once the
         // Teensy→host serial uplink exists.
@@ -168,22 +186,6 @@ void start_reward(uint32_t duration_ms) {
     if (g_reward_timer.begin(reward_isr, duration_ms * 1000u)) {
         digitalWriteFast(pins::REWARD, HIGH);
     } else {
-        g_reward.on_complete();
-    }
-}
-
-// Reward housekeeping, run once per loop(): consume the ISR's completion flag,
-// then enforce the watchdog. The watchdog is a backstop for a timer that never
-// fired (reward_isr normally ends the pulse on time).
-void update_reward() {
-    if (g_reward_done) {
-        g_reward_done = false;
-        g_reward.on_complete();
-    }
-    if (g_reward.watchdog_expired(millis())) {
-        g_reward_timer.end();
-        digitalWriteFast(pins::REWARD, LOW);
-        g_reward_done = false;
         g_reward.on_complete();
     }
 }

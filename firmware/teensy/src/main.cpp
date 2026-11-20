@@ -207,7 +207,8 @@ void dispatch(parser::ParsedCommand cmd) {
 }
 
 // Non-blocking serial line accumulator. Reads available bytes; on '\n', parses
-// and dispatches the buffered line, then resets.
+// and dispatches the buffered line, then resets. Returns after dispatching
+// at most one command, so loop() can run its housekeeping between commands.
 char g_buf[timing::SERIAL_BUFFER_SIZE];
 uint32_t g_buf_len = 0;
 bool g_buf_overflow = false;
@@ -223,7 +224,10 @@ void poll_serial() {
             }
             g_buf_len = 0;
             g_buf_overflow = false;
-            continue;
+            // At most one command per loop() pass, so loop()'s housekeeping
+            // (the reward watchdog) runs between commands instead of waiting
+            // for a burst of ~2 ms event codes to drain.
+            return;
         }
         if (c == '\r') continue;  // tolerate stray CR
         if (!g_buf_overflow && g_buf_len < timing::SERIAL_BUFFER_SIZE) {

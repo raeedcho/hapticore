@@ -169,9 +169,6 @@ jobs:
         run: pixi run -- pio run -e teensy41
         working-directory: firmware/teensy
 
-      - name: Run host-side parser tests
-        run: pixi run -- pio test -e native -f test_parser
+      - name: Run host-side firmware tests
+        run: pixi run -- pio test -e native
         working-directory: firmware/teensy
-        # Allow this step to fail without failing the job. Parser tests are
-        # nice-to-have; the compile-check above is the hard requirement.
-        continue-on-error: true

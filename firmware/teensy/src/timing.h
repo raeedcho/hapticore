@@ -21,6 +21,12 @@ constexpr uint32_t EVENT_CODE_CLEAR_US  = 500;
 // Blackfly S cameras only need ~10 µs minimum trigger pulse width.
 constexpr uint32_t CAMERA_PULSE_US = 100;
 
+// Reward watchdog margin. The reward pulse is ended by a one-shot
+// IntervalTimer; if that timer never fires, loop() closes the solenoid once the
+// reward has been active for the commanded duration plus this margin. This is
+// a backstop for a timer that never fired, not a policy limit on reward length.
+constexpr uint32_t REWARD_WATCHDOG_MARGIN_MS = 500;
+
 // Serial command buffer. Maximum command is `R10000\n` = 7 chars; 16 is plenty.
 constexpr uint32_t SERIAL_BUFFER_SIZE = 16;
 

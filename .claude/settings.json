@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(pixi run test-hardware*)",
+      "Bash(pixi run test-interactive*)",
+      "Bash(*pytest*tests/hardware*)",
+      "Bash(pixi run* pio run -t upload*)",
+      "Bash(*teensy_bringup.py*)",
+      "Bash(pixi run hapticore run *rig2.yaml*)",
+      "Bash(pixi run hapticore run *desktop-falcon.yaml*)",
+      "Bash(*build/dhd/haptic_server*)",
+      "Bash(*build/dev-dhd/haptic_server*)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowWrite": ["/tmp", "~/.psychopy3"]
+    },
+    "excludedCommands": ["git push *", "gh pr *"]
+  }
+}

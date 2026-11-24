@@ -54,6 +54,28 @@ jobs:
       - name: Build C++ haptic server (mock)
         run: pixi run mock-cpp-build
 
+      # Pitt's managed settings require Claude Code's Bash sandbox, which needs
+      # bubblewrap and socat on Linux, plus (on Ubuntu 24.04+) an AppArmor
+      # profile letting bwrap create user namespaces. Keep in sync with
+      # claude-review.yml. Don't add the optional seccomp filter
+      # (@anthropic-ai/sandbox-runtime): it blocks Unix domain sockets, which
+      # the ZeroMQ IPC tests and the X server use. Repo-specific sandbox
+      # allowances live in .claude/settings.json.
+      - name: Install Claude Code sandbox dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap socat
+          if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" = "1" ]; then
+            printf '%s\n' \
+              'abi <abi/4.0>,' \
+              'include <tunables/global>' \
+              '' \
+              'profile bwrap /usr/bin/bwrap flags=(unconfined) {' \
+              '  userns,' \
+              '  include if exists <local/bwrap>' \
+              '}' | sudo tee /etc/apparmor.d/bwrap > /dev/null
+            sudo systemctl reload apparmor
+          fi
+
       - uses: anthropics/claude-code-action@v1
         with:
           # From `claude setup-token`, run while signed in to the Pitt Research org,

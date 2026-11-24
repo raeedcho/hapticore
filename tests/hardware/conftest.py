@@ -238,7 +238,11 @@ def bench(teensy: TeensySerialClient, ripple: DiginRecorder) -> None:
             "must report the rise and the fall of an SMA input.",
             pytrace=False,
         )
-    intervals = [later.t_s - earlier.t_s for earlier, later in pairwise(edges)]
+    # The teensy fixture's S0 stops any sync output an earlier run left going, and
+    # its falling edge can reach Ripple after clear(). S1's own edges start with a
+    # rising one, so measure from there.
+    first_rise = next(i for i, edge in enumerate(edges) if edge.level == 1)
+    intervals = [later.t_s - earlier.t_s for earlier, later in pairwise(edges[first_rise:])]
     if any(abs(dt - _SYNC_HALF_PERIOD_S) > _SYNC_HALF_PERIOD_TOL_S for dt in intervals):
         listed = ", ".join(f"{dt:.4f}" for dt in intervals)
         pytest.fail(

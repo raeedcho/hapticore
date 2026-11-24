@@ -12,6 +12,10 @@ Or with default IPC addresses:
 Override addresses via environment variables:
     HAPTICORE_PUB_ADDRESS=tcp://rigmachine:5555
     HAPTICORE_CMD_ADDRESS=tcp://rigmachine:5556
+
+The Teensy bench fixtures (``teensy``, ``ripple``, ``bench``) do not use the
+haptic server. They need the Teensy wired to the Ripple Scout, Trellis running,
+and xipppy installed; see tests/hardware/test_teensy_firmware.py.
 """
 
 from __future__ import annotations
@@ -19,13 +23,20 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from itertools import pairwise
 from typing import Any, Generator
 
 import msgpack
 import pytest
 import zmq
 
+from hapticore.core.config import TeensyConfig
 from hapticore.core.messages import HapticState
+from hapticore.recording.xipppy_client import XipppyClient
+from hapticore.sync import protocol
+from hapticore.sync.teensy_serial import TeensySerialClient
+
+from .ripple_digin import DiginRecorder, sma_edges
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +44,7 @@ from hapticore.core.messages import HapticState
 # ---------------------------------------------------------------------------
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Add command-line options for interactive feel-test timing."""
+    """Add command-line options for interactive feel-test timing and the Teensy bench."""
     parser.addoption(
         "--countdown",
         default=5,
@@ -45,6 +56,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=10,
         type=int,
         help="Seconds to keep the field active for evaluation (default: 10)",
+    )
+    parser.addoption(
+        "--teensy-port",
+        default=TeensyConfig().port,
+        help="Serial port of the Teensy sync hub (default: %(default)s)",
     )
 
 
@@ -123,6 +139,119 @@ def cmd_dealer(
     time.sleep(0.1)
     yield dealer
     dealer.close()
+
+
+# ---------------------------------------------------------------------------
+# Teensy bench fixtures (the Ripple Scout measures the Teensy's outputs)
+# ---------------------------------------------------------------------------
+
+# docs/teensy-bringup.md (Step 1): the Teensy resets when its serial port is opened.
+_TEENSY_BOOT_S = 2.0
+
+# Bench check: the sync output toggles every 0.5 s. The tolerance covers the Scout's 0.1 ms
+# sampling and timer jitter, and still catches wrong timestamp units.
+_BENCH_SYNC_RUN_S = 2.5
+_SYNC_HALF_PERIOD_S = 0.5
+_SYNC_HALF_PERIOD_TOL_S = 1e-3
+
+
+def _stop_teensy_outputs(client: TeensySerialClient) -> None:
+    """Stop the outputs that keep running on their own: sync and camera trigger."""
+    client.write(protocol.format_stop_sync())
+    client.write(protocol.format_stop_camera_trigger())
+
+
+@pytest.fixture(scope="module")
+def teensy(request: pytest.FixtureRequest) -> Generator[TeensySerialClient, None, None]:
+    """Open serial link to the Teensy, with its outputs off at the start and end of a module.
+
+    Module-scoped so the port is free between modules. Build commands with
+    ``hapticore.sync.protocol.format_*``, never as hand-typed strings. Does not
+    skip when the Teensy is missing: a bench run should fail loudly.
+    """
+    client = TeensySerialClient(
+        port=request.config.getoption("--teensy-port"),
+        baud=TeensyConfig().baud,
+    )
+    client.open()
+    try:
+        time.sleep(_TEENSY_BOOT_S)
+        _stop_teensy_outputs(client)
+        yield client
+        _stop_teensy_outputs(client)
+    finally:
+        client.close()
+
+
+@pytest.fixture(scope="session")
+def ripple() -> Generator[DiginRecorder, None, None]:
+    """Recorder of the Ripple Scout's digital-input events (Trellis must be running).
+
+    Does not skip when xipppy is missing: ``XipppyClient.connect()`` raises an
+    ImportError that says how to install it, and a bench run should fail loudly.
+    """
+    client = XipppyClient(use_tcp=True)
+    client.connect()
+    try:
+        import xipppy  # noqa: PLC0415 — lazy by design
+
+        yield DiginRecorder(digin=xipppy.digin)
+    finally:
+        client.disconnect()
+
+
+@pytest.fixture(scope="module")
+def bench(teensy: TeensySerialClient, ripple: DiginRecorder) -> None:
+    """Fail-fast bench check: the Scout must see the Teensy's sync output.
+
+    Runs the sync output for 2.5 s and checks the SMA1 edges the Scout reports.
+    If the bench is not wired or configured as the suite assumes, every test in
+    the module errors at once with the likely cause, instead of each failing in
+    its own confusing way.
+
+    The run is 2.5 s because ``start_sync()`` keeps the previous toggle level, so
+    after some stops the first toggle makes no edge. The edges are read before
+    ``S0`` is sent, because stopping drives a high pin low, which can add an
+    edge that is not a half period after the last toggle.
+    """
+    ripple.clear()
+    teensy.write(protocol.format_start_sync())
+    try:
+        ripple.wait(_BENCH_SYNC_RUN_S)
+        edges = sma_edges(ripple.events(), 1)
+    finally:
+        teensy.write(protocol.format_stop_sync())
+
+    if not edges:
+        pytest.fail(
+            f"Bench check failed: no SMA1 events arrived in {_BENCH_SYNC_RUN_S} s of sync "
+            "output. Check the wiring: Teensy pin 2 → Scout DIO BNC Input 1, with a shared "
+            "ground (docs/teensy-bringup.md, Step 2). Also check that Trellis is running and "
+            "that --teensy-port is the sync hub.",
+            pytrace=False,
+        )
+    if {edge.level for edge in edges} != {0, 1}:
+        polarity = "rising" if edges[0].level else "falling"
+        pytest.fail(
+            f"Bench check failed: only {polarity} SMA1 edges arrived ({len(edges)} in "
+            f"{_BENCH_SYNC_RUN_S} s). The suite needs both edges to measure pulses, so Ripple "
+            "must report the rise and the fall of an SMA input.",
+            pytrace=False,
+        )
+    # The teensy fixture's S0 stops any sync output an earlier run left going, and
+    # its falling edge can reach Ripple after clear(). S1's own edges start with a
+    # rising one, so measure from there.
+    first_rise = next(i for i, edge in enumerate(edges) if edge.level == 1)
+    intervals = [later.t_s - earlier.t_s for earlier, later in pairwise(edges[first_rise:])]
+    if any(abs(dt - _SYNC_HALF_PERIOD_S) > _SYNC_HALF_PERIOD_TOL_S for dt in intervals):
+        listed = ", ".join(f"{dt:.4f}" for dt in intervals)
+        pytest.fail(
+            "Bench check failed: consecutive SMA1 edges are not 0.5 s ± 1 ms apart "
+            f"(intervals in s: {listed}). The sync output toggles every 0.5 s, so this usually "
+            "means the digin() timestamp units are not the assumed 30 kHz ticks. A single odd "
+            "interval is more likely a stray edge, such as one left over from an earlier run.",
+            pytrace=False,
+        )
 
 
 # ---------------------------------------------------------------------------

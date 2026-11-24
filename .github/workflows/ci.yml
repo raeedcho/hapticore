@@ -29,6 +29,9 @@ jobs:
       - name: Run unit tests
         run: pixi run test-unit
 
+      - name: Check hardware tests collect
+        run: pixi run -- pytest tests/hardware --collect-only -q
+
       - name: Run integration tests
         run: pixi run test-integration
 

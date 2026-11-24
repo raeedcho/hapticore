@@ -1,0 +1,70 @@
+name: Claude Code
+
+# Mention @claude in an issue or PR comment, or in the title or body of a new
+# issue. Claude works on a runner set up like CI and reports back in a comment.
+# On an issue, it pushes a claude/issue-<N>-... branch and opens a draft PR with
+# its own description (per AGENTS.md); mark the PR ready to trigger the review.
+# On an open PR, it pushes to that PR's branch, so put follow-ups on the PR: a
+# new @claude on the issue starts a fresh branch. The action also rejects users
+# without write access; the `if` below just avoids runner time on their comments.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened]
+
+jobs:
+  claude:
+    if: >-
+      (github.event_name == 'issues'
+        && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
+      ||
+      (github.event_name != 'issues'
+        && contains(github.event.comment.body, '@claude')
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write   # required for the action's default GitHub App authentication
+      actions: read     # lets Claude read CI results on PRs
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # Same environment as ci.yml and copilot-setup-steps.yml.
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libzmq3-dev xvfb libsdl2-2.0-0 libglu1-mesa libgl1-mesa-dri libegl1
+
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          cache: true
+
+      - name: Install PsychoPy (no-deps)
+        run: pixi run install-psychopy
+
+      - name: Build C++ haptic server (mock)
+        run: pixi run mock-cpp-build
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          # From `claude setup-token`, run while signed in to the Pitt Research org,
+          # so runs draw on that seat's monthly cap.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Don't pass github_token: PRs and commits made with GITHUB_TOKEN don't
+          # trigger CI. The action authenticates gh with its app token instead.
+          # Sonnet does the work; Opus advises on planning, recurring failures,
+          # and the final completion check. The gh rules let Claude open the PR
+          # and check for an existing one; merging, closing, and editing stay denied.
+          claude_args: >-
+            --model sonnet
+            --advisor opus
+            --allowedTools "Bash(pixi run *),Bash(QT_QPA_PLATFORM=offscreen xvfb-run *),Bash(xvfb-run *),Bash(gh pr create *),Bash(gh pr list *),Bash(gh pr view *)"

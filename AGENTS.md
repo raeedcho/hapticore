@@ -27,6 +27,7 @@ The environment is already set up: locally by the human, and in Copilot's cloud 
 
 ## Working rules
 
+- When your task comes from a GitHub issue, deliver it as a pull request against main, with Closes #<issue> as the first line of the description. If you can't finish, open a draft PR that says what's left instead of stopping without one.
 - Do what the issue asks and nothing more. No unrequested refactors, renames, or reformatting; list suggested follow-ups in the PR description.
 - Fix root causes. Don't skip or xfail tests, broaden `except` clauses, or add sleeps to get to green. If you can't fix something, say so.
 - Rename in place across all call sites, with no deprecation aliases or compatibility shims.

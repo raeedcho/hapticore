@@ -2,8 +2,11 @@ name: Claude Code
 
 # Mention @claude in an issue or PR comment, or in the title or body of a new
 # issue. Claude works on a runner set up like CI and reports back in a comment.
-# The action also rejects users without write access; the `if` below just
-# avoids spending runner time on their comments.
+# On an issue, it pushes a claude/issue-<N>-... branch and opens a draft PR with
+# its own description (per AGENTS.md); mark the PR ready to trigger the review.
+# On an open PR, it pushes to that PR's branch, so put follow-ups on the PR: a
+# new @claude on the issue starts a fresh branch. The action also rejects users
+# without write access; the `if` below just avoids runner time on their comments.
 
 on:
   issue_comment:
@@ -56,8 +59,12 @@ jobs:
           # From `claude setup-token`, run while signed in to the Pitt Research org,
           # so runs draw on that seat's monthly cap.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Don't pass github_token: commits made with GITHUB_TOKEN don't trigger CI,
-          # and CI is how Claude's PRs get verified.
+          # Don't pass github_token: PRs and commits made with GITHUB_TOKEN don't
+          # trigger CI. The action authenticates gh with its app token instead.
+          # Sonnet does the work; Opus advises on planning, recurring failures,
+          # and the final completion check. The gh rules let Claude open the PR
+          # and check for an existing one; merging, closing, and editing stay denied.
           claude_args: >-
-            --model claude-sonnet-5-5
-            --allowedTools "Bash(pixi run *),Bash(QT_QPA_PLATFORM=offscreen xvfb-run *),Bash(xvfb-run *)"
+            --model sonnet
+            --advisor opus
+            --allowedTools "Bash(pixi run *),Bash(QT_QPA_PLATFORM=offscreen xvfb-run *),Bash(xvfb-run *),Bash(gh pr create *),Bash(gh pr list *),Bash(gh pr view *)"
